@@ -12,6 +12,7 @@ spec:
       keyPath: /root/.ssh/id_ed25519
     role: controller
     privateInterface: eth1
+    privateAddress: 192.168.56.10
   - ssh:
       address: 192.168.56.20
       user: vagrant
@@ -19,6 +20,7 @@ spec:
       keyPath: /root/.ssh/id_ed25519
     role: worker
     privateInterface: eth1
+    privateAddress: 192.168.56.20
   - ssh:
       address: 192.168.56.21
       user: vagrant
@@ -26,6 +28,7 @@ spec:
       keyPath: /root/.ssh/id_ed25519
     role: worker
     privateInterface: eth1
+    privateAddress: 192.168.56.21
   - ssh:
       address: 192.168.56.22
       user: vagrant
@@ -33,6 +36,7 @@ spec:
       keyPath: /root/.ssh/id_ed25519 
     role: worker
     privateInterface: eth1
+    privateAddress: 192.168.56.22
 
   k0s:
     config:
@@ -67,6 +71,23 @@ spec:
           type: etcd
         telemetry:
           enabled: false
+        
+  extensions:
+    helm:
+      repositories:
+      - name: openebs-internal
+        url: https://openebs.github.io/charts
+      charts:
+      - name: openebs
+        chartname: openebs-internal/openebs
+        version: "3.9.0"
+        namespace: openebs
+        order: 1
+        values: |
+          localprovisioner:
+            hostpathClass:
+              enabled: true
+              isDefaultClass: true
 
   options:
     wait:

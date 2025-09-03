@@ -11,21 +11,24 @@ worker_nodes=[
     :ip => "192.168.56.20",
     :box => BOX_NAME,
     :ram => 4096,
-    :cpu => 4
+    :cpu => 4,
+    :disksize => "20GB"
   },
   {
     :hostname => "worker1",
     :ip => "192.168.56.21",
     :box => BOX_NAME,
     :ram => 4096,
-    :cpu => 4
+    :cpu => 4,
+    :disksize => "20GB"
   },
   {
     :hostname => "worker2",
     :ip => "192.168.56.22",
     :box => BOX_NAME,
     :ram => 4096,
-    :cpu => 4
+    :cpu => 4,
+    :disksize => "20GB"
   }
 ]
 

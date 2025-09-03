@@ -11,7 +11,7 @@
 set -euo pipefail
 
 
-echo -e "[INFO] : Starting K0S control node bootstraping script v0.1"
+echo -e "[INFO] : Starting K0S control node bootstrapping script v0.1"
 
 # Installing needed dependencies
 
@@ -37,7 +37,7 @@ echo -e "\n[INFO] : ...done."
 ## Helm
 echo -e "\n[INFO] : Installing Helm..."
 
-### Retriveing latest version of the installation script from Helm's GitHub repo
+### Retrieving latest version of the installation script from Helm's GitHub repo
 curl https://raw.githubusercontent.com/helm/helm/main/scripts/get-helm-3 | bash
 
 echo -e "\n[INFO] : ...done."
@@ -105,26 +105,37 @@ k0sctl kubeconfig --config=/vagrant/k0sctl/cluster-config.yaml > /root/.kube/con
 echo -e "\n[INFO] : ...done."
 
 
-## Cilum install
+## Cilium install
 echo -e "\n[INFO] : Deploying Cilium with Hubble..."
 
-# cilium install \
-#     --set kubeProxyReplacement=true \
-#     --set ingressController.enabled=true \
-#     --set ingressController.loadbalancerMode=dedicated \
-#     --wait
-# cilium hubble enable
+cilium install \
+    --set kubeProxyReplacement=true \
+    --set ingressController.enabled=true \
+    --set ingressController.loadbalancerMode=dedicated \
+    --wait
+cilium hubble enable
 
 echo -e "\n[INFO] : ...done."
 
-## Cilum install
+## Tetragon install
 echo -e "\n[INFO] : Deploying Tetragon Chart..."
 
-# helm repo add cilium https://helm.cilium.io
-# helm repo update
-# helm install tetragon cilium/tetragon -n kube-system --wait
+helm repo add cilium https://helm.cilium.io
+helm repo update
+helm install tetragon cilium/tetragon -n kube-system --wait
 
 echo -e "\n[INFO] : ...done."
+
+# ## Victoria Metrics K8S Stack install
+# echo -e "\n[INFO] : Installing Victoria Metrics K8S Stack..."
+
+# echo -e "\n[INFO] : ...done."
+
+## Victoria Logs install
+# echo -e "\n[INFO] : Installing Victoria Logs..."
+# kubectl create namespace vmks
+# helm install vmks oci://ghcr.io/victoriametrics/helm-charts/victoria-metrics-k8s-stack -n vmks --wait
+# echo -e "\n[INFO] : ...done."
 
 
 echo -e "\n[INFO] : Script terminated successfully"
