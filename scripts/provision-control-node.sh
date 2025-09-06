@@ -83,26 +83,26 @@ echo -e "\n[INFO] : Installing SSH keys on worker nodes..."
 rm -f /root/.ssh/id_ed25519 
 ssh-keygen -t ed25519 -C "control-node-k0s" -f /root/.ssh/id_ed25519 -q -N ""
 
-## Adding local control node & worker nodes to known hosts
-ssh-keyscan -H "192.168.56.10" "192.168.56.20" "192.168.56.21" "192.168.56.22" >> /root/.ssh/known_hosts
+# ## Adding local control node & worker nodes to known hosts
+# ssh-keyscan -H "192.168.56.10" "192.168.56.20" "192.168.56.21" "192.168.56.22" >> /root/.ssh/known_hosts
 
-## Copying keys to vagrant user on local control node & worker nodes
-sshpass -p 'vagrant' ssh-copy-id -i /root/.ssh/id_ed25519 vagrant@192.168.56.10
-sshpass -p 'vagrant' ssh-copy-id -i /root/.ssh/id_ed25519 vagrant@192.168.56.20
-sshpass -p 'vagrant' ssh-copy-id -i /root/.ssh/id_ed25519 vagrant@192.168.56.21
-sshpass -p 'vagrant' ssh-copy-id -i /root/.ssh/id_ed25519 vagrant@192.168.56.22
+# ## Copying keys to vagrant user on local control node & worker nodes
+# sshpass -p 'vagrant' ssh-copy-id -i /root/.ssh/id_ed25519 vagrant@192.168.56.11
+# sshpass -p 'vagrant' ssh-copy-id -i /root/.ssh/id_ed25519 vagrant@192.168.56.21
+# sshpass -p 'vagrant' ssh-copy-id -i /root/.ssh/id_ed25519 vagrant@192.168.56.22
+# sshpass -p 'vagrant' ssh-copy-id -i /root/.ssh/id_ed25519 vagrant@192.168.56.23
 
-echo -e "\n[INFO] : ...done."
+# echo -e "\n[INFO] : ...done."
 
-# Bootstrapping k0s cluster
-echo -e "\n[INFO] : Installing k0s cluster..."
+# # Bootstrapping k0s cluster
+# echo -e "\n[INFO] : Installing k0s cluster..."
 
-## Cluster setup
-mkdir -p /root/.config
-k0sctl apply --config /vagrant/k0sctl/cluster-config.yaml --no-wait
-k0sctl kubeconfig --config=/vagrant/k0sctl/cluster-config.yaml > /root/.kube/config
+# ## Cluster setup
+# mkdir -p /root/.config
+# k0sctl apply --config /vagrant/k0sctl/cluster-config.yaml --no-wait
+# k0sctl kubeconfig --config=/vagrant/k0sctl/cluster-config.yaml > /root/.kube/config
 
-echo -e "\n[INFO] : ...done."
+# echo -e "\n[INFO] : ...done."
 
 
 ## Cilium install

@@ -3,4 +3,5 @@
 ## Prerequisites
 
 - Vagrant is installed
+  - plugin disksize
 - Virtualbox is installed
