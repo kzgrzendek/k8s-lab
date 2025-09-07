@@ -5,38 +5,6 @@ metadata:
   user: admin
 spec:    
   hosts:
-  - ssh:
-      address: 192.168.56.10
-      user: vagrant
-      port: 22
-      keyPath: /root/.ssh/id_ed25519
-    role: controller
-    privateInterface: eth1
-    privateAddress: 192.168.56.10
-  - ssh:
-      address: 192.168.56.20
-      user: vagrant
-      port: 22
-      keyPath: /root/.ssh/id_ed25519
-    role: worker
-    privateInterface: eth1
-    privateAddress: 192.168.56.20
-  - ssh:
-      address: 192.168.56.21
-      user: vagrant
-      port: 22
-      keyPath: /root/.ssh/id_ed25519
-    role: worker
-    privateInterface: eth1
-    privateAddress: 192.168.56.21
-  - ssh:
-      address: 192.168.56.22
-      user: vagrant
-      port: 22
-      keyPath: /root/.ssh/id_ed25519 
-    role: worker
-    privateInterface: eth1
-    privateAddress: 192.168.56.22
 
   k0s:
     config:
@@ -46,7 +14,7 @@ spec:
         name: k0s
       spec:
         api:
-          address: 192.168.56.10
+          address: 
           k0sApiPort: 9443
           port: 6443
         installConfig:

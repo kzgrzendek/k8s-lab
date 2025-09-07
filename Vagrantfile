@@ -29,9 +29,12 @@ Vagrant.configure(2) do |config|
   (1..WORKER_NODES_NUMBER).each do |i|
 
     worker_node_ip_address = "192.168.56.#{20 + i}"
-    worker_node_ip_hostname = "worker#{i}"
+    worker_node_hostname = "worker#{i}"
 
-    config.vm.define worker_node_ip_hostname do |wn|
+    config.vm.define worker_node_hostname do |wn|
+
+      current_ip = worker_node_ip_address
+      current_hostname = worker_node_hostname
 
       wn.vm.provider NODES_PROVIDER do |wnp|
         provision_node(wnp, WORKER_NODES_CPU, WORKER_NODES_RAM)
@@ -39,11 +42,11 @@ Vagrant.configure(2) do |config|
 
       wn.disksize.size = WORKER_NODES_DISKSIZE
       wn.vm.box = NODES_BOX_NAME
-      wn.vm.hostname = worker_node_ip_hostname
-      wn.vm.network "private_network", ip: worker_node_ip_address
+      wn.vm.hostname = current_hostname
+      wn.vm.network "private_network", ip: current_ip
       #wn.vm.provision "shell", path: "scripts/provision-worker-node.sh"
 
-      WORKER_NODES_IPS << worker_node_ip_address
+      WORKER_NODES_IPS << current_ip
     end
   end
 
@@ -58,27 +61,39 @@ Vagrant.configure(2) do |config|
 
     config.vm.define control_node_ip_hostname do |cn|
 
+      current_ip = control_node_ip_address
+      current_hostname = control_node_ip_hostname
+
       cn.vm.provider NODES_PROVIDER do |cnp|
         provision_node(cnp, CONTROL_NODES_CPU, CONTROL_NODES_RAM)
       end
     
       cn.vm.box = NODES_BOX_NAME
-      cn.vm.hostname = control_node_ip_hostname
+      cn.vm.hostname = current_hostname
       cn.disksize.size = CONTROL_NODES_DISKSIZE
-      cn.vm.network "private_network", ip: control_node_ip_address
+      cn.vm.network "private_network", ip: current_ip
 
-      CONTROL_NODES_IPS << control_node_ip_address
+      CONTROL_NODES_IPS << current_ip
       
       # The last control node will be used to bootstrap the cluster, as the procedure needs to 
       # be aware of all the IPs of the nodes joining the cluster. Also, we're removing the trailing 
       # comma from the control nodes IP list if we reached the last node of the bucket.
       if i == CONTROL_NODES_NUMBER
+        cn.vm.provision "file", 
+          source: "./k0sctl/cluster-config-template.yaml",
+          destination: "/tmp/cluster-config-template.yaml"
         cn.vm.provision "shell", 
           path: "./scripts/control-nodes/01-setup_env.sh"
         cn.vm.provision "shell", 
           path: "./scripts/control-nodes/02-setup_ssh.sh",
           env: {
             "CLUSTER_NODES_IPS" => WORKER_NODES_IPS.join(",") + "," + CONTROL_NODES_IPS.join(",")
+          }
+        cn.vm.provision "shell", 
+          path: "./scripts/control-nodes/03-setup_k0s_cluster.sh",
+          env: {
+            "CONTROL_NODES_IPS" => CONTROL_NODES_IPS.join(","),       
+            "WORKER_NODES_IPS" => WORKER_NODES_IPS.join(",")
           }
       end
     end

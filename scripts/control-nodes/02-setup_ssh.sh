@@ -13,26 +13,19 @@ set -euo pipefail
 
 echo -e "[INFO] : Starting K0S control node SSH setup script v0.1"
 
-echo -e "[INFO] : The following nodes has been identified to join the cluster : ${CLUSTER_NODES_IPS}"
+# Generating new key pair
+echo -e "[INFO] : Generating SSH keypair"
+rm -f /root/.ssh/id_ed25519 
+ssh-keygen -t ed25519 -C "control-node-k0s" -f /root/.ssh/id_ed25519 -q -N ""
 
-# Handling SSH keys installation (needed for k0sctl multi-nodes install)
-#echo -e "\n[INFO] : Installing SSH keys on worker nodes..."
+echo -e "[INFO] : The following nodes has been identified to be reachable by SSH : ${CLUSTER_NODES_IPS}"
 
-## Generating new key pair
-# rm -f /root/.ssh/id_ed25519 
-# ssh-keygen -t ed25519 -C "control-node-k0s" -f /root/.ssh/id_ed25519 -q -N ""
-
-# ## Adding local control node & worker nodes to known hosts
-# ssh-keyscan -H "192.168.56.10" "192.168.56.20" "192.168.56.21" "192.168.56.22" >> /root/.ssh/known_hosts
-
-# ## Copying keys to vagrant user on local control node & worker nodes
-# sshpass -p 'vagrant' ssh-copy-id -i /root/.ssh/id_ed25519 vagrant@192.168.56.11
-# sshpass -p 'vagrant' ssh-copy-id -i /root/.ssh/id_ed25519 vagrant@192.168.56.21
-# sshpass -p 'vagrant' ssh-copy-id -i /root/.ssh/id_ed25519 vagrant@192.168.56.22
-# sshpass -p 'vagrant' ssh-copy-id -i /root/.ssh/id_ed25519 vagrant@192.168.56.23
-
-# echo -e "\n[INFO] : ...done."
+IFS=',' read -ra array <<< "$CLUSTER_NODES_IPS"
+for ip in "${array[@]}"; do
+    echo -e "[INFO] : Handling SSH access for the following IP : $ip ..."
+    ssh-keyscan -H "$ip" >> /root/.ssh/known_hosts
+    sshpass -p 'vagrant' ssh-copy-id -i "/root/.ssh/id_ed25519" "vagrant@$ip"
+    echo -e "[INFO] : ... done."
+done
 
 echo -e "\n[INFO] : Script terminated successfully"
-
-
