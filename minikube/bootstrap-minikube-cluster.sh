@@ -38,6 +38,8 @@ fi
 
 echo -e "\n[INFO] Adding Helm repositories..."
 helm repo add cilium https://helm.cilium.io/ --force-update
+helm repo add falcosecurity https://falcosecurity.github.io/charts --force-update
+helm repo add kyverno https://kyverno.github.io/kyverno/ --force-update
 helm repo update
 echo -e "\n[INFO] ...done"
 
@@ -56,14 +58,6 @@ minikube start \
     --nodes 3
 echo -e "\n[INFO] ...done"
 
-echo -e "[INFO] Enabling addons..."
-minikube addons enable volumesnapshots
-minikube addons enable csi-hostpath-driver
-minikube addons disable storage-provisioner
-minikube addons disable default-storageclass
-kubectl patch storageclass csi-hostpath-sc -p '{"metadata": {"annotations":{"storageclass.kubernetes.io/is-default-class":"true"}}}'
-echo -e "\n[INFO] ...done"
-
 echo -e "\n[INFO] Installing Cilium..."
 helm upgrade cilium cilium/cilium \
     --install \
@@ -72,10 +66,32 @@ helm upgrade cilium cilium/cilium \
     -f ./resources/cilium/values.yaml
 echo -e "\n[INFO] ...done"
 
-echo -e "\n[INFO] Installing Tetragon..."
-helm upgrade tetragon cilium/tetragon \
+echo -e "\n[INFO] Installing Falco..."
+helm upgrade falco falcosecurity/falco \
     --install \
-    --namespace kube-system 
+    --namespace falco \
+    --create-namespace \
+    --set tty=true 
 echo -e "\n[INFO] ...done"
+
+echo -e "\n[INFO] Installing Kyverno..."
+helm upgrade kyverno kyverno/kyverno \
+    --install \
+    --namespace kyverno\
+    --create-namespace
+echo -e "\n[INFO] ...done"
+
+
+echo -e "[INFO] Enabling addons..."
+minikube addons enable volumesnapshots
+minikube addons enable csi-hostpath-driver
+minikube addons disable storage-provisioner
+minikube addons disable default-storageclass
+kubectl patch storageclass csi-hostpath-sc -p '{"metadata": {"annotations":{"storageclass.kubernetes.io/is-default-class":"true"}}}'
+echo -e "\n[INFO] ...done"
+
+# echo -e "\n[INFO] Opening tunnel to redirect connections..."
+# minikube tunnel
+# echo -e "\n[INFO] ...done"
 
 echo -e "\n[INFO] Script terminated successfully!"
