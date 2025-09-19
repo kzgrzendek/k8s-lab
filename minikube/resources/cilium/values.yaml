@@ -1,0 +1,15 @@
+ingressController:
+  enabled: true
+  loadbalancerMode: "dedicated"
+
+hubble:
+  relay:
+    enabled: true
+  ui:
+    enabled: true
+    ingress:
+      enabled: true
+      className: "cilium"
+      hosts:
+      - "localhost"
+      path: "/hubble"
