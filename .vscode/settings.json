@@ -4,10 +4,13 @@
         "bento",
         "chartname",
         "coreutils",
+        "cpus",
         "disksize",
         "findutils",
+        "hostpath",
         "Kévin",
         "keygen",
+        "kmsg",
         "kubeconfig",
         "localprovisioner",
         "modifyvm",
@@ -15,6 +18,8 @@
         "sctl",
         "sproject",
         "sshpass",
+        "storageclass",
+        "volumesnapshots",
         "ZGRZENDEK"
     ]
 }
