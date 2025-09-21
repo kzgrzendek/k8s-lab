@@ -40,58 +40,100 @@ echo -e "\n[INFO] Adding Helm repositories..."
 helm repo add cilium https://helm.cilium.io/ --force-update
 helm repo add falcosecurity https://falcosecurity.github.io/charts --force-update
 helm repo add kyverno https://kyverno.github.io/kyverno/ --force-update
+helm repo add coredns https://coredns.github.io/helm --force-update
 helm repo update
 echo -e "\n[INFO] ...done"
 
-echo -e "\n[INFO] Configuring Minikube cluster..."
-minikube config set driver docker
-minikube config set memory 4096
-minikube config set cpus 4
-echo -e "\n[INFO] ...done"
+# Bootstraping critical elements
 
-echo -e "[INFO] Stating Minkube cluster..."
+## Minikube cluster creation
+echo -e "[INFO] Stating Minikube cluster..."
 minikube start \
-    --container-runtime docker \
-    --gpus all \
+    --install-addons=false \
+    --driver=docker \
+    --cpus=4 \
+    --memory=4096 \
+    --container-runtime=docker \
+    --gpus=all \
+    --kubernetes-version=v1.33.5 \
     --network-plugin=cni\
-     --cni=false \
-    --nodes 3
+    --cni=false \
+    --nodes=3
 echo -e "\n[INFO] ...done"
 
-echo -e "\n[INFO] Installing Cilium..."
+## CNI Cilium installation
+echo -e "\n[INFO] Installing Cilium CNI..."
+# Mounting bpffs
+minikube ssh "sudo /bin/bash -c 'grep \"bpffs /sys/fs/bpf\" /proc/mounts || sudo mount bpffs -t bpf /sys/fs/bpf'"
+
 helm upgrade cilium cilium/cilium \
     --install \
     --version 1.18.2 \
     --namespace kube-system \
-    -f ./resources/cilium/values.yaml
+    -f ./resources/cilium/helm/base.yaml \
+    --wait
+
+kubectl apply -f ./resources/cilium/manifests/cilium-lb-ipam.yaml
+
+kubectl rollout restart -n kube-system deployment/cilium-operator
+kubectl rollout status -n kube-system deployment/cilium-operator --timeout=30s
+
+kubectl rollout restart -n kube-system deployment/cilium-operator
+kubectl rollout status -n kube-system deployment/cilium-operator --timeout=30s
 echo -e "\n[INFO] ...done"
 
+## Cilium Ingress installation
+echo -e "\n[INFO] Installing Cilium Ingress Controller..."
+helm upgrade cilium cilium/cilium \
+   --version 1.18.2 \
+   --namespace kube-system \
+   --reuse-values \
+   -f ./resources/cilium/helm/ingress.yaml \
+   --wait
+echo -e "\n[INFO] ...done"
+
+## Cilium Hubble installation
+echo -e "\n[INFO] Installing Cilium Hubble..."
+helm upgrade cilium cilium/cilium \
+   --version 1.18.2 \
+   --namespace kube-system \
+   --reuse-values \
+   -f ./resources/cilium/helm/hubble.yaml \
+   --wait
+echo -e "\n[INFO] ...done"
+
+## CSI Hostpath installation
+echo -e "[INFO] Enabling csi-hostpath-driver storage class as default..."
+minikube addons enable volumesnapshots
+minikube addons enable csi-hostpath-driver
+kubectl patch storageclass csi-hostpath-sc -p '{"metadata": {"annotations":{"storageclass.kubernetes.io/is-default-class":"true"}}}'
+echo -e "\n[INFO] ...done"
+
+## NVIDIA GPU support
+echo -e "[INFO] Enabling NVidia Device Plugin Support..."
+minikube addons enable nvidia-device-plugin
+echo -e "\n[INFO] ...done"
+
+# Installing security stack
+
+## Kyverno
+echo -e "\n[INFO] Installing Kyverno..."
+helm upgrade kyverno kyverno/kyverno \
+    --install \
+    --namespace kyverno\
+    --create-namespace \
+    --wait
+echo -e "\n[INFO] ...done"
+
+
+## Falco
 echo -e "\n[INFO] Installing Falco..."
 helm upgrade falco falcosecurity/falco \
     --install \
     --namespace falco \
     --create-namespace \
-    --set tty=true 
+    --set tty=true \
+    --wait
 echo -e "\n[INFO] ...done"
-
-echo -e "\n[INFO] Installing Kyverno..."
-helm upgrade kyverno kyverno/kyverno \
-    --install \
-    --namespace kyverno\
-    --create-namespace
-echo -e "\n[INFO] ...done"
-
-
-echo -e "[INFO] Enabling addons..."
-minikube addons enable volumesnapshots
-minikube addons enable csi-hostpath-driver
-minikube addons disable storage-provisioner
-minikube addons disable default-storageclass
-kubectl patch storageclass csi-hostpath-sc -p '{"metadata": {"annotations":{"storageclass.kubernetes.io/is-default-class":"true"}}}'
-echo -e "\n[INFO] ...done"
-
-# echo -e "\n[INFO] Opening tunnel to redirect connections..."
-# minikube tunnel
-# echo -e "\n[INFO] ...done"
 
 echo -e "\n[INFO] Script terminated successfully!"
