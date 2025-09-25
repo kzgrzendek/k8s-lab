@@ -1,10 +1,12 @@
 {
     "cSpell.words": [
+        "annoucementpolicy",
         "apiserver",
         "bento",
         "Bootstraping",
         "bpffs",
         "chartname",
+        "ciliuml",
         "configmap",
         "coredns",
         "coreutils",
@@ -19,7 +21,10 @@
         "kmsg",
         "kubeconfig",
         "kyverno",
+        "kzgrzendek",
         "localprovisioner",
+        "maglev",
+        "Masq",
         "Minkube",
         "modifyvm",
         "openebs",
@@ -28,6 +33,7 @@
         "sshpass",
         "storageclass",
         "volumesnapshots",
+        "vxlan",
         "ZGRZENDEK"
     ]
 }

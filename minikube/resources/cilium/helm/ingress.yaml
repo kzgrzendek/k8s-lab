@@ -1,3 +1,4 @@
 ingressController:
   enabled: true
-  loadbalancerMode: "dedicated"
+  service:
+    type: LoadBalancer

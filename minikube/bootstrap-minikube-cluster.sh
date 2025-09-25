@@ -5,7 +5,7 @@
 # Version: 0.1                                                                                               #
 # Author: @kzgrzendek                                                                                        #
 # Description: Helper script to bootstrap a multi-node local Minikube cluster enabling IA and data workload, #
-#              while mainting production grade services (CNI, CSI, OIDC, Monitoring and Observability...)    #
+#              while maintaining production grade services (CNI, CSI, OIDC, Monitoring and Observability...)    #
 ############################################################################################################## 
 
 set -eup
@@ -50,30 +50,38 @@ echo -e "\n[INFO] ...done"
 echo -e "[INFO] Stating Minikube cluster..."
 minikube start \
     --install-addons=false \
-    --driver=docker \
-    --cpus=4 \
-    --memory=4096 \
-    --container-runtime=docker \
-    --gpus=all \
-    --kubernetes-version=v1.33.5 \
-    --network-plugin=cni\
-    --cni=false \
-    --nodes=3
+    --driver docker \
+    --cpus 4 \
+    --memory 4096 \
+    --container-runtime docker \
+    --gpus all \
+    --kubernetes-version v1.33.5 \
+    --network-plugin cni\
+    --cni false \
+    --nodes 3 \
+    --extra-config kubelet.node-ip=0.0.0.0 \
+    --extra-config=kube-proxy.skip-headers=true
 echo -e "\n[INFO] ...done"
 
 ## CNI Cilium installation
 echo -e "\n[INFO] Installing Cilium CNI..."
+
 # Mounting bpffs
-minikube ssh "sudo /bin/bash -c 'grep \"bpffs /sys/fs/bpf\" /proc/mounts || sudo mount bpffs -t bpf /sys/fs/bpf'"
+minikube ssh -n minikube "sudo /bin/bash -c 'grep \"bpffs /sys/fs/bpf\" /proc/mounts || sudo mount bpffs -t bpf /sys/fs/bpf'"
+minikube ssh -n minikube-m02 "sudo /bin/bash -c 'grep \"bpffs /sys/fs/bpf\" /proc/mounts || sudo mount bpffs -t bpf /sys/fs/bpf'"
+minikube ssh -n minikube-m03 "sudo /bin/bash -c 'grep \"bpffs /sys/fs/bpf\" /proc/mounts || sudo mount bpffs -t bpf /sys/fs/bpf'"
 
 helm upgrade cilium cilium/cilium \
     --install \
     --version 1.18.2 \
     --namespace kube-system \
     -f ./resources/cilium/helm/base.yaml \
+    --set k8sServiceHost=$(minikube ip) \
+    --set k8sServicePort=$(kubectl config view --minify -o jsonpath='{.clusters[0].cluster.server}' | sed -E 's|.*:(.*)|\1|') \
     --wait
 
 kubectl apply -f ./resources/cilium/manifests/cilium-lb-ipam.yaml
+kubectl apply -f ./resources/cilium/manifests/ciliuml2annoucementpolicy.yaml
 
 kubectl rollout restart -n kube-system deployment/cilium-operator
 kubectl rollout status -n kube-system deployment/cilium-operator --timeout=30s

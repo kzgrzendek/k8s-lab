@@ -1,12 +1,26 @@
 ipam:
-  mode: "kubernetes"
+  mode: "cluster-pool"
   operator:
-    clusterPoolIPv4PodCIDRList:
-      - "10.96.0.0/12"
+    clusterPoolIPv4PodCIDRList: ["10.244.0.0/16"]
 
-l2announcements:
-  enabled: true
+routingMode: "native"
+ipv4NativeRoutingCIDR: "10.244.0.0/16"
+autoDirectNodeRoutes: true
 
 kubeProxyReplacement: true
-k8sServiceHost: "minikube"
-k8sServicePort: 8443
+
+loadBalancer:
+  l2announcements:
+    enabled: true
+
+enableExternalIPs: true
+
+bpf:
+  masquerade: true
+
+  ipam:
+  mode: "cluster-pool"
+  operator:
+    clusterPoolIPv4MaskSize: 24
+    clusterPoolIPv4PodCIDRList:
+      - "10.244.0.0/16"
