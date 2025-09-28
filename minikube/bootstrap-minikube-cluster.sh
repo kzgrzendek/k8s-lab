@@ -73,42 +73,12 @@ minikube ssh -n minikube-m03 "sudo /bin/bash -c 'grep \"bpffs /sys/fs/bpf\" /pro
 
 helm upgrade cilium cilium/cilium \
     --install \
-    --version 1.18.2 \
+    --version 1.15.2 \
     --namespace kube-system \
-    -f ./resources/cilium/helm/base.yaml \
+    -f ./resources/cilium/helm/cilium.yaml \
     --set k8sServiceHost=$(minikube ip) \
     --set k8sServicePort=$(kubectl config view --minify -o jsonpath='{.clusters[0].cluster.server}' | sed -E 's|.*:(.*)|\1|') \
     --wait
-
-kubectl apply -f ./resources/cilium/manifests/cilium-lb-ipam.yaml
-kubectl apply -f ./resources/cilium/manifests/ciliuml2annoucementpolicy.yaml
-
-kubectl rollout restart -n kube-system deployment/cilium-operator
-kubectl rollout status -n kube-system deployment/cilium-operator --timeout=30s
-
-kubectl rollout restart -n kube-system deployment/cilium-operator
-kubectl rollout status -n kube-system deployment/cilium-operator --timeout=30s
-echo -e "\n[INFO] ...done"
-
-## Cilium Ingress installation
-echo -e "\n[INFO] Installing Cilium Ingress Controller..."
-helm upgrade cilium cilium/cilium \
-   --version 1.18.2 \
-   --namespace kube-system \
-   --reuse-values \
-   -f ./resources/cilium/helm/ingress.yaml \
-   --wait
-echo -e "\n[INFO] ...done"
-
-## Cilium Hubble installation
-echo -e "\n[INFO] Installing Cilium Hubble..."
-helm upgrade cilium cilium/cilium \
-   --version 1.18.2 \
-   --namespace kube-system \
-   --reuse-values \
-   -f ./resources/cilium/helm/hubble.yaml \
-   --wait
-echo -e "\n[INFO] ...done"
 
 ## CSI Hostpath installation
 echo -e "[INFO] Enabling csi-hostpath-driver storage class as default..."

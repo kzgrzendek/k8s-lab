@@ -27,6 +27,7 @@
         "Masq",
         "Minkube",
         "modifyvm",
+        "nodeinit",
         "openebs",
         "sctl",
         "sproject",

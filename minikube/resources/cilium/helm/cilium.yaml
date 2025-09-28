@@ -1,0 +1,28 @@
+routingMode: "tunnel"
+autoDirectNodeRoutes: false
+
+kubeProxyReplacement: true
+enableHostReachableServices: true
+
+bpf:
+  masquerade: true
+
+nodePort:
+  enabled: true
+
+hubble:
+  relay:
+    enabled: true
+  ui:
+    enabled: true
+    ingress:
+      enabled: true
+      className: "cilium"
+      hosts:
+        - "minikube.local"
+      path: "/hubble"
+
+ingressController:
+  enabled: true
+  service:
+    type: NodePort

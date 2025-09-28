@@ -1,4 +1,0 @@
-ingressController:
-  enabled: true
-  service:
-    type: LoadBalancer
