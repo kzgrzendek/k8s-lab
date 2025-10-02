@@ -33,6 +33,7 @@
         "sproject",
         "sshpass",
         "storageclass",
+        "vmks",
         "volumesnapshots",
         "vxlan",
         "ZGRZENDEK"

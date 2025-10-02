@@ -15,14 +15,27 @@ hubble:
     enabled: true
   ui:
     enabled: true
+    baseUrl: "/hubble"
     ingress:
       enabled: true
+      annotations:
+        ingress.cilium.io/force-https: disabled
+        ingress.cilium.io/protocol: http/1.1
       className: "cilium"
       hosts:
         - "minikube.local"
-      path: "/hubble"
+    service:
+      type: "ClusterIP"
 
 ingressController:
   enabled: true
+  default: true
+  enforceHttps: false
+  loadbalancerMode: "shared"
   service:
     type: NodePort
+    insecureNodePort: 30080
+    secureNodePort: 30443
+
+
+

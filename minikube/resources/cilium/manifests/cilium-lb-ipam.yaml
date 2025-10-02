@@ -1,9 +1,0 @@
-apiVersion: "cilium.io/v2"
-kind: CiliumLoadBalancerIPPool
-metadata:
-  name: cilium-lb-ipam
-  namespace: kube-system
-spec:
-  allowFirstLastIPs: "No"
-  blocks:
-    - cidr: "192.168.49.200/29"

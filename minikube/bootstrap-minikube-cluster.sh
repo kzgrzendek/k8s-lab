@@ -41,6 +41,7 @@ helm repo add cilium https://helm.cilium.io/ --force-update
 helm repo add falcosecurity https://falcosecurity.github.io/charts --force-update
 helm repo add kyverno https://kyverno.github.io/kyverno/ --force-update
 helm repo add coredns https://coredns.github.io/helm --force-update
+helm repo add vm https://victoriametrics.github.io/helm-charts --force-update
 helm repo update
 echo -e "\n[INFO] ...done"
 
@@ -111,6 +112,16 @@ helm upgrade falco falcosecurity/falco \
     --namespace falco \
     --create-namespace \
     --set tty=true \
+    --wait
+echo -e "\n[INFO] ...done"
+
+## Victoria Metrics K8S Stack
+echo -e "\n[INFO] Installing Victoria Metrics K8S Stack..."
+helm upgrade vmks vm/victoria-metrics-k8s-stack \
+    --install \
+    --namespace victoriametrics \
+    -f ./resources/victoriametrics/helm/vmks.yaml \
+    --create-namespace \
     --wait
 echo -e "\n[INFO] ...done"
 
