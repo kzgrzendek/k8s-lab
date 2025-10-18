@@ -1,6 +1,43 @@
 grafana:
   enabled: true
 
+  envFromSecret: "grafana-oidc-credentials"
+
+
+  grafana.ini:
+    server:
+      root_url: "%(protocol)s://%(domain)s/"
+      domain: "grafana.k8s-lab.local"
+    auth.generic_oauth:
+        enabled: true
+        name: Keycloak  # this will be the oidc button name  
+        allow_sign_up: true
+        client_id: grafana  # this is your grafana client name on keycloak 
+        scopes: openid profile email groups roles # should match with keycloak client scope setting 
+        auth_url: http://keycloak.k8s-lab.local/realms/k8s-lab/protocol/openid-connect/auth
+        token_url: http://keycloak.svc.cluster.local/realms/k8s-lab/protocol/openid-connect/token
+        api_url: http://keycloak.k8s-lab.local/realms/k8s-lab/protocol/openid-connect/userinfo
+        signout_redirect_url: http://keycloak.k8s-lab.local/realms/k8s-lab/protocol/openid-connect/auth
+        role_attribute_strict: true
+        role_attribute_path:  (contains(grafana.roles[], 'grafanaAdmin') && 'GrafanaAdmin') || (contains(grafana.roles[], 'admin') && 'Admin') || (contains(grafana.roles[], 'editor') && 'Editor') || 'Viewer'
+        allow_assign_grafana_admin: true  # enable grafanaAdmin login through Keycloak
+        email_attribute_path: email # from values from token
+        name_attribute_path: preferred_username  # from values from token
+        login_attribute_path: preferred_username # email or preferred_username or something from tokens
+    auth:
+      disable_login_form: true 
+      oauth_auto_login: true 
+      oauth_skip_org_role_update_sync: false  
+      skip_org_role_sync: false  
+    users:
+      auto_assign_org: true
+      auto_assign_org_role: Viewer  # default org_role
+      auto_assign_org_id: 1
+    security:
+      disable_initial_admin_creation: false
+      allow_embedding: true
+      cookie_secure: false
+
   admin:
     existingSecret: grafana-admin
 

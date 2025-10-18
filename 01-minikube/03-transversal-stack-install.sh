@@ -91,7 +91,7 @@ echo -e "\n[INFO] ...done"
 ### Victoria Metrics K8S Stack
 echo -e "\n[INFO] Installing Victoria Metrics K8S Stack..."
 kubectl create namespace victoriametrics --dry-run=client -o yaml | kubectl apply -f -
-kubectl -n victoriametrics apply -f ./resources/victoriametrics/secrets/grafana-admin-credentials.yaml
+kubectl -n victoriametrics apply -f ./resources/victoriametrics/secrets/
 
 helm upgrade vmks vm/victoria-metrics-k8s-stack \
     --install \
