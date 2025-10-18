@@ -1,0 +1,8 @@
+# VictoriaTraces server
+server:
+  # disk-based retention
+  retentionDiskSpaceUsage: 10GB
+
+  # Storage size for the ingested traces
+  persistentVolume:
+    size: 10Gi

@@ -1,24 +1,15 @@
 #!/bin/bash
 
 ##############################################################################################################
-# Name: bootstrap-minikube-cluster.sh                                                                        #
+# Name: 02-base-stack-install.sh                                                                             #
 # Version: 0.1                                                                                               #
 # Author: @kzgrzendek                                                                                        #
-# Description: Helper script to bootstrap a multi-node local Minikube cluster enabling IA and data workload, #
-#              while maintaining production grade services (CNI, CSI, OIDC, Monitoring and Observability...)    #
+# Description: Helper script to install the technical components on which the cluster will operate.          #
 ############################################################################################################## 
 
 set -eup
 
-echo -e "[INFO] Stating Minkube provisioning script v1.0"
-
-echo -e "\n[INFO] Checking if minikube is installed..."
-if command -v minikube &>/dev/null; then
-    echo -e "[INFO] ...minikube is installed."
-else
-    echo -e "[ERROR] ...minikube is not installed! Please follow these instructions and launch the script again : https://minikube.sigs.k8s.io/docs/start/?arch=%2Flinux%2Fx86-64%2Fstable%2Fbinary+download"
-    exit 1
-fi
+echo -e "[INFO] Stating K8S base stack install script v1.0"
 
 echo -e "\n[INFO] Checking if kubectl is installed..."
 if command -v kubectl &>/dev/null; then
@@ -38,32 +29,10 @@ fi
 
 echo -e "\n[INFO] Adding Helm repositories..."
 helm repo add cilium https://helm.cilium.io/ --force-update
-helm repo add falcosecurity https://falcosecurity.github.io/charts --force-update
-helm repo add kyverno https://kyverno.github.io/kyverno/ --force-update
-helm repo add coredns https://coredns.github.io/helm --force-update
-helm repo add vm https://victoriametrics.github.io/helm-charts --force-update
 helm repo update
 echo -e "\n[INFO] ...done"
 
-# Bootstraping critical elements
-
-## Minikube cluster creation
-echo -e "[INFO] Stating Minikube cluster..."
-minikube start \
-    --install-addons=false \
-    --driver docker \
-    --docker-env TZ=Europe/Paris \
-    --cpus 4 \
-    --memory 4096 \
-    --container-runtime docker \
-    --gpus all \
-    --kubernetes-version v1.33.5 \
-    --network-plugin cni\
-    --cni false \
-    --nodes 3 \
-    --extra-config kubelet.node-ip=0.0.0.0 \
-    --extra-config=kube-proxy.skip-headers=true
-echo -e "\n[INFO] ...done"
+# Base Stack Install
 
 ## CNI Cilium installation
 echo -e "\n[INFO] Installing Cilium CNI..."
@@ -92,38 +61,6 @@ echo -e "\n[INFO] ...done"
 ## NVIDIA GPU support
 echo -e "[INFO] Enabling NVidia Device Plugin Support..."
 minikube addons enable nvidia-device-plugin
-echo -e "\n[INFO] ...done"
-
-# Installing security stack
-
-## Kyverno
-echo -e "\n[INFO] Installing Kyverno..."
-helm upgrade kyverno kyverno/kyverno \
-    --install \
-    --namespace kyverno\
-    --create-namespace \
-    --wait
-echo -e "\n[INFO] ...done"
-
-
-## Falco
-echo -e "\n[INFO] Installing Falco..."
-helm upgrade falco falcosecurity/falco \
-    --install \
-    --namespace falco \
-    --create-namespace \
-    --set tty=true \
-    --wait
-echo -e "\n[INFO] ...done"
-
-## Victoria Metrics K8S Stack
-echo -e "\n[INFO] Installing Victoria Metrics K8S Stack..."
-helm upgrade vmks vm/victoria-metrics-k8s-stack \
-    --install \
-    --namespace victoriametrics \
-    -f ./resources/victoriametrics/helm/vmks.yaml \
-    --create-namespace \
-    --wait
 echo -e "\n[INFO] ...done"
 
 echo -e "\n[INFO] Script terminated successfully!"

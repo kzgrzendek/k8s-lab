@@ -1,8 +1,0 @@
-grafana:
-  enabled: true
-  ingress:
-    enabled: true
-    hosts:
-      - grafana.k8s-lab.local
-    path: /
-    pathType: Prefix

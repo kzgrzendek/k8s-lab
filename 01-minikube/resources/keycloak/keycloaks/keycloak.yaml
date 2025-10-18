@@ -1,0 +1,33 @@
+apiVersion: k8s.keycloak.org/v2alpha1
+kind: Keycloak
+metadata:
+  name: keycloak
+  namespace: keycloak
+spec:
+  instances: 1
+  db:
+    vendor: postgres
+    host: postgres-db.keycloak.svc.cluster.local
+    usernameSecret:
+      name: keycloak-db-secret
+      key: username
+    passwordSecret:
+      name: keycloak-db-secret
+      key: password
+  bootstrapAdmin:
+    user:
+      secret: keycloak-admin-secret
+  http:
+    httpEnabled: true
+    httpPort: 8180
+  ingress:
+    enabled: true
+    className: cilium
+  hostname:
+    hostname: keycloak.k8s-lab.local
+    strict: false
+  proxy:
+    headers: xforwarded
+  additionalOptions:
+    - name: https-management-client-auth
+      value: 'none'

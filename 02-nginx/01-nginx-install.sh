@@ -1,7 +1,7 @@
 #!/bin/bash
 
 ##############################################################################################################
-# Name: bind9-install.sh                                                                                     #
+# Name: nginx-install.sh                                                                                     #
 # Version: 0.1                                                                                               #
 # Author: @kzgrzendek                                                                                        #
 # Description: Helper script to bootstrap a nginx instance to handle the traffic routing to the k8s local    #
