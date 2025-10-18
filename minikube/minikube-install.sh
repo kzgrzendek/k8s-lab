@@ -52,6 +52,7 @@ echo -e "[INFO] Stating Minikube cluster..."
 minikube start \
     --install-addons=false \
     --driver docker \
+    --docker-env TZ=Europe/Paris \
     --cpus 4 \
     --memory 4096 \
     --container-runtime docker \

@@ -3,6 +3,6 @@ grafana:
   ingress:
     enabled: true
     hosts:
-      - minikube.local
-    path: /grafana
+      - grafana.k8s-lab.local
+    path: /
     pathType: Prefix

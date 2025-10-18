@@ -1,0 +1,12 @@
+$TTL    604800
+@       IN      SOA     ns1.k8s-lab.local. admin.k8s-lab.local. (
+                      2025101601 ; Serial
+                         604800  ; Refresh
+                          86400  ; Retry
+                        2419200  ; Expire
+                         604800) ; Negative Cache TTL
+;
+@       IN      NS      ns1.k8s-lab.local.
+@       IN      A       127.0.0.1
+*       IN      A       127.0.0.1
+ns1     IN      A       127.0.0.1

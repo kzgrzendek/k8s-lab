@@ -1,5 +1,6 @@
 {
     "cSpell.words": [
+        "andyshinn",
         "annoucementpolicy",
         "apiserver",
         "bento",
@@ -12,6 +13,7 @@
         "coreutils",
         "cpus",
         "disksize",
+        "dnsmasq",
         "Falco",
         "falcosecurity",
         "findutils",

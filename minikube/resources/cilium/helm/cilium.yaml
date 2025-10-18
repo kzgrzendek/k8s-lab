@@ -15,7 +15,7 @@ hubble:
     enabled: true
   ui:
     enabled: true
-    baseUrl: "/hubble"
+    baseUrl: "/"
     ingress:
       enabled: true
       annotations:
@@ -23,7 +23,7 @@ hubble:
         ingress.cilium.io/protocol: http/1.1
       className: "cilium"
       hosts:
-        - "minikube.local"
+        - "hubble.k8s-lab.local"
     service:
       type: "ClusterIP"
 
