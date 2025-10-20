@@ -77,6 +77,7 @@ kubectl -n keycloak wait -l statefulset.kubernetes.io/pod-name=postgresql-db-0 -
 kubectl -n keycloak apply -R -f ./resources/keycloak/secrets
 kubectl -n keycloak apply -R -f ./resources/keycloak/keycloaks
 
+
 ## Victoria Stack
 ### Victoria Logs
 echo -e "\n[INFO] Installing Victoria Logs Server..."

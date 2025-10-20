@@ -51,6 +51,9 @@ helm upgrade cilium cilium/cilium \
     --set k8sServicePort=$(kubectl config view --minify -o jsonpath='{.clusters[0].cluster.server}' | sed -E 's|.*:(.*)|\1|') \
     --wait
 
+## CoreDNS configuration
+kubectl -n keycloak apply -R -f ./resources/coredns/configmaps
+
 ## CSI Hostpath installation
 echo -e "[INFO] Enabling csi-hostpath-driver storage class as default..."
 minikube addons enable volumesnapshots

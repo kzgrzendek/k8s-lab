@@ -17,9 +17,12 @@ spec:
   bootstrapAdmin:
     user:
       secret: keycloak-admin-secret
+  networkPolicy:
+    enabled: false
   http:
     httpEnabled: true
-    httpPort: 8180
+    httpPort: 80
+    httpsPort: 443
   ingress:
     enabled: true
     className: cilium

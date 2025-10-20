@@ -15,11 +15,11 @@ grafana:
         client_id: grafana  # this is your grafana client name on keycloak 
         scopes: openid profile email groups roles # should match with keycloak client scope setting 
         auth_url: http://keycloak.k8s-lab.local/realms/k8s-lab/protocol/openid-connect/auth
-        token_url: http://keycloak.svc.cluster.local/realms/k8s-lab/protocol/openid-connect/token
+        token_url: http://keycloak.k8s-lab.local/realms/k8s-lab/protocol/openid-connect/token
         api_url: http://keycloak.k8s-lab.local/realms/k8s-lab/protocol/openid-connect/userinfo
         signout_redirect_url: http://keycloak.k8s-lab.local/realms/k8s-lab/protocol/openid-connect/auth
         role_attribute_strict: true
-        role_attribute_path:  (contains(grafana.roles[], 'grafanaAdmin') && 'GrafanaAdmin') || (contains(grafana.roles[], 'admin') && 'Admin') || (contains(grafana.roles[], 'editor') && 'Editor') || 'Viewer'
+        role_attribute_path:  (contains(groups[], 'ADMINS') && 'GrafanaAdmin') || (contains(groups[], 'ADMINS') && 'Admin') || (contains(groups[], 'USERS') && 'Editor') || 'Viewer'
         allow_assign_grafana_admin: true  # enable grafanaAdmin login through Keycloak
         email_attribute_path: email # from values from token
         name_attribute_path: preferred_username  # from values from token
