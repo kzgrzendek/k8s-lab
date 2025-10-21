@@ -19,7 +19,9 @@ docker run \
     --network minikube \
     --env TZ=Europe/Paris \
     --publish 80:80 \
-    --volume ./resources/nginx.conf:/etc/nginx/conf.d/default.conf \
+    --publish 443:443 \
+    --volume ./resources/nginx.conf:/etc/nginx/nginx.conf \
+    --volume ./resources/conf.d:/etc/nginx/conf.d \
     nginx:stable-alpine3.21-perl
 
 echo -e "\n[INFO] Script terminated successfully!"

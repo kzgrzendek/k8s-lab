@@ -19,11 +19,14 @@ hubble:
     ingress:
       enabled: true
       annotations:
-        ingress.cilium.io/force-https: disabled
-        ingress.cilium.io/protocol: http/1.1
+        cert-manager.io/cluster-issuer: selfsigned-issuer
       className: "cilium"
       hosts:
         - "hubble.k8s-lab.local"
+      tls:
+        - hosts:
+          - "hubble.k8s-lab.local"
+          secretName: hubble-ui-tls
     service:
       type: "ClusterIP"
 

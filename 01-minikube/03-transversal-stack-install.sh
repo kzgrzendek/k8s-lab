@@ -90,7 +90,6 @@ kubectl -n keycloak apply -f https://raw.githubusercontent.com/keycloak/keycloak
 kubectl -n keycloak apply -f https://raw.githubusercontent.com/keycloak/keycloak-k8s-resources/26.4.1/kubernetes/kubernetes.yml
 
 kubectl -n keycloak wait deploy/keycloak-operator --for=condition=Available --timeout=300s
-
 echo -e "\n[INFO] ...done"
 
 ### Keycloak Instance
@@ -104,7 +103,8 @@ kubectl -n keycloak apply -R -f ./resources/keycloak/keycloaks
 kubectl -n keycloak wait --for=condition=Ready keycloaks.k8s.keycloak.org/keycloak
 
 kubectl -n keycloak apply -R -f ./resources/keycloak/keycloakrealmimports
-kubectl -n keycloak wait --for=condition=Done keycloakrealmimports/k8s-lab --timeout=300s  
+kubectl -n keycloak wait --for=condition=Done keycloakrealmimports/k8s-lab --timeout=300s 
+echo -e "\n[INFO] ...done"
 
 
 ## Victoria Stack
