@@ -31,6 +31,7 @@ echo -e "\n[INFO] Adding Helm repositories..."
 helm repo add falcosecurity https://falcosecurity.github.io/charts --force-update
 helm repo add kyverno https://kyverno.github.io/kyverno/ --force-update
 helm repo add vm https://victoriametrics.github.io/helm-charts --force-update
+helm repo add jetstack https://charts.jetstack.io --force-update
 helm repo update
 echo -e "\n[INFO] ...done"
 
@@ -56,6 +57,28 @@ helm upgrade falco falcosecurity/falco \
     --wait
 echo -e "\n[INFO] ...done"
 
+## Cert Manager
+echo -e "\n[INFO] Installing Cert Manager..."
+kubectl create namespace cert-manager --dry-run=client -o yaml | kubectl apply -f -
+helm upgrade cert-manager jetstack/cert-manager \
+  --install \
+  --version v1.19.1 \
+  --namespace cert-manager \
+  --create-namespace \
+  --set crds.enabled=true \
+  --wait
+
+kubectl -n cert-manager apply -R -f ./resources/cert-manager/certificates
+kubectl -n cert-manager apply -R -f ./resources/cert-manager/clusterissuers
+echo -e "\n[INFO] ...done"
+
+## Trust Manager
+echo -e "\n[INFO] Installing Trust Manager..."
+helm upgrade trust-manager jetstack/trust-manager \
+  --install \
+  --namespace cert-manager \
+  --wait
+echo -e "\n[INFO] ...done"
 
 ## Keycloak
 ### Keycloak Operator
@@ -67,6 +90,7 @@ kubectl -n keycloak apply -f https://raw.githubusercontent.com/keycloak/keycloak
 kubectl -n keycloak apply -f https://raw.githubusercontent.com/keycloak/keycloak-k8s-resources/26.4.1/kubernetes/kubernetes.yml
 
 kubectl -n keycloak wait deploy/keycloak-operator --for=condition=Available --timeout=300s
+
 echo -e "\n[INFO] ...done"
 
 ### Keycloak Instance
@@ -75,7 +99,12 @@ kubectl -n keycloak apply -R -f ./resources/keycloak/postresql
 kubectl -n keycloak wait -l statefulset.kubernetes.io/pod-name=postgresql-db-0 --for=condition=ready pod --timeout=300s
 
 kubectl -n keycloak apply -R -f ./resources/keycloak/secrets
+
 kubectl -n keycloak apply -R -f ./resources/keycloak/keycloaks
+kubectl -n keycloak wait --for=condition=Ready keycloaks.k8s.keycloak.org/keycloak
+
+kubectl -n keycloak apply -R -f ./resources/keycloak/keycloakrealmimports
+kubectl -n keycloak wait --for=condition=Done keycloakrealmimports/k8s-lab --timeout=300s  
 
 
 ## Victoria Stack
