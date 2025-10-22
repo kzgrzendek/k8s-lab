@@ -64,7 +64,7 @@ grafana:
     tls:
       - hosts:
         - grafana.k8s-lab.local
-        secretName: hubble-ui-tls
+        secretName: grafana-tls
 
 
   extraSecretMounts:
