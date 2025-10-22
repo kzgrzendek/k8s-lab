@@ -3,7 +3,6 @@ grafana:
 
   envFromSecret: "grafana-oidc-credentials"
 
-
   grafana.ini:
     server:
       root_url: "%(protocol)s://%(domain)s/"
@@ -14,10 +13,10 @@ grafana:
         allow_sign_up: true
         client_id: grafana  # this is your grafana client name on keycloak 
         scopes: openid profile email groups roles # should match with keycloak client scope setting 
-        auth_url: http://keycloak.k8s-lab.local/realms/k8s-lab/protocol/openid-connect/auth
-        token_url: http://keycloak.k8s-lab.local/realms/k8s-lab/protocol/openid-connect/token
-        api_url: http://keycloak.k8s-lab.local/realms/k8s-lab/protocol/openid-connect/userinfo
-        signout_redirect_url: http://keycloak.k8s-lab.local/realms/k8s-lab/protocol/openid-connect/auth
+        auth_url: https://keycloak.k8s-lab.local/realms/k8s-lab/protocol/openid-connect/auth
+        token_url: https://keycloak.k8s-lab.local/realms/k8s-lab/protocol/openid-connect/token
+        api_url: https://keycloak.k8s-lab.local/realms/k8s-lab/protocol/openid-connect/userinfo
+        signout_redirect_url: https://keycloak.k8s-lab.local/realms/k8s-lab/protocol/openid-connect/auth
         role_attribute_strict: true
         role_attribute_path:  (contains(groups[], 'ADMINS') && 'GrafanaAdmin') || (contains(groups[], 'ADMINS') && 'Admin') || (contains(groups[], 'USERS') && 'Editor') || 'Viewer'
         allow_assign_grafana_admin: true  # enable grafanaAdmin login through Keycloak
@@ -56,7 +55,19 @@ grafana:
 
   ingress:
     enabled: true
+    annotations:
+      cert-manager.io/cluster-issuer: selfsigned-issuer
     hosts:
       - grafana.k8s-lab.local
     path: /
     pathType: Prefix
+    tls:
+      - hosts:
+        - grafana.k8s-lab.local
+        secretName: hubble-ui-tls
+
+
+  extraSecretMounts:
+    - name: ca-bundle
+      mountPath: "/etc/ssl/certs"
+      secretName: selfsigned-bundle

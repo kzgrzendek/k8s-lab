@@ -17,20 +17,23 @@ spec:
   bootstrapAdmin:
     user:
       secret: keycloak-admin-secret
+  truststores:
+    selfsigned-trustore:
+      secret:
+        name: selfsigned-bundle
   networkPolicy:
     enabled: false
   http:
     httpEnabled: true
     httpPort: 80
-    httpsPort: 443
   ingress:
     enabled: true
+    annotations:
+      cert-manager.io/cluster-issuer: selfsigned-issuer
     className: cilium
+    tlsSecret: keycloak-tls
   hostname:
     hostname: keycloak.k8s-lab.local
     strict: false
   proxy:
     headers: xforwarded
-  additionalOptions:
-    - name: https-management-client-auth
-      value: 'none'

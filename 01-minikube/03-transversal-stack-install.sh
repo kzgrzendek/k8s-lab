@@ -7,8 +7,6 @@
 # Description: Helper script to the transversal stack that will address cross-cutting concerns               #
 ############################################################################################################## 
 
-set -eup
-
 echo -e "[INFO] Stating K8S transversal stack install script v1.0"
 
 echo -e "\n[INFO] Checking if kubectl is installed..."
@@ -28,44 +26,24 @@ else
 fi
 
 echo -e "\n[INFO] Adding Helm repositories..."
-helm repo add falcosecurity https://falcosecurity.github.io/charts --force-update
-helm repo add kyverno https://kyverno.github.io/kyverno/ --force-update
-helm repo add vm https://victoriametrics.github.io/helm-charts --force-update
 helm repo add jetstack https://charts.jetstack.io --force-update
+helm repo add vm https://victoriametrics.github.io/helm-charts --force-update
 helm repo update
 echo -e "\n[INFO] ...done"
 
 # Installing transversal stack
 
-## Kyverno
-echo -e "\n[INFO] Installing Kyverno..."
-kubectl create namespace kyverno --dry-run=client -o yaml | kubectl apply -f -
-helm upgrade kyverno kyverno/kyverno \
-    --install \
-    --namespace kyverno \
-    --wait
-echo -e "\n[INFO] ...done"
-
-
-## Falco
-echo -e "\n[INFO] Installing Falco..."
-kubectl create namespace falco --dry-run=client -o yaml | kubectl apply -f -
-helm upgrade falco falcosecurity/falco \
-    --install \
-    --namespace falco \
-    --set tty=true \
-    --wait
-echo -e "\n[INFO] ...done"
-
 ## Cert Manager
 echo -e "\n[INFO] Installing Cert Manager..."
 kubectl create namespace cert-manager --dry-run=client -o yaml | kubectl apply -f -
+kubectl -n cert-manager apply -R -f ./resources/cert-manager/secrets
+
 helm upgrade cert-manager jetstack/cert-manager \
   --install \
   --version v1.19.1 \
   --namespace cert-manager \
   --create-namespace \
-  --set crds.enabled=true \
+  -f ./resources/cert-manager/helm/cert-manager.yaml \
   --wait
 
 kubectl -n cert-manager apply -R -f ./resources/cert-manager/certificates
@@ -77,13 +55,17 @@ echo -e "\n[INFO] Installing Trust Manager..."
 helm upgrade trust-manager jetstack/trust-manager \
   --install \
   --namespace cert-manager \
+  -f ./resources/trust-manager/helm/trust-manager.yaml \
   --wait
+
+kubectl -n cert-manager apply -R -f ./resources/trust-manager/bundles
 echo -e "\n[INFO] ...done"
 
 ## Keycloak
 ### Keycloak Operator
 echo -e "\n[INFO] Installing Keycloak Operator..."
 kubectl create namespace keycloak --dry-run=client -o yaml | kubectl apply -f -
+kubectl label namespace keycloak trust-manager/inject=enabled
 
 kubectl -n keycloak apply -f https://raw.githubusercontent.com/keycloak/keycloak-k8s-resources/26.4.1/kubernetes/keycloaks.k8s.keycloak.org-v1.yml
 kubectl -n keycloak apply -f https://raw.githubusercontent.com/keycloak/keycloak-k8s-resources/26.4.1/kubernetes/keycloakrealmimports.k8s.keycloak.org-v1.yml
@@ -103,7 +85,7 @@ kubectl -n keycloak apply -R -f ./resources/keycloak/keycloaks
 kubectl -n keycloak wait --for=condition=Ready keycloaks.k8s.keycloak.org/keycloak
 
 kubectl -n keycloak apply -R -f ./resources/keycloak/keycloakrealmimports
-kubectl -n keycloak wait --for=condition=Done keycloakrealmimports/k8s-lab --timeout=300s 
+kubectl -n keycloak wait --for=condition=Done keycloakrealmimports/k8s-lab --timeout=600s 
 echo -e "\n[INFO] ...done"
 
 
@@ -111,6 +93,7 @@ echo -e "\n[INFO] ...done"
 ### Victoria Logs
 echo -e "\n[INFO] Installing Victoria Logs Server..."
 kubectl create namespace victorialogs --dry-run=client -o yaml | kubectl apply -f -
+
 helm upgrade vls vm/victoria-logs-single \
     --install \
     --namespace victorialogs \
@@ -121,6 +104,8 @@ echo -e "\n[INFO] ...done"
 ### Victoria Metrics K8S Stack
 echo -e "\n[INFO] Installing Victoria Metrics K8S Stack..."
 kubectl create namespace victoriametrics --dry-run=client -o yaml | kubectl apply -f -
+kubectl label namespace victoriametrics trust-manager/inject=enabled
+
 kubectl -n victoriametrics apply -f ./resources/victoriametrics/secrets/
 
 helm upgrade vmks vm/victoria-metrics-k8s-stack \

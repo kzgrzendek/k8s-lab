@@ -7,8 +7,6 @@
 # Description: Helper script to install the technical components on which the cluster will operate.          #
 ############################################################################################################## 
 
-set -eup
-
 echo -e "[INFO] Stating K8S base stack install script v1.0"
 
 echo -e "\n[INFO] Checking if kubectl is installed..."
@@ -29,6 +27,8 @@ fi
 
 echo -e "\n[INFO] Adding Helm repositories..."
 helm repo add cilium https://helm.cilium.io/ --force-update
+helm repo add falcosecurity https://falcosecurity.github.io/charts --force-update
+helm repo add kyverno https://kyverno.github.io/kyverno/ --force-update
 helm repo update
 echo -e "\n[INFO] ...done"
 
@@ -67,3 +67,23 @@ minikube addons enable nvidia-device-plugin
 echo -e "\n[INFO] ...done"
 
 echo -e "\n[INFO] Script terminated successfully!"
+
+## Kyverno
+echo -e "\n[INFO] Installing Kyverno..."
+kubectl create namespace kyverno --dry-run=client -o yaml | kubectl apply -f -
+helm upgrade kyverno kyverno/kyverno \
+    --install \
+    --namespace kyverno \
+    --wait
+echo -e "\n[INFO] ...done"
+
+
+## Falco
+echo -e "\n[INFO] Installing Falco..."
+kubectl create namespace falco --dry-run=client -o yaml | kubectl apply -f -
+helm upgrade falco falcosecurity/falco \
+    --install \
+    --namespace falco \
+    --set tty=true \
+    --wait
+echo -e "\n[INFO] ...done"
