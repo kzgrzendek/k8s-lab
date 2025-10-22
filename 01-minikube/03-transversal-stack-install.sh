@@ -46,7 +46,6 @@ helm upgrade cert-manager jetstack/cert-manager \
   -f ./resources/cert-manager/helm/cert-manager.yaml \
   --wait
 
-kubectl -n cert-manager apply -R -f ./resources/cert-manager/certificates
 kubectl -n cert-manager apply -R -f ./resources/cert-manager/clusterissuers
 echo -e "\n[INFO] ...done"
 
@@ -80,12 +79,15 @@ kubectl -n keycloak apply -R -f ./resources/keycloak/postresql
 kubectl -n keycloak wait -l statefulset.kubernetes.io/pod-name=postgresql-db-0 --for=condition=ready pod --timeout=300s
 
 kubectl -n keycloak apply -R -f ./resources/keycloak/secrets
+kubectl -n keycloak apply -R -f ./resources/keycloak/certificates
 
 kubectl -n keycloak apply -R -f ./resources/keycloak/keycloaks
 kubectl -n keycloak wait --for=condition=Ready keycloaks.k8s.keycloak.org/keycloak
 
 kubectl -n keycloak apply -R -f ./resources/keycloak/keycloakrealmimports
-kubectl -n keycloak wait --for=condition=Done keycloakrealmimports/k8s-lab --timeout=600s 
+kubectl -n keycloak wait --for=condition=Done keycloakrealmimports/k8s-lab --timeout=600s
+
+kubectl -n keycloak apply -R -f ./resources/keycloak/ingresses
 echo -e "\n[INFO] ...done"
 
 

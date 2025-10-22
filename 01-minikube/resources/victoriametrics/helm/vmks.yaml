@@ -5,7 +5,7 @@ grafana:
 
   grafana.ini:
     server:
-      root_url: "%(protocol)s://%(domain)s/"
+      root_url: "https://%(domain)s/"
       domain: "grafana.k8s-lab.local"
     auth.generic_oauth:
         enabled: true

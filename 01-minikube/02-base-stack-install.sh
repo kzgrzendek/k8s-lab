@@ -52,7 +52,7 @@ helm upgrade cilium cilium/cilium \
     --wait
 
 ## CoreDNS configuration
-kubectl -n keycloak apply -R -f ./resources/coredns/configmaps
+kubectl -n kube-system apply -R -f ./resources/coredns/configmaps
 
 ## CSI Hostpath installation
 echo -e "[INFO] Enabling csi-hostpath-driver storage class as default..."

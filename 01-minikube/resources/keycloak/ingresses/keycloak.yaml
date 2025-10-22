@@ -1,0 +1,24 @@
+apiVersion: networking.k8s.io/v1
+kind: Ingress
+metadata:
+  name: keycloak
+  namespace: keycloak
+  annotations:
+    ingress.cilium.io/tls-passthrough: enabled
+  labels:
+    app: keycloak
+    app.kubernetes.io/instance: keycloak
+
+spec:
+  ingressClassName: cilium
+  rules:
+  - host: keycloak.k8s-lab.local
+    http:
+      paths:
+      - path: /
+        pathType: Prefix
+        backend:
+          service:
+            name: keycloak-service
+            port:
+              number: 443

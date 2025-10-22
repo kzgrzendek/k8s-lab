@@ -24,14 +24,11 @@ spec:
   networkPolicy:
     enabled: false
   http:
-    httpEnabled: true
-    httpPort: 80
-  ingress:
-    enabled: true
-    annotations:
-      cert-manager.io/cluster-issuer: selfsigned-issuer
-    className: cilium
+    httpEnabled: false
+    httpsPort: 443
     tlsSecret: keycloak-tls
+  ingress:
+    enabled: false
   hostname:
     hostname: keycloak.k8s-lab.local
     strict: false
