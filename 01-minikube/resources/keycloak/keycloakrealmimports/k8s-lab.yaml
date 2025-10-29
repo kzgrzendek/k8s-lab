@@ -661,20 +661,20 @@ spec:
       clientId: grafana
       name: grafana
       description: Client allowing OIDC connection to Grafana
-      rootUrl: http://grafana.k8s-lab.local
-      adminUrl: http://grafana.k8s-lab.local
-      baseUrl: http://grafana.k8s-lab.local
+      rootUrl: https://grafana.k8s-lab.local
+      adminUrl: https://grafana.k8s-lab.local
+      baseUrl: https://grafana.k8s-lab.local
       surrogateAuthRequired: false
       enabled: true
       alwaysDisplayInConsole: false
       clientAuthenticatorType: client-secret
       secret: OLANqOyLmQ7deODliaxm42CHttBu6jnl
       redirectUris:
-      - http://grafana.k8s-lab.local/*
+      - https://grafana.k8s-lab.local/*
       webOrigins:
-      - http://grafana.k8s-lab.local/*
-      - http://grafana.k8s-lab.local
-      - http://grafana.k8s-lab.local/
+      - https://grafana.k8s-lab.local/*
+      - https://grafana.k8s-lab.local
+      - https://grafana.k8s-lab.local/
       notBefore: 0
       bearerOnly: false
       consentRequired: false
@@ -692,7 +692,7 @@ spec:
         backchannel.logout.session.required: 'true'
         standard.token.exchange.enabled: 'false'
         frontchannel.logout.session.required: 'true'
-        post.logout.redirect.uris: http://grafana.k8s-lab.local/*
+        post.logout.redirect.uris: https://grafana.k8s-lab.local/*
         display.on.consent.screen: 'false'
         oauth2.device.authorization.grant.enabled: 'false'
         use.jwks.url: 'false'

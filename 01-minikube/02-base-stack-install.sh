@@ -44,7 +44,6 @@ minikube ssh -n minikube-m03 "sudo /bin/bash -c 'grep \"bpffs /sys/fs/bpf\" /pro
 
 helm upgrade cilium cilium/cilium \
     --install \
-    --version 1.15.2 \
     --namespace kube-system \
     -f ./resources/cilium/helm/cilium.yaml \
     --set k8sServiceHost=$(minikube ip) \

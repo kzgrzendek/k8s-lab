@@ -4,8 +4,14 @@ autoDirectNodeRoutes: false
 kubeProxyReplacement: true
 enableHostReachableServices: true
 
+cni:
+  exclusive: false
+
 bpf:
   masquerade: true
+
+socketLB:
+  hostNamespaceOnly: true
 
 nodePort:
   enabled: true
@@ -29,6 +35,9 @@ hubble:
           secretName: hubble-ui-tls
     service:
       type: "ClusterIP"
+
+gatewayAPI:
+  enabled: true
 
 ingressController:
   enabled: true

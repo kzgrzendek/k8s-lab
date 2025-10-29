@@ -60,6 +60,14 @@ helm upgrade trust-manager jetstack/trust-manager \
 kubectl -n cert-manager apply -R -f ./resources/trust-manager/bundles
 echo -e "\n[INFO] ...done"
 
+# ## Gateway
+# echo -e "\n[INFO] Deploying Cluster Gateway..."
+# kubectl create namespace gateways --dry-run=client -o yaml | kubectl apply -f -
+
+# kubectl -n gateways apply -R -f ./resources/cluster-gateway/certificates
+# kubectl -n gateways apply -R -f ./resources/cluster-gateway/gateways
+# echo -e "\n[INFO] ...done"
+
 ## Keycloak
 ### Keycloak Operator
 echo -e "\n[INFO] Installing Keycloak Operator..."
