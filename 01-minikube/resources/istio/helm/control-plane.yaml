@@ -1,1 +1,12 @@
 profile: ambient
+
+
+global:
+  caAddress: "cert-manager-istio-csr.cert-manager.svc:443"
+
+  components: 
+    pilot:
+      k8s:
+        env: 
+          - name: ENABLE_CA_SERVER
+            value: false

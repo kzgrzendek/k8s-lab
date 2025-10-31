@@ -6,7 +6,7 @@ metadata:
 spec:
   secretName: keycloak-tls
   issuerRef:
-    name: selfsigned-issuer
+    name: k8s-lab-issuer
     kind: ClusterIssuer
   commonName: keycloak-service.keycloak-service.svc.cluster.local
   dnsNames:

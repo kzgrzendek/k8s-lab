@@ -108,10 +108,28 @@ helm upgrade trust-manager jetstack/trust-manager \
 kubectl -n cert-manager apply -R -f ./resources/trust-manager/bundles
 echo -e "\n[INFO] ...done"
 
+## Istio CSR
+
+#### Injecting trust bundle as generic secret for it to be used by Istio CSR
+kubectl label namespace cert-manager trust-manager/inject=enabled
+
+#### Initialising Istio Namespace
+kubectl create namespace istio-system --dry-run=client -o yaml | kubectl apply -f -
+
+#### Deploying the chart
+echo -e "\n[INFO] Installing Cert Manager Istio CSR..."
+
+helm upgrade cert-manager-istio-csr jetstack/cert-manager-istio-csr \
+  --install \
+  --namespace cert-manager \
+  -f ./resources/cert-manager/istio-csr/helm/istio-csr.yaml  \
+  --wait
+echo -e "\n[INFO] ...done"
+
+
 
 ## Istio
 echo -e "\n[INFO] Installing Istio ..."
-kubectl create namespace istio-system --dry-run=client -o yaml | kubectl apply -f -
 
 ### Base components
 echo -e "\n[INFO] Installing Istio base components..."

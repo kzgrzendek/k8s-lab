@@ -56,7 +56,7 @@ grafana:
   ingress:
     enabled: true
     annotations:
-      cert-manager.io/cluster-issuer: selfsigned-issuer
+      cert-manager.io/cluster-issuer: k8s-lab-issuer
     hosts:
       - grafana.k8s-lab.local
     path: /
@@ -70,4 +70,4 @@ grafana:
   extraSecretMounts:
     - name: ca-bundle
       mountPath: "/etc/ssl/certs"
-      secretName: selfsigned-bundle
+      secretName: k8s-lab-bundle

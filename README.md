@@ -9,6 +9,15 @@
 
 ## Install
 
+### Certificates
+
+#### K8S-LAB CA
+
+```sh
+cd 00-host-setup/resources/k8s-lab
+openssl req -new -x509 -config k8s-lab-ca.conf -keyout k8s-lab-ca.key -out k8s-lab-ca.crt -days 3600 -nodes
+```
+
 ### DNS Config
 Add the following to `/etc/systemd/resolved.conf.d/local-bind9-minikube.conf` :
 

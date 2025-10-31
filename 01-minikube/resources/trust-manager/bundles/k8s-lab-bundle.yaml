@@ -1,7 +1,7 @@
 apiVersion: trust.cert-manager.io/v1alpha1
 kind: Bundle
 metadata:
-  name: selfsigned-bundle
+  name: k8s-lab-bundle
   namespace: cert-manager
 spec:
   sources:
