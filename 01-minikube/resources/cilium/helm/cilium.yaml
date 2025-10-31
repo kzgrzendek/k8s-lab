@@ -8,7 +8,7 @@ cni:
   exclusive: false
 
 bpf:
-  masquerade: true
+  masquerade: false
 
 socketLB:
   hostNamespaceOnly: true
@@ -37,7 +37,7 @@ hubble:
       type: "ClusterIP"
 
 gatewayAPI:
-  enabled: true
+  enabled: false
 
 ingressController:
   enabled: true

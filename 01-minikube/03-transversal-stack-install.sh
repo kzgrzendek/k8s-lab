@@ -27,46 +27,33 @@ fi
 
 echo -e "\n[INFO] Adding Helm repositories..."
 helm repo add jetstack https://charts.jetstack.io --force-update
+helm repo add istio https://istio-release.storage.googleapis.com/charts --force-update
 helm repo add vm https://victoriametrics.github.io/helm-charts --force-update
 helm repo update
 echo -e "\n[INFO] ...done"
 
 # Installing transversal stack
 
-## Cert Manager
-echo -e "\n[INFO] Installing Cert Manager..."
-kubectl create namespace cert-manager --dry-run=client -o yaml | kubectl apply -f -
-kubectl -n cert-manager apply -R -f ./resources/cert-manager/secrets
-
-helm upgrade cert-manager jetstack/cert-manager \
-  --install \
-  --version v1.19.1 \
-  --namespace cert-manager \
-  --create-namespace \
-  -f ./resources/cert-manager/helm/cert-manager.yaml \
-  --wait
-
-kubectl -n cert-manager apply -R -f ./resources/cert-manager/clusterissuers
+## Kyverno
+echo -e "\n[INFO] Installing Kyverno..."
+kubectl create namespace kyverno --dry-run=client -o yaml | kubectl apply -f -
+helm upgrade kyverno kyverno/kyverno \
+    --install \
+    --namespace kyverno \
+    --wait
 echo -e "\n[INFO] ...done"
 
-## Trust Manager
-echo -e "\n[INFO] Installing Trust Manager..."
-helm upgrade trust-manager jetstack/trust-manager \
-  --install \
-  --namespace cert-manager \
-  -f ./resources/trust-manager/helm/trust-manager.yaml \
-  --wait
 
-kubectl -n cert-manager apply -R -f ./resources/trust-manager/bundles
+## Falco
+echo -e "\n[INFO] Installing Falco..."
+kubectl create namespace falco --dry-run=client -o yaml | kubectl apply -f -
+helm upgrade falco falcosecurity/falco \
+    --install \
+    --namespace falco \
+    -f ./resources/falco/helm/falco.yaml \
+    --wait
 echo -e "\n[INFO] ...done"
 
-# ## Gateway
-# echo -e "\n[INFO] Deploying Cluster Gateway..."
-# kubectl create namespace gateways --dry-run=client -o yaml | kubectl apply -f -
-
-# kubectl -n gateways apply -R -f ./resources/cluster-gateway/certificates
-# kubectl -n gateways apply -R -f ./resources/cluster-gateway/gateways
-# echo -e "\n[INFO] ...done"
 
 ## Keycloak
 ### Keycloak Operator

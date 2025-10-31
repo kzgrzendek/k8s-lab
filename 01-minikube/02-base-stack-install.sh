@@ -26,6 +26,7 @@ else
 fi
 
 echo -e "\n[INFO] Adding Helm repositories..."
+helm repo add k8tz https://k8tz.github.io/k8tz/ --force-update
 helm repo add cilium https://helm.cilium.io/ --force-update
 helm repo add falcosecurity https://falcosecurity.github.io/charts --force-update
 helm repo add kyverno https://kyverno.github.io/kyverno/ --force-update
@@ -35,13 +36,12 @@ echo -e "\n[INFO] ...done"
 # Base Stack Install
 
 ## CNI Cilium installation
-echo -e "\n[INFO] Installing Cilium CNI..."
-
-# Mounting bpffs
+### Mounting bpffs
 minikube ssh -n minikube "sudo /bin/bash -c 'grep \"bpffs /sys/fs/bpf\" /proc/mounts || sudo mount bpffs -t bpf /sys/fs/bpf'"
 minikube ssh -n minikube-m02 "sudo /bin/bash -c 'grep \"bpffs /sys/fs/bpf\" /proc/mounts || sudo mount bpffs -t bpf /sys/fs/bpf'"
 minikube ssh -n minikube-m03 "sudo /bin/bash -c 'grep \"bpffs /sys/fs/bpf\" /proc/mounts || sudo mount bpffs -t bpf /sys/fs/bpf'"
 
+### Installing Cilium
 helm upgrade cilium cilium/cilium \
     --install \
     --namespace kube-system \
@@ -67,22 +67,85 @@ echo -e "\n[INFO] ...done"
 
 echo -e "\n[INFO] Script terminated successfully!"
 
-## Kyverno
-echo -e "\n[INFO] Installing Kyverno..."
-kubectl create namespace kyverno --dry-run=client -o yaml | kubectl apply -f -
-helm upgrade kyverno kyverno/kyverno \
+
+## K8tz
+echo -e "\n[INFO] Installing K8tz Timezone Controller..."
+
+kubectl create namespace k8tz --dry-run=client -o yaml | kubectl apply -f -
+helm upgrade k8tz k8tz/k8tz  \
     --install \
-    --namespace kyverno \
+    --namespace k8tz \
+    -f ./resources/k8tz/helm/k8tz.yaml \
     --wait
+
 echo -e "\n[INFO] ...done"
 
 
-## Falco
-echo -e "\n[INFO] Installing Falco..."
-kubectl create namespace falco --dry-run=client -o yaml | kubectl apply -f -
-helm upgrade falco falcosecurity/falco \
-    --install \
-    --namespace falco \
-    --set tty=true \
-    --wait
+## Cert Manager
+echo -e "\n[INFO] Installing Cert Manager..."
+kubectl create namespace cert-manager --dry-run=client -o yaml | kubectl apply -f -
+kubectl -n cert-manager apply -R -f ./resources/cert-manager/secrets
+
+helm upgrade cert-manager jetstack/cert-manager \
+  --install \
+  --version v1.19.1 \
+  --namespace cert-manager \
+  --create-namespace \
+  -f ./resources/cert-manager/helm/cert-manager.yaml \
+  --wait
+
+kubectl -n cert-manager apply -R -f ./resources/cert-manager/clusterissuers
+echo -e "\n[INFO] ...done"
+
+## Trust Manager
+echo -e "\n[INFO] Installing Trust Manager..."
+helm upgrade trust-manager jetstack/trust-manager \
+  --install \
+  --namespace cert-manager \
+  -f ./resources/trust-manager/helm/trust-manager.yaml \
+  --wait
+
+kubectl -n cert-manager apply -R -f ./resources/trust-manager/bundles
+echo -e "\n[INFO] ...done"
+
+
+## Istio
+echo -e "\n[INFO] Installing Istio ..."
+kubectl create namespace istio-system --dry-run=client -o yaml | kubectl apply -f -
+
+### Base components
+echo -e "\n[INFO] Installing Istio base components..."
+helm upgrade istio-base istio/base \
+  --install \
+  --namespace istio-system \
+  --wait
+
+### K8S Gateway CRDs
+echo -e "\n[INFO] Installing K8S Gateway CRDs..."
+kubectl get crd gateways.gateway.networking.k8s.io &> /dev/null || \
+  kubectl apply -f https://github.com/kubernetes-sigs/gateway-api/releases/download/v1.3.0/standard-install.yaml
+
+### Control plane
+echo -e "\n[INFO] Installing Istio Control Plane..."
+helm upgrade istiod istio/istiod \
+  --install \
+  --namespace istio-system \
+  -f ./resources/istio/helm/control-plane.yaml \
+  --wait
+
+### CNI Node Agent
+echo -e "\n[INFO] Installing Istio CNI Node Agent..."
+helm upgrade istio-cni istio/cni \
+  --install \
+  --namespace istio-system \
+  -f ./resources/istio/helm/cni-node-agent.yaml \
+  --wait
+
+### ZTunnel
+echo -e "\n[INFO] Installing Istio ZTunnel..."
+helm upgrade ztunnel istio/ztunnel \
+  --install \
+  --namespace istio-system \
+  --wait
+
 echo -e "\n[INFO] ...done"

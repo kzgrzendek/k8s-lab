@@ -16,7 +16,7 @@ grafana:
         auth_url: https://keycloak.k8s-lab.local/realms/k8s-lab/protocol/openid-connect/auth
         token_url: https://keycloak.k8s-lab.local/realms/k8s-lab/protocol/openid-connect/token
         api_url: https://keycloak.k8s-lab.local/realms/k8s-lab/protocol/openid-connect/userinfo
-        signout_redirect_url: https://keycloak.k8s-lab.local/realms/k8s-lab/protocol/openid-connect/auth
+        signout_redirect_url: https://keycloak.k8s-lab.local/realms/k8s-lab/protocol/openid-connect/logout
         role_attribute_strict: true
         role_attribute_path:  (contains(groups[], 'ADMINS') && 'GrafanaAdmin') || (contains(groups[], 'ADMINS') && 'Admin') || (contains(groups[], 'USERS') && 'Editor') || 'Viewer'
         allow_assign_grafana_admin: true  # enable grafanaAdmin login through Keycloak
