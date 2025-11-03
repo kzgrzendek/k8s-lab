@@ -1,7 +1,7 @@
 #!/bin/bash
 
 ##############################################################################################################
-# Name: 01-minikube-install.sh                                                                               #
+# Name: 00-k8s-setup.sh                                                                                      #
 # Version: 0.1                                                                                               #
 # Author: @kzgrzendek                                                                                        #
 # Description: Helper script to bootstrap a multi-node local Minikube cluster.                               #
@@ -19,7 +19,7 @@ else
     exit 1
 fi
 
-# Bootstraping critical elements
+# Bootstraping K8S Cluster - Minikube flavour
 
 ## Minikube cluster creation
 echo -e "[INFO] Stating Minikube cluster..."

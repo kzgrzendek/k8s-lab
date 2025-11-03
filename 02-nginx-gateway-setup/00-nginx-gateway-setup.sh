@@ -1,14 +1,14 @@
 #!/bin/bash
 
 ##############################################################################################################
-# Name: nginx-install.sh                                                                                     #
+# Name: 00-nginx-gateway-setup.sh                                                                            #
 # Version: 0.1                                                                                               #
 # Author: @kzgrzendek                                                                                        #
 # Description: Helper script to bootstrap a nginx instance to handle the traffic routing to the k8s local    #
 #              lab.                                                                                          #
 ############################################################################################################## 
 
-# set -eup
+set -eup
 
 echo -e "[INFO] Stating NGINX provisioning script v1.0"
 docker rm -f nginx-minikube > /dev/null 2>&1

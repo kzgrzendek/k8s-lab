@@ -1,0 +1,9 @@
+profile: ambient
+
+values:
+  pilot:
+    env:
+      - name: PILOT_CERT_PROVIDER
+        value: "kubernetes"
+      - name: ENABLE_CA_SERVER
+        value: "false"

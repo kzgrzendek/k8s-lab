@@ -1,11 +1,13 @@
 #!/bin/bash
 
 ##############################################################################################################
-# Name: 03-transversal-stack install.sh                                                                      #
+# Name: 00-tier2-setup.sh                                                                                    #
 # Version: 0.1                                                                                               #
 # Author: @kzgrzendek                                                                                        #
 # Description: Helper script to the transversal stack that will address cross-cutting concerns               #
 ############################################################################################################## 
+
+# set -eup
 
 echo -e "[INFO] Stating K8S transversal stack install script v1.0"
 
@@ -26,8 +28,8 @@ else
 fi
 
 echo -e "\n[INFO] Adding Helm repositories..."
-helm repo add jetstack https://charts.jetstack.io --force-update
-helm repo add istio https://istio-release.storage.googleapis.com/charts --force-update
+helm repo add kyverno https://kyverno.github.io/kyverno/ --force-update
+helm repo add falcosecurity https://falcosecurity.github.io/charts --force-update
 helm repo add vm https://victoriametrics.github.io/helm-charts --force-update
 helm repo update
 echo -e "\n[INFO] ...done"

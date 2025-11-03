@@ -1,7 +1,7 @@
 #!/bin/bash
 
 ##############################################################################################################
-# Name: 02-base-stack-install.sh                                                                             #
+# Name: 00-tier1-setup.sh                                                                                    #
 # Version: 0.1                                                                                               #
 # Author: @kzgrzendek                                                                                        #
 # Description: Helper script to install the technical components on which the cluster will operate.          #
@@ -26,10 +26,11 @@ else
 fi
 
 echo -e "\n[INFO] Adding Helm repositories..."
-helm repo add k8tz https://k8tz.github.io/k8tz/ --force-update
 helm repo add cilium https://helm.cilium.io/ --force-update
-helm repo add falcosecurity https://falcosecurity.github.io/charts --force-update
-helm repo add kyverno https://kyverno.github.io/kyverno/ --force-update
+helm repo add k8tz https://k8tz.github.io/k8tz/ --force-update
+helm repo add jetstack https://charts.jetstack.io --force-update
+helm repo add istio https://istio-release.storage.googleapis.com/charts --force-update
+helm repo add oauth2-proxy https://oauth2-proxy.github.io/manifests
 helm repo update
 echo -e "\n[INFO] ...done"
 
@@ -53,6 +54,7 @@ helm upgrade cilium cilium/cilium \
 ## CoreDNS configuration
 kubectl -n kube-system apply -R -f ./resources/coredns/configmaps
 
+
 ## CSI Hostpath installation
 echo -e "[INFO] Enabling csi-hostpath-driver storage class as default..."
 minikube addons enable volumesnapshots
@@ -60,12 +62,11 @@ minikube addons enable csi-hostpath-driver
 kubectl patch storageclass csi-hostpath-sc -p '{"metadata": {"annotations":{"storageclass.kubernetes.io/is-default-class":"true"}}}'
 echo -e "\n[INFO] ...done"
 
+
 ## NVIDIA GPU support
 echo -e "[INFO] Enabling NVidia Device Plugin Support..."
 minikube addons enable nvidia-device-plugin
 echo -e "\n[INFO] ...done"
-
-echo -e "\n[INFO] Script terminated successfully!"
 
 
 ## K8tz
@@ -127,7 +128,6 @@ helm upgrade cert-manager-istio-csr jetstack/cert-manager-istio-csr \
 echo -e "\n[INFO] ...done"
 
 
-
 ## Istio
 echo -e "\n[INFO] Installing Istio ..."
 
@@ -158,6 +158,7 @@ helm upgrade istio-cni istio/cni \
   --namespace istio-system \
   -f ./resources/istio/helm/cni-node-agent.yaml \
   --wait
+  echo -e "\n[INFO] ...done"
 
 ### ZTunnel
 echo -e "\n[INFO] Installing Istio ZTunnel..."
@@ -165,5 +166,16 @@ helm upgrade ztunnel istio/ztunnel \
   --install \
   --namespace istio-system \
   --wait
+echo -e "\n[INFO] ...done"
+
+
+# ## OAuth2-Proxy
+# kubectl create namespace oauth2-proxy --dry-run=client -o yaml | kubectl apply -f -
+
+# echo -e "\n[INFO] Installing OAuth2-Proxy..."
+# helm upgrade oauth2-proxy oauth2-proxy/oauth2-proxy \
+#   --install \
+#   --namespace oauth2-proxy \
+#   --wait
 
 echo -e "\n[INFO] ...done"

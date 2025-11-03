@@ -1,7 +1,7 @@
 #!/bin/bash
 
 ##############################################################################################################
-# Name: 03-transversal-stack install.sh                                                                      #
+# Name: 00-tier3-setup.sh                                                                                    #
 # Version: 0.1                                                                                               #
 # Author: @kzgrzendek                                                                                        #
 # Description: Helper script to the applicative stack that will address cross-cutting concerns               #

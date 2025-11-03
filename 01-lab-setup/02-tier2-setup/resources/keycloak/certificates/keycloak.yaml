@@ -8,7 +8,7 @@ spec:
   issuerRef:
     name: k8s-lab-issuer
     kind: ClusterIssuer
-  commonName: keycloak-service.keycloak-service.svc.cluster.local
+  commonName: keycloak-service.keycloak.svc.cluster.local
   dnsNames:
-  - keycloak-service.keycloak-service.svc.cluster.local
+  - keycloak-service.keycloak.svc.cluster.local
   - keycloak.k8s-lab.local
