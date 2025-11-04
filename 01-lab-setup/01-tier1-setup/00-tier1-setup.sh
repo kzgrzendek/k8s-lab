@@ -179,3 +179,5 @@ echo -e "\n[INFO] ...done"
 #   --wait
 
 echo -e "\n[INFO] ...done"
+
+echo -e "\n[INFO] Script terminated successfully!"
