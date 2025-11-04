@@ -19,6 +19,11 @@ else
     exit 1
 fi
 
+echo -e "[INFO] Cleaning old CA Certificates if any..."
+rm -f ./resources/certs/k8s-lab-ca.crt
+rm -f ./resources/certs/k8s-lab-ca.key
+
+echo -e "[INFO] Generating Root CA Certificate..."
 openssl req \
     -new \
     -x509 \
@@ -28,6 +33,7 @@ openssl req \
     -days 3600 \
     -nodes
 
+echo -e "[INFO] Outputting K8S Secret for next steps..."
 kubectl create secret tls k8s-lab-ca \
     --namespace cert-manager \
     --cert=./resources/certs/k8s-lab-ca.crt \
