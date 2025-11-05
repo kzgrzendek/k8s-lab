@@ -19,7 +19,7 @@ openssl req -new -x509 -config k8s-lab-ca.conf -keyout k8s-lab-ca.key -out k8s-l
 ```
 
 ### DNS Config
-Add the following to `/etc/systemd/resolved.conf.d/local-bind9-minikube.conf` :
+Add the following to `/etc/systemd/resolved.conf.d/local-k8s-lab-bind9-dns.conf` :
 
 ```txt
 [Resolve]

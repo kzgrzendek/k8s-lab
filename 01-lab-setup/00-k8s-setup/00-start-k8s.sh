@@ -1,17 +1,17 @@
 #!/bin/bash
 
 ##############################################################################################################
-# Name: 00-k8s-setup.sh                                                                                      #
+# Name: 00-start-k8s.sh                                                                                      #
 # Version: 0.1                                                                                               #
 # Author: @kzgrzendek                                                                                        #
-# Description: Helper script to bootstrap a multi-node local Minikube cluster.                               #
+# Description: Helper script to start a multi-node local Minikube cluster.                                   #
 ############################################################################################################## 
 
 set -eup
 
-echo -e "[INFO] Stating Minkube provisioning script v1.0"
+echo -e "[INFO] Starting Minkube provisioning script v1.0"
 
-echo -e "\n[INFO] Checking if minikube is installed..."
+echo -e "[INFO] Checking if minikube is installed..."
 if command -v minikube &>/dev/null; then
     echo -e "[INFO] ...minikube is installed."
 else
@@ -22,7 +22,7 @@ fi
 # Bootstraping K8S Cluster - Minikube flavour
 
 ## Minikube cluster creation
-echo -e "[INFO] Stating Minikube cluster..."
+echo -e "[INFO] Starting Minikube cluster..."
 minikube start \
     --install-addons=false \
     --driver docker \
@@ -32,11 +32,10 @@ minikube start \
     --container-runtime docker \
     --gpus all \
     --kubernetes-version v1.33.5 \
-    --network-plugin cni\
+    --network-plugin cni \
     --cni false \
     --nodes 3 \
     --extra-config kubelet.node-ip=0.0.0.0 \
     --extra-config=kube-proxy.skip-headers=true
-echo -e "\n[INFO] ...done"
 
-echo -e "\n[INFO] Script terminated successfully!"
+echo -e "[INFO] Minikube cluster started. \n"

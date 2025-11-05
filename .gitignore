@@ -1,5 +1,6 @@
-**/.vagrant/
-**/.terraform/
-**/.terraform*
-**/terraform.tfstate*
+# User local folder
 .local
+
+# User generated CA Cert and Key
+k8s-lab-ca.crt
+k8s-lab-ca.key

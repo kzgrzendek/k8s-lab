@@ -7,7 +7,7 @@
 # Description: Helper script to import a realm-backup CRD that can be mounted during keycloak setup          #
 ############################################################################################################## 
 
-echo -e "[INFO] Stating keycloak backup import helper script v1.0..."
+echo -e "[INFO] Starting keycloak backup import helper script v1.0..."
 
 echo -e "\n[INFO] Checking if kubectl is installed..."
 if command -v kubectl &>/dev/null; then
@@ -22,4 +22,4 @@ kubectl -n keycloak apply -R -f ../../01-lab-setup/02-tier2-setup/resources/keyc
 kubectl -n keycloak wait --for=condition=Done keycloakrealmimports/k8s-lab --timeout=600s
 echo -e "[INFO] ...done."
 
-echo -e "\n[INFO] Script terminated successfully!"
+echo -e "\n[INFO] ... done."

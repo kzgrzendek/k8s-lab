@@ -42,4 +42,4 @@ kubectl create secret tls k8s-lab-ca \
     -o yaml \
 > ../01-lab-setup/01-tier1-setup/resources/cert-manager/secrets/k8s-lab-ca.yaml
 
-echo -e "\n[INFO] Script terminated successfully!"
+echo -e "\n[INFO] ... done."

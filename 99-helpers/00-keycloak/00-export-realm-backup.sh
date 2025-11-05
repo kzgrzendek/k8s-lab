@@ -7,7 +7,7 @@
 # Description: Helper script to generate a realm-backup CRD that can be mounted during keycloak setup        #
 ############################################################################################################## 
 
-echo -e "[INFO] Stating keycloak backup export helper script v1.0..."
+echo -e "[INFO] Starting keycloak backup export helper script v1.0..."
 
 echo -e "\n[INFO] Checking if yq is installed..."
 if command -v yq &>/dev/null; then
@@ -45,4 +45,4 @@ kubectl exec \
 
 echo -e "\n[INFO] ...done."
 
-echo -e "\n[INFO] Script terminated successfully!"
+echo -e "\n[INFO] ... done."

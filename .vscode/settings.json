@@ -18,6 +18,7 @@
         "falcosecurity",
         "findutils",
         "hostpath",
+        "k8s",
         "Kévin",
         "keycloaks",
         "keygen",

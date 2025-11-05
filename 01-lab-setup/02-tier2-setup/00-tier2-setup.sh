@@ -7,11 +7,11 @@
 # Description: Helper script to the transversal stack that will address cross-cutting concerns               #
 ############################################################################################################## 
 
-# set -eup
+set -eup
 
-echo -e "[INFO] Stating K8S transversal stack install script v1.0"
+echo -e "[INFO] Starting K8S transversal stack install script v1.0 \n"
 
-echo -e "\n[INFO] Checking if kubectl is installed..."
+echo -e "[INFO] Checking if kubectl is installed..."
 if command -v kubectl &>/dev/null; then
     echo -e "[INFO] ...kubectl is installed."
 else
@@ -19,7 +19,7 @@ else
     exit 1
 fi
 
-echo -e "\n[INFO] Checking if helm is installed..."
+echo -e "[INFO] Checking if helm is installed..."
 if command -v helm &>/dev/null; then
     echo -e "[INFO] ...helm is installed."
 else
@@ -32,7 +32,7 @@ helm repo add kyverno https://kyverno.github.io/kyverno/ --force-update
 helm repo add falcosecurity https://falcosecurity.github.io/charts --force-update
 helm repo add vm https://victoriametrics.github.io/helm-charts --force-update
 helm repo update
-echo -e "\n[INFO] ...done"
+echo -e "[INFO] ...done."
 
 # Installing transversal stack
 
@@ -43,7 +43,7 @@ helm upgrade kyverno kyverno/kyverno \
     --install \
     --namespace kyverno \
     --wait
-echo -e "\n[INFO] ...done"
+echo -e "[INFO] ...done."
 
 
 ## Falco
@@ -54,7 +54,7 @@ helm upgrade falco falcosecurity/falco \
     --namespace falco \
     -f ./resources/falco/helm/falco.yaml \
     --wait
-echo -e "\n[INFO] ...done"
+echo -e "[INFO] ...done."
 
 
 ## Keycloak
@@ -68,7 +68,7 @@ kubectl -n keycloak apply -f https://raw.githubusercontent.com/keycloak/keycloak
 kubectl -n keycloak apply -f https://raw.githubusercontent.com/keycloak/keycloak-k8s-resources/26.4.1/kubernetes/kubernetes.yml
 
 kubectl -n keycloak wait deploy/keycloak-operator --for=condition=Available --timeout=300s
-echo -e "\n[INFO] ...done"
+echo -e "[INFO] ...done."
 
 ### Keycloak Instance
 echo -e "\n[INFO] Deploying a Keycloak Instance.."
@@ -79,13 +79,13 @@ kubectl -n keycloak apply -R -f ./resources/keycloak/secrets
 kubectl -n keycloak apply -R -f ./resources/keycloak/certificates
 
 kubectl -n keycloak apply -R -f ./resources/keycloak/keycloaks
-kubectl -n keycloak wait --for=condition=Ready keycloaks.k8s.keycloak.org/keycloak
+kubectl -n keycloak wait --for=condition=Ready keycloaks.k8s.keycloak.org/keycloak --timeout=300s
 
 kubectl -n keycloak apply -R -f ./resources/keycloak/keycloakrealmimports
-kubectl -n keycloak wait --for=condition=Done keycloakrealmimports/k8s-lab --timeout=600s
+kubectl -n keycloak wait --for=condition=Done keycloakrealmimports/k8s-lab-import --timeout=300s
 
 kubectl -n keycloak apply -R -f ./resources/keycloak/ingresses
-echo -e "\n[INFO] ...done"
+echo -e "[INFO] ...done"
 
 
 ## Victoria Stack
@@ -98,7 +98,7 @@ helm upgrade vls vm/victoria-logs-single \
     --namespace victorialogs \
     -f ./resources/victorialogs/helm/vlogs.yaml \
     --wait
-echo -e "\n[INFO] ...done"
+echo -e "[INFO] ...done."
 
 ### Victoria Metrics K8S Stack
 echo -e "\n[INFO] Installing Victoria Metrics K8S Stack..."
@@ -112,6 +112,6 @@ helm upgrade vmks vm/victoria-metrics-k8s-stack \
     --namespace victoriametrics \
     -f ./resources/victoriametrics/helm/vmks.yaml \
     --wait
-echo -e "\n[INFO] ...done"
+echo -e "[INFO] ...done."
 
-echo -e "\n[INFO] Script terminated successfully!"
+echo -e "\n[INFO] Tier 2 layer sucessfully deployed.\n"

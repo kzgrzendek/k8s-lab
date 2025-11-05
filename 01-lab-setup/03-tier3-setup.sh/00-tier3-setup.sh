@@ -9,9 +9,9 @@
 
 set -eup
 
-echo -e "[INFO] Stating K8S transversal stack install script v1.0"
+echo -e "[INFO] Starting K8S transversal stack install script v1.0 \n"
 
-echo -e "\n[INFO] Checking if kubectl is installed..."
+echo -e "[INFO] Checking if kubectl is installed..."
 if command -v kubectl &>/dev/null; then
     echo -e "[INFO] ...kubectl is installed."
 else
@@ -19,7 +19,7 @@ else
     exit 1
 fi
 
-echo -e "\n[INFO] Checking if helm is installed..."
+echo -e "[INFO] Checking if helm is installed..."
 if command -v helm &>/dev/null; then
     echo -e "[INFO] ...helm is installed."
 else
@@ -38,6 +38,4 @@ echo -e "\n[INFO] ...done"
 
 ## Kubeflow
 
-
-
-echo -e "\n[INFO] Script terminated successfully!"
+echo -e "\n[INFO] Tier 3 layer sucessfully deployed.\n"
