@@ -1,0 +1,124 @@
+enabled: true
+fullnameOverride: oauth2-proxy
+
+replicas: 1
+
+image:
+  pullPolicy: IfNotPresent
+  repository: quay.io/oauth2-proxy/oauth2-proxy
+  tag: ""
+
+config:
+  existingSecret: oidc
+  existingConfig: {}
+
+extraArgs:
+  cookie-secure: true
+  cookie-name: oauth2
+  email-domain: k8s-lab.local
+  http-address: 0.0.0.0:4180
+  proxy-prefix: /oauth2
+  insecure-oidc-allow-unverified-email: true
+  oidc-issuer-url: https://keycloak.k8s-lab.local/realms/k8s-lab
+  provider: keycloak-oidc
+  redirect-url: https://oauth.k8s-lab.local/oauth2/callback
+  code-challenge-method: "S256"
+  reverse-proxy: true
+  scope: openid email profile
+  set-authorization-header: true
+  whitelist-domain: .*.k8s-lab.local
+  show-debug-on-error: true
+
+
+extraVolumes:
+  - name: ca-bundle
+    secret:
+      secretName: k8s-lab-bundle
+
+extraVolumeMounts:
+  - mountPath: /etc/ssl/certs
+    name: ca-bundle
+
+ingress:
+  enabled: true
+  className: nginx
+  annotations:
+    nginx.ingress.kubernetes.io/proxy-buffer-size: 50m
+    nginx.ingress.kubernetes.io/proxy-buffering: "on"
+    nginx.ingress.kubernetes.io/proxy-buffers-number: "4"
+    cert-manager.io/cluster-issuer: k8s-lab-issuer
+
+  tls:
+    - secretName: oauth2-proxy-tls
+      hosts:
+        - oauth.k8s-lab.local
+  hosts:
+    - oauth.k8s-lab.local
+  path: /oauth2
+  pathType: Prefix
+
+livenessProbe:
+  enabled: true
+  initialDelaySeconds: 5
+  timeoutSeconds: 1
+
+metrics:
+  enabled: false
+
+podDisruptionBudget:
+  enabled: true
+  minAvailable: 1
+
+readinessProbe:
+  enabled: true
+  initialDelaySeconds: 0
+  periodSeconds: 10
+  successThreshold: 1
+  timeoutSeconds: 1
+
+securityContext:
+  enabled: true
+  runAsNonRoot: true
+
+service:
+  portNumber: 4180
+  type: ClusterIP
+
+serviceAccount:
+  enabled: true
+
+sessionStorage:
+  type: redis
+  redis:
+    clientType: standalone
+    existingSecret: redis
+    passwordKey: redis-password
+    standalone:
+      connectionUrl: "redis://oauth2-proxy-redis:6379"
+
+
+redis: 
+  enabled: true
+
+  fullnameOverride: oauth2-proxy-redis
+  replicas: 1
+
+  existingSecret: redis
+  authKey: redis-password
+
+  redis: 
+    config:
+      min-replicas-to-write: 0
+
+  persistentVolume:
+    enabled: true
+    size: 10Gi 
+
+  networkPolicy:
+    enabled: false
+    # ingressRules:
+    # - selectors:
+    #   - podSelector:
+    #       matchLabels:
+    #         app.kubernetes.io/component: authentication-proxy
+    #         app.kubernetes.io/instance: ig-fhir-qua

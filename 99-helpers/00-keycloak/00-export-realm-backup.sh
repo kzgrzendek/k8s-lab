@@ -43,6 +43,6 @@ kubectl exec \
      ' \
 > ../../01-lab-setup/02-tier2-setup/resources/keycloak/keycloakrealmimports/k8s-lab.yaml
 
-echo -e "\n[INFO] ...done."
+echo -e "[INFO] ... done."
 
-echo -e "\n[INFO] ... done."
+echo -e "\n[INFO] Backup sucessfully generated."

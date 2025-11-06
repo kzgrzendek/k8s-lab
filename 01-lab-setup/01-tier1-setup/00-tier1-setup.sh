@@ -170,15 +170,17 @@ helm upgrade ztunnel istio/ztunnel \
 echo -e "[INFO] ...done\n"
 
 
-# ## OAuth2-Proxy
-# echo -e "\n[INFO] Installing OAuth2-Proxy..."
-# kubectl create namespace oauth2-proxy --dry-run=client -o yaml | kubectl apply -f -
-# kubectl label namespace victoriametrics trust-manager/inject=enabled
+### OAuth2-Proxy
+echo -e "\n[INFO] Installing OAuth2-Proxy..."
+kubectl create namespace oauth2-proxy --dry-run=client -o yaml | kubectl apply -f -
+kubectl label namespace oauth2-proxy trust-manager/inject=enabled
+kubectl -n oauth2-proxy apply -R -f ./resources/oauth2-proxy/secrets
 
-# helm upgrade oauth2-proxy oauth2-proxy/oauth2-proxy \
-#   --install \
-#   --namespace oauth2-proxy \
-#   --wait
-#echo -e "[INFO] ...done."
+helm upgrade oauth2-proxy oauth2-proxy/oauth2-proxy \
+  --install \
+  --namespace oauth2-proxy \
+  -f ./resources/oauth2-proxy/helm/oauth2-proxy.yaml \
+  --wait
+echo -e "[INFO] ...done."
 
 echo -e "\n[INFO] Tier 1 layer sucessfully deployed.\n"
