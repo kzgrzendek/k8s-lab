@@ -169,7 +169,7 @@ echo -e "[INFO] ...done\n"
 ### Gateway
 echo -e "\n[INFO] Deploying cluster gateway..."
 kubectl create namespace istio-gateway --dry-run=client -o yaml | kubectl apply -f -
-kubectl label namespace cert-manager trust-manager/inject=enabled
+kubectl label namespace istio-gateway trust-manager/inject=enabled
 kubectl -n istio-gateway apply -R -f ./resources/istio/configmaps
 kubectl -n istio-gateway apply -R -f ./resources/istio/gateways/gateway-tls.yaml
 echo -e "[INFO] ...done\n"
