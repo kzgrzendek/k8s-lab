@@ -4,3 +4,4 @@
 # User generated CA Cert and Key
 k8s-lab-ca.crt
 k8s-lab-ca.key
+.continue/agents/new-config.yaml

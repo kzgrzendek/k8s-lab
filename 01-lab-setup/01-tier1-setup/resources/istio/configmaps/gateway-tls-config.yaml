@@ -1,0 +1,16 @@
+apiVersion: v1
+kind: ConfigMap
+metadata:
+  name: gateway-tls-config
+  namespace: istio-gateway
+data:
+  service: |
+    spec:
+      type: NodePort
+      ports:
+      - appProtocol: https
+        name: https-termination
+        nodePort: 30443
+        port: 443
+        protocol: TCP
+        targetPort: 443

@@ -106,12 +106,13 @@ kubectl -n cert-manager apply -R -f ./resources/trust-manager/bundles
 echo -e "[INFO] ...done."
 
 ## Istio CSR
-
+echo -e "\n[INFO] Deploying Istio CSR component..."
 #### Initialising Istio Namespace
 kubectl create namespace istio-system --dry-run=client -o yaml | kubectl apply -f -
 
 #### Injecting trust bundle as generic secret for it to be used by Istio CSR
 kubectl label namespace cert-manager trust-manager/inject=enabled
+echo -e "[INFO] ...done."
 
 #### Deploying the chart
 echo -e "\n[INFO] Installing Cert Manager Istio CSR..."
@@ -127,7 +128,8 @@ echo -e "[INFO] ...done."
 ## Istio
 echo -e "\n[INFO] Installing Istio ..."
 
-### Base components
+
+### Base components setup
 echo -e "\n[INFO] Installing Istio base components..."
 helm upgrade istio-base istio/base \
   --install \
@@ -137,7 +139,7 @@ helm upgrade istio-base istio/base \
 ### K8S Gateway CRDs
 echo -e "\n[INFO] Installing K8S Gateway CRDs..."
 kubectl get crd gateways.gateway.networking.k8s.io &> /dev/null || \
-  kubectl apply -f https://github.com/kubernetes-sigs/gateway-api/releases/download/v1.3.0/standard-install.yaml
+kubectl apply -f https://github.com/kubernetes-sigs/gateway-api/releases/download/v1.3.0/standard-install.yaml
 
 ### Control plane
 echo -e "\n[INFO] Installing Istio Control Plane..."
@@ -167,6 +169,7 @@ echo -e "[INFO] ...done\n"
 ### Gateway
 echo -e "\n[INFO] Deploying cluster gateway..."
 kubectl create namespace istio-gateway --dry-run=client -o yaml | kubectl apply -f -
+kubectl -n istio-gateway apply -R -f ./resources/istio/configmaps
 kubectl -n istio-gateway apply -R -f ./resources/istio/gateways/gateway-tls.yaml
 echo -e "[INFO] ...done\n"
 

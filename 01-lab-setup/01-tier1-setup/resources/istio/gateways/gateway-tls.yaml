@@ -7,6 +7,11 @@ metadata:
     networking.istio.io/service-type: NodePort
     cert-manager.io/cluster-issuer: "selfsigned-issuer"
 spec:
+  infrastructure:
+    parametersRef:
+      group: ""
+      kind: ConfigMap
+      name: gateway-tls-config
   gatewayClassName: istio
   listeners:
   - name: https-termination
