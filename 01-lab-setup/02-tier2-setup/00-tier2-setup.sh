@@ -31,6 +31,7 @@ echo -e "\n[INFO] Adding Helm repositories..."
 helm repo add kyverno https://kyverno.github.io/kyverno/ --force-update
 helm repo add falcosecurity https://falcosecurity.github.io/charts --force-update
 helm repo add vm https://victoriametrics.github.io/helm-charts --force-update
+helm repo add oauth2-proxy https://oauth2-proxy.github.io/manifests --force-update
 helm repo update
 echo -e "[INFO] ...done."
 
@@ -86,6 +87,20 @@ kubectl -n keycloak wait --for=condition=Done keycloakrealmimports/k8s-lab-impor
 
 kubectl -n keycloak apply -R -f ./resources/keycloak/ingresses
 echo -e "[INFO] ...done"
+
+
+## OAuth2-Proxy
+echo -e "\n[INFO] Installing OAuth2-Proxy..."
+kubectl create namespace oauth2-proxy --dry-run=client -o yaml | kubectl apply -f -
+kubectl label namespace oauth2-proxy trust-manager/inject=enabled
+kubectl -n oauth2-proxy apply -R -f ./resources/oauth2-proxy/secrets
+
+helm upgrade oauth2-proxy oauth2-proxy/oauth2-proxy \
+  --install \
+  --namespace oauth2-proxy \
+  -f ./resources/oauth2-proxy/helm/oauth2-proxy.yaml \
+  --wait
+echo -e "[INFO] ...done."
 
 
 ## Victoria Stack

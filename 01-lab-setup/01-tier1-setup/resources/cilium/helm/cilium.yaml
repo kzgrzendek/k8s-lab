@@ -16,31 +16,11 @@ socketLB:
 nodePort:
   enabled: true
 
-hubble:
-  relay:
-    enabled: true
-  ui:
-    enabled: true
-    baseUrl: "/"
-    ingress:
-      enabled: true
-      annotations:
-        cert-manager.io/cluster-issuer: selfsigned-issuer
-      className: "cilium"
-      hosts:
-        - "hubble.k8s-lab.local"
-      tls:
-        - hosts:
-          - "hubble.k8s-lab.local"
-          secretName: hubble-ui-tls
-    service:
-      type: "ClusterIP"
-
 gatewayAPI:
   enabled: false
 
 ingressController:
-  enabled: true
+  enabled: false
   default: true
   enforceHttps: false
   loadbalancerMode: "shared"

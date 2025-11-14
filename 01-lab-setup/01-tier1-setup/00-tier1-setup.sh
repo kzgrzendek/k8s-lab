@@ -30,7 +30,6 @@ helm repo add cilium https://helm.cilium.io/ --force-update
 helm repo add k8tz https://k8tz.github.io/k8tz/ --force-update
 helm repo add jetstack https://charts.jetstack.io --force-update
 helm repo add istio https://istio-release.storage.googleapis.com/charts --force-update
-helm repo add oauth2-proxy https://oauth2-proxy.github.io/manifests
 helm repo update
 echo -e "[INFO] ...done"
 
@@ -38,10 +37,6 @@ echo -e "[INFO] ...done"
 
 ## CNI Cilium installation
 echo -e "\n[INFO] Installing Cilium CNI with Hubble..."
-### Mounting bpffs
-minikube ssh -n minikube "sudo /bin/bash -c 'grep \"bpffs /sys/fs/bpf\" /proc/mounts || sudo mount bpffs -t bpf /sys/fs/bpf'"
-minikube ssh -n minikube-m02 "sudo /bin/bash -c 'grep \"bpffs /sys/fs/bpf\" /proc/mounts || sudo mount bpffs -t bpf /sys/fs/bpf'"
-minikube ssh -n minikube-m03 "sudo /bin/bash -c 'grep \"bpffs /sys/fs/bpf\" /proc/mounts || sudo mount bpffs -t bpf /sys/fs/bpf'"
 
 ### Installing Cilium
 helm upgrade cilium cilium/cilium \
@@ -112,11 +107,11 @@ echo -e "[INFO] ...done."
 
 ## Istio CSR
 
-#### Injecting trust bundle as generic secret for it to be used by Istio CSR
-kubectl label namespace cert-manager trust-manager/inject=enabled
-
 #### Initialising Istio Namespace
 kubectl create namespace istio-system --dry-run=client -o yaml | kubectl apply -f -
+
+#### Injecting trust bundle as generic secret for it to be used by Istio CSR
+kubectl label namespace cert-manager trust-manager/inject=enabled
 
 #### Deploying the chart
 echo -e "\n[INFO] Installing Cert Manager Istio CSR..."
@@ -159,7 +154,7 @@ helm upgrade istio-cni istio/cni \
   --namespace istio-system \
   -f ./resources/istio/helm/cni-node-agent.yaml \
   --wait
-  echo -e "[INFO] ...done\n"
+echo -e "[INFO] ...done\n"
 
 ### ZTunnel
 echo -e "\n[INFO] Installing Istio ZTunnel..."
@@ -169,18 +164,21 @@ helm upgrade ztunnel istio/ztunnel \
   --wait
 echo -e "[INFO] ...done\n"
 
+### Gateway
+echo -e "\n[INFO] Deploying cluster gateway..."
+kubectl create namespace istio-gateway --dry-run=client -o yaml | kubectl apply -f -
+kubectl -n istio-gateway apply -R -f ./resources/istio/gateways/gateway-tls.yaml
+echo -e "[INFO] ...done\n"
 
-### OAuth2-Proxy
-echo -e "\n[INFO] Installing OAuth2-Proxy..."
-kubectl create namespace oauth2-proxy --dry-run=client -o yaml | kubectl apply -f -
-kubectl label namespace oauth2-proxy trust-manager/inject=enabled
-kubectl -n oauth2-proxy apply -R -f ./resources/oauth2-proxy/secrets
 
-helm upgrade oauth2-proxy oauth2-proxy/oauth2-proxy \
-  --install \
-  --namespace oauth2-proxy \
-  -f ./resources/oauth2-proxy/helm/oauth2-proxy.yaml \
-  --wait
+## Hubble
+echo -e "\n[INFO] Installing Hubble..."
+helm upgrade cilium cilium/cilium \
+    --install \
+    --namespace kube-system \
+    -f ./resources/hubble/helm/hubble.yaml \
+    --wait
+kubectl -n kube-system apply -R -f ./resources/hubble/httproutes   
 echo -e "[INFO] ...done."
 
 echo -e "\n[INFO] Tier 1 layer sucessfully deployed.\n"

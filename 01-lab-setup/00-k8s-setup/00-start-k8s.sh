@@ -22,7 +22,7 @@ fi
 # Bootstraping K8S Cluster - Minikube flavour
 
 ## Minikube cluster creation
-echo -e "[INFO] Starting Minikube cluster..."
+echo -e "\n[INFO] Starting Minikube cluster..."
 minikube start \
     --install-addons=false \
     --driver docker \
@@ -37,5 +37,13 @@ minikube start \
     --nodes 3 \
     --extra-config kubelet.node-ip=0.0.0.0 \
     --extra-config=kube-proxy.skip-headers=true
+echo -e "[INFO] ...done"
 
-echo -e "[INFO] Minikube cluster started. \n"
+## Mounting bpffs
+echo -e "\n[INFO] Mounting BPFS filesystem into the containers..."
+minikube ssh -n minikube "sudo /bin/bash -c 'grep \"bpffs /sys/fs/bpf\" /proc/mounts || sudo mount bpffs -t bpf /sys/fs/bpf'"
+minikube ssh -n minikube-m02 "sudo /bin/bash -c 'grep \"bpffs /sys/fs/bpf\" /proc/mounts || sudo mount bpffs -t bpf /sys/fs/bpf'"
+minikube ssh -n minikube-m03 "sudo /bin/bash -c 'grep \"bpffs /sys/fs/bpf\" /proc/mounts || sudo mount bpffs -t bpf /sys/fs/bpf'"
+echo -e "[INFO] ...done"
+
+echo -e "[INFO] Minikube cluster deployed. \n"
