@@ -7,3 +7,5 @@ values:
         value: "kubernetes"
       - name: ENABLE_CA_SERVER
         value: "false"
+      - name: PILOT_ENABLE_ALPHA_GATEWAY_API
+        value: "true"

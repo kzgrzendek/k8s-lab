@@ -5,7 +5,6 @@ metadata:
   namespace: istio-gateway
   annotations:
     networking.istio.io/service-type: NodePort
-    cert-manager.io/cluster-issuer: "selfsigned-issuer"
 spec:
   infrastructure:
     parametersRef:
@@ -23,7 +22,7 @@ spec:
       certificateRefs:
       - group: ""
         kind: Secret
-        name: terminate-cert-secret
+        name: gateway-tls
     allowedRoutes:
       namespaces:
         from: All

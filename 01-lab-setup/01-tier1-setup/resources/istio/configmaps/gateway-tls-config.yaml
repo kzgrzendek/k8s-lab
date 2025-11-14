@@ -14,3 +14,13 @@ data:
         port: 443
         protocol: TCP
         targetPort: 443
+
+  deployment: |
+      volumes:
+      - name: ca-bundle-volume
+        secret:
+          secretName: k8s-lab-bundle
+      volumeMounts:
+      - name: ca-bundle-volume
+        mountPath: "/etc/istio/custom-ca"
+        readOnly: true
