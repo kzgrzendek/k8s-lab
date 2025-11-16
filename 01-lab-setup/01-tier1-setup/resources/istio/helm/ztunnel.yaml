@@ -1,3 +1,2 @@
 caAddress: "cert-manager-istio-csr.cert-manager.svc:443"
-trustBundleName: "k8s-lab-ca-cm"
   

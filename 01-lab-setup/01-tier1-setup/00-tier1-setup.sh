@@ -109,18 +109,22 @@ echo -e "[INFO] ...done."
 ## Istio CSR
 echo -e "\n[INFO] Deploying Istio CSR component..."
 
-#### Initialising Istio Namespace and injecting the ca-bundle secret
+#### Initialising Istio Namespace and setuping the CAs Certs and Issuers
 kubectl create namespace istio-system --dry-run=client -o yaml | kubectl apply -f -
-kubectl label namespace istio-system trust-manager/inject-cm=enabled
+kubectl -n istio-system apply -R -f ./resources/cert-manager/istio-csr/certificates
+kubectl -n istio-system apply -R -f ./resources/cert-manager/istio-csr/issuers
 echo -e "[INFO] ...done."
 
 #### Deploying the chart
 echo -e "\n[INFO] Installing Cert Manager Istio CSR..."
 
+kubectl -n cert-manager create secret generic istio-root-ca \
+    --from-literal=ca.pem="$(kubectl -n istio-system get secret istio-ca -ogo-template='{{index .data "tls.crt"}}' | base64 -d)"
+
 helm upgrade cert-manager-istio-csr jetstack/cert-manager-istio-csr \
   --install \
   --namespace cert-manager \
-  -f ./resources/cert-manager/istio-csr/helm/istio-csr.yaml  \
+  -f ./resources/cert-manager/istio-csr/helm/istio-csr.yaml \
   --wait
 echo -e "[INFO] ...done."
 

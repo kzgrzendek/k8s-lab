@@ -1,0 +1,20 @@
+apiVersion: cert-manager.io/v1
+kind: Certificate
+metadata:
+  name: istio-ca
+  namespace: istio-system
+spec:
+  isCA: true
+  duration: 87600h # 10 years
+  secretName: istio-ca
+  commonName: istio-ca
+  privateKey:
+    algorithm: ECDSA
+    size: 256
+  subject:
+    organizations:
+    - cluster.local
+    - cert-manager
+  issuerRef:
+    name: k8s-lab-issuer
+    kind: ClusterIssuer

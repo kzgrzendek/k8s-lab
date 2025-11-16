@@ -1,14 +1,8 @@
 app:
   tls:
-    rootCAFile: "/var/run/secrets/istio-csr/cert.pem"
+    rootCAFile: "/var/run/secrets/istio-csr/ca.pem"
   server: 
     caTrustedNodeAccounts: "istio-system/ztunnel"
-  runtimeConfiguration:
-    create: true
-    issuer:
-      name: k8s-lab-issuer
-      kind: ClusterIssuer
-      group: cert-manager.io
 
 volumeMounts:
   - name: "root-ca"
@@ -17,4 +11,4 @@ volumeMounts:
 volumes: 
   - name: root-ca
     secret: 
-      secretName: "k8s-lab-ca-secret"
+      secretName: "istio-root-ca"
