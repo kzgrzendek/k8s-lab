@@ -120,13 +120,15 @@ echo -e "\n[INFO] Installing Victoria Metrics K8S Stack..."
 kubectl create namespace victoriametrics --dry-run=client -o yaml | kubectl apply -f -
 kubectl label namespace victoriametrics trust-manager/inject-secret=enabled
 
-kubectl -n victoriametrics apply -f ./resources/victoriametrics/secrets/
+kubectl -n victoriametrics apply -f ./resources/victoriametrics/secrets
 
 helm upgrade vmks vm/victoria-metrics-k8s-stack \
     --install \
     --namespace victoriametrics \
     -f ./resources/victoriametrics/helm/vmks.yaml \
     --wait
+
+kubectl -n victoriametrics apply -f ./resources/victoriametrics/httproutes
 echo -e "[INFO] ...done."
 
 echo -e "\n[INFO] Tier 2 layer sucessfully deployed.\n"

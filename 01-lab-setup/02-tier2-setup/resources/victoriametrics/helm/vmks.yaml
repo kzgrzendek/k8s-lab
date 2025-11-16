@@ -54,20 +54,9 @@ grafana:
           isDefault: false
 
   ingress:
-    enabled: true
-    annotations:
-      cert-manager.io/cluster-issuer: k8s-lab-issuer
-    hosts:
-      - grafana.k8s-lab.local
-    path: /
-    pathType: Prefix
-    tls:
-      - hosts:
-        - grafana.k8s-lab.local
-        secretName: grafana-tls
-
+    enabled: false
 
   extraSecretMounts:
     - name: ca-bundle
       mountPath: "/etc/ssl/certs"
-      secretName: k8s-lab-ca-cert
+      secretName: k8s-lab-ca-secret
