@@ -11,7 +11,7 @@ spec:
       key: "tls.crt"
   target:
     configMap:
-      key: "trust-bundle.pem"
+      key: "root-cert.pem"
     namespaceSelector:
       matchLabels:
         trust-manager/inject-cm: "enabled"
