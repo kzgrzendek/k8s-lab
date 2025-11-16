@@ -33,7 +33,7 @@ extraArgs:
 extraVolumes:
   - name: ca-bundle
     secret:
-      secretName: k8s-lab-bundle
+      secretName: k8s-lab-ca-secret
 
 extraVolumeMounts:
   - mountPath: /etc/ssl/certs

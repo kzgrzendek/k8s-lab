@@ -1,11 +1,12 @@
 profile: ambient
 
 values:
-  pilot:
-    env:
-      - name: PILOT_CERT_PROVIDER
-        value: "kubernetes"
-      - name: ENABLE_CA_SERVER
-        value: "false"
-      - name: PILOT_ENABLE_ALPHA_GATEWAY_API
-        value: "true"
+  global:
+    nativeNftables: true
+    trustBundleName: "k8s-lab-ca-cm"
+    caAddress: "cert-manager-istio-csr.cert-manager.svc.cluster.local:443"
+
+env:
+  ENABLE_CA_SERVER: false
+  PILOT_ENABLE_ALPHA_GATEWAY_API: true
+  

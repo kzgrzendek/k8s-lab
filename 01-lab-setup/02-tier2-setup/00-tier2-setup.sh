@@ -62,7 +62,7 @@ echo -e "[INFO] ...done."
 ### Keycloak Operator
 echo -e "\n[INFO] Installing Keycloak Operator..."
 kubectl create namespace keycloak --dry-run=client -o yaml | kubectl apply -f -
-kubectl label namespace keycloak trust-manager/inject=enabled
+kubectl label namespace keycloak trust-manager/inject-secret=enabled
 
 kubectl -n keycloak apply -f https://raw.githubusercontent.com/keycloak/keycloak-k8s-resources/26.4.1/kubernetes/keycloaks.k8s.keycloak.org-v1.yml
 kubectl -n keycloak apply -f https://raw.githubusercontent.com/keycloak/keycloak-k8s-resources/26.4.1/kubernetes/keycloakrealmimports.k8s.keycloak.org-v1.yml
@@ -85,14 +85,14 @@ kubectl -n keycloak wait --for=condition=Ready keycloaks.k8s.keycloak.org/keyclo
 kubectl -n keycloak apply -R -f ./resources/keycloak/keycloakrealmimports
 kubectl -n keycloak wait --for=condition=Done keycloakrealmimports/k8s-lab-import --timeout=300s
 
-kubectl -n keycloak apply -R -f ./resources/keycloak/ingresses
+kubectl -n keycloak apply -R -f ./resources/keycloak/tlsroutes
 echo -e "[INFO] ...done"
 
 
 ## OAuth2-Proxy
 echo -e "\n[INFO] Installing OAuth2-Proxy..."
 kubectl create namespace oauth2-proxy --dry-run=client -o yaml | kubectl apply -f -
-kubectl label namespace oauth2-proxy trust-manager/inject=enabled
+kubectl label namespace oauth2-proxy trust-manager/inject-secret=enabled
 kubectl -n oauth2-proxy apply -R -f ./resources/oauth2-proxy/secrets
 
 helm upgrade oauth2-proxy oauth2-proxy/oauth2-proxy \
@@ -118,7 +118,7 @@ echo -e "[INFO] ...done."
 ### Victoria Metrics K8S Stack
 echo -e "\n[INFO] Installing Victoria Metrics K8S Stack..."
 kubectl create namespace victoriametrics --dry-run=client -o yaml | kubectl apply -f -
-kubectl label namespace victoriametrics trust-manager/inject=enabled
+kubectl label namespace victoriametrics trust-manager/inject-secret=enabled
 
 kubectl -n victoriametrics apply -f ./resources/victoriametrics/secrets/
 

@@ -1,0 +1,14 @@
+apiVersion: cert-manager.io/v1
+kind: Certificate
+metadata:
+  name: keycloak-tls
+  namespace: keycloak
+spec:
+  secretName: keycloak-tls
+  issuerRef:
+    name: k8s-lab-issuer
+    kind: ClusterIssuer
+  commonName: keycloak-service.keycloak.svc.cluster.local
+  dnsNames:
+  - keycloak-service.keycloak.svc.cluster.local
+  - keycloak.k8s-lab.local

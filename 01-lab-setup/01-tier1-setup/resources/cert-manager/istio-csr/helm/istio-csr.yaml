@@ -17,4 +17,4 @@ volumeMounts:
 volumes: 
   - name: root-ca
     secret: 
-      secretName: "k8s-lab-bundle"
+      secretName: "k8s-lab-ca-secret"

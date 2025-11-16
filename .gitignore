@@ -1,7 +1,12 @@
-# User local folder
+# User local directory
 .local
 
 # User generated CA Cert and Key
 k8s-lab-ca.crt
 k8s-lab-ca.key
-.continue/agents/new-config.yaml
+
+# VScode Continue extension configs directory
+.continue
+
+# User local storage directory used by K8S Stoerage Class
+00-host-setup/storage/shared

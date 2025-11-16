@@ -1,7 +1,7 @@
 apiVersion: v1
 kind: ConfigMap
 metadata:
-  name: gateway-tls-config
+  name: k8s-lab-gateway-config
   namespace: istio-gateway
 data:
   service: |
@@ -22,7 +22,7 @@ data:
           volumes:
           - name: ca-bundle-volume
             secret:
-              secretName: k8s-lab-bundle
+              secretName: k8s-lab-ca-secret
           containers:
           - name: istio-proxy
             volumeMounts:

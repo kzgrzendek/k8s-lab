@@ -20,7 +20,7 @@ spec:
   truststores:
     selfsigned-trustore:
       secret:
-        name: k8s-lab-bundle
+        name: k8s-lab-ca-secret
   networkPolicy:
     enabled: false
   http:

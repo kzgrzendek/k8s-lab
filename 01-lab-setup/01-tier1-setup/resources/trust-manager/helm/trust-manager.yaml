@@ -1,4 +1,4 @@
 secretTargets:
   enabled: true
   authorizedSecrets:
-    - "k8s-lab-bundle"
+    - "k8s-lab-ca-secret"
