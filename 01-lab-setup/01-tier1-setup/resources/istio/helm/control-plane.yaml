@@ -1,10 +1,9 @@
 profile: ambient
 
-values:
-  global:
-    nativeNftables: true
-    trustBundleName: "k8s-lab-ca-cm"
-    caAddress: "cert-manager-istio-csr.cert-manager.svc.cluster.local:443"
+global:
+  nativeNftables: true
+  trustBundleName: "k8s-lab-ca-cm"
+  caAddress: "cert-manager-istio-csr.cert-manager.svc.cluster.local:443"
 
 env:
   ENABLE_CA_SERVER: false
