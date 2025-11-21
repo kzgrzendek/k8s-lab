@@ -22,7 +22,7 @@ data:
            192.168.49.1 host.minikube.internal
            fallthrough
         }
-        rewrite name regex keycloak.k8s-lab.local keycloak-service.keycloak.svc.cluster.local
+        rewrite name regex keycloak.auth.k8s.local keycloak-service.keycloak.svc.cluster.local
         forward . /etc/resolv.conf {
            max_concurrent 1000
         }

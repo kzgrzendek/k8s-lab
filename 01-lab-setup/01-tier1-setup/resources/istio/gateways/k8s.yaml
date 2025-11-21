@@ -1,7 +1,7 @@
 apiVersion: gateway.networking.k8s.io/v1
 kind: Gateway
 metadata:
-  name: k8s-lab
+  name: k8s
   namespace: istio-gateway
   annotations:
     networking.istio.io/service-type: NodePort
@@ -13,8 +13,8 @@ spec:
       name: k8s-lab-gateway-config
   gatewayClassName: istio
   listeners:
-  - name: keycloak-tls-passthrough
-    hostname: "keycloak.k8s-lab.local"
+  - name: auth-tls-passthrough
+    hostname: "*.auth.k8s.local"
     port: 443
     protocol: TLS
     tls:
@@ -24,10 +24,10 @@ spec:
         from: Selector
         selector:
           matchLabels:
-            kubernetes.io/metadata.name: keycloak
+            service-type: auth
 
-  - name: wildcard-https-termination
-    hostname: "*.k8s-lab.local"
+  - name: lab-https-termination
+    hostname: "*.lab.k8s.local"
     port: 443
     protocol: HTTPS
     tls:
@@ -38,4 +38,4 @@ spec:
         name: gateway-tls
     allowedRoutes:
       namespaces:
-        from: All
+        service-type: lab

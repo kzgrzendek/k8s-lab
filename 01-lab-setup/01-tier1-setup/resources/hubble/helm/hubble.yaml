@@ -10,10 +10,10 @@ hubble:
         cert-manager.io/cluster-issuer: selfsigned-issuer
       className: "cilium"
       hosts:
-        - "hubble.k8s-lab.local"
+        - "hubble.lab.k8s.local"
       tls:
         - hosts:
-          - "hubble.k8s-lab.local"
+          - "hubble.lab.k8s.local"
           secretName: hubble-ui-tls
     service:
       type: "ClusterIP"

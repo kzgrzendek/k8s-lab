@@ -34,12 +34,12 @@ openssl req \
     -nodes
 
 echo -e "[INFO] Outputting K8S Secret for next steps..."
-kubectl create secret tls k8s-lab-ca \
+kubectl create secret tls k8s-lab-cacert \
     --namespace cert-manager \
     --cert=./resources/certs/k8s-lab-ca.crt \
     --key=./resources/certs/k8s-lab-ca.key \
     --dry-run=client \
     -o yaml \
-> ../01-lab-setup/01-tier1-setup/resources/cert-manager/secrets/k8s-lab-ca.yaml
+> ../01-lab-setup/01-tier1-setup/resources/cert-manager/secrets/k8s-lab-cacert.yaml
 
 echo -e "\n[INFO] ... done."

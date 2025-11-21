@@ -8,7 +8,7 @@ spec:
   issuerRef:
     name: k8s-lab-issuer
     kind: ClusterIssuer
-  commonName: "*.k8s-lab.local"
+  commonName: "*.lab.k8s.local"
   dnsNames:
-  - "*.k8s-lab.local"
+  - "*.lab.k8s.local"
   - gateway-tls-istio.istio-gateway.svc.cluster.local

@@ -6,17 +6,17 @@ grafana:
   grafana.ini:
     server:
       root_url: "https://%(domain)s/"
-      domain: "grafana.k8s-lab.local"
+      domain: "grafana.lab.k8s.local"
     auth.generic_oauth:
         enabled: true
         name: Keycloak  # this will be the oidc button name  
         allow_sign_up: true
         client_id: grafana  # this is your grafana client name on keycloak 
         scopes: openid profile email groups roles # should match with keycloak client scope setting 
-        auth_url: https://keycloak.k8s-lab.local/realms/k8s-lab/protocol/openid-connect/auth
-        token_url: https://keycloak.k8s-lab.local/realms/k8s-lab/protocol/openid-connect/token
-        api_url: https://keycloak.k8s-lab.local/realms/k8s-lab/protocol/openid-connect/userinfo
-        signout_redirect_url: https://keycloak.k8s-lab.local/realms/k8s-lab/protocol/openid-connect/logout
+        auth_url: https://keycloak.auth.k8s.local/realms/k8s-lab/protocol/openid-connect/auth
+        token_url: https://keycloak.auth.k8s.local/realms/k8s-lab/protocol/openid-connect/token
+        api_url: https://keycloak.auth.k8s.local/realms/k8s-lab/protocol/openid-connect/userinfo
+        signout_redirect_url: https://keycloak.auth.k8s.local/realms/k8s-lab/protocol/openid-connect/logout
         role_attribute_strict: true
         role_attribute_path:  (contains(groups[], 'ADMINS') && 'GrafanaAdmin') || (contains(groups[], 'ADMINS') && 'Admin') || (contains(groups[], 'USERS') && 'Editor') || 'Viewer'
         allow_assign_grafana_admin: true  # enable grafanaAdmin login through Keycloak

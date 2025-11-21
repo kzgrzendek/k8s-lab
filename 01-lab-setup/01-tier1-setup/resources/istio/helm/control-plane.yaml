@@ -3,8 +3,9 @@ profile: ambient
 global:
   nativeNftables: true
   caAddress: "cert-manager-istio-csr.cert-manager.svc:443"
+  logging:
+    level: "default:debug"
 
 env:
   ENABLE_CA_SERVER: false
   PILOT_ENABLE_ALPHA_GATEWAY_API: true
-  

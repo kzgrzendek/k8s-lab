@@ -5,12 +5,12 @@ metadata:
   namespace: kube-system
 spec:
   parentRefs:
-  - name: k8s-lab
+  - name: k8s
     namespace: istio-gateway
     sectionName: wildcard-https-termination
  
   hostnames:
-  - "hubble.k8s-lab.local"
+  - "hubble.lab.k8s.local"
  
   rules:
   - matches:

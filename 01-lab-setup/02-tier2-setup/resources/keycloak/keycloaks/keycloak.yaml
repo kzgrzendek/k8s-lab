@@ -30,7 +30,7 @@ spec:
   ingress:
     enabled: false
   hostname:
-    hostname: keycloak.k8s-lab.local
+    hostname: keycloak.auth.k8s.local
     strict: false
   proxy:
     headers: xforwarded

@@ -36,7 +36,7 @@ echo -e "[INFO] ...done"
 # Base Stack Install
 
 ## CNI Cilium installation
-echo -e "\n[INFO] Installing Cilium CNI with Hubble..."
+echo -e "\n[INFO] Installing Cilium CNI..."
 
 ### Installing Cilium
 helm upgrade cilium cilium/cilium \
@@ -104,22 +104,25 @@ helm upgrade trust-manager jetstack/trust-manager \
 
 kubectl -n cert-manager apply -R -f ./resources/trust-manager/bundles
 kubectl label namespace cert-manager trust-manager/inject-secret=enabled
+kubectl label namespace cert-manager trust-manager/inject-istio-ca=enabled
 echo -e "[INFO] ...done."
 
 ## Istio CSR
 echo -e "\n[INFO] Deploying Istio CSR component..."
 
-#### Initialising Istio Namespace and setuping the CAs Certs and Issuers
-kubectl create namespace istio-system --dry-run=client -o yaml | kubectl apply -f -
-kubectl -n istio-system apply -R -f ./resources/cert-manager/istio-csr/certificates
-kubectl -n istio-system apply -R -f ./resources/cert-manager/istio-csr/issuers
+#### Initialising Istio CAs Certs and Issuers
+kubectl -n cert-manager apply -R -f ./resources/cert-manager/istio-csr/clusterissuers
+kubectl -n cert-manager apply -R -f ./resources/cert-manager/istio-csr/certificates
+kubectl -n cert-manager apply -R -f ./resources/cert-manager/istio-csr/bundles
+
 echo -e "[INFO] ...done."
+
+#### We need to create the istio-system namespace in advance here, so we can reference ztunnel SA
+kubectl create namespace istio-system --dry-run=client -o yaml | kubectl apply -f -
+kubectl label namespace istio-system trust-manager/inject-istio-ca=enabled
 
 #### Deploying the chart
 echo -e "\n[INFO] Installing Cert Manager Istio CSR..."
-
-kubectl -n cert-manager create secret generic istio-root-ca \
-    --from-literal=ca.pem="$(kubectl -n istio-system get secret istio-ca -ogo-template='{{index .data "tls.crt"}}' | base64 -d)"
 
 helm upgrade cert-manager-istio-csr jetstack/cert-manager-istio-csr \
   --install \
@@ -131,7 +134,6 @@ echo -e "[INFO] ...done."
 
 ## Istio
 echo -e "\n[INFO] Installing Istio ..."
-
 
 ### Base components setup
 echo -e "\n[INFO] Installing Istio base components..."
@@ -182,12 +184,14 @@ echo -e "[INFO] ...done\n"
 
 ## Hubble
 echo -e "\n[INFO] Installing Hubble..."
+kubectl label namespace kube-system service-type=lab
 helm upgrade cilium cilium/cilium \
     --install \
     --namespace kube-system \
+    --reuse-values \
     -f ./resources/hubble/helm/hubble.yaml \
     --wait
-kubectl -n kube-system apply -R -f ./resources/hubble/httproutes   
+kubectl -n kube-system apply -R -f ./resources/hubble/httproutes
 echo -e "[INFO] ...done."
 
 echo -e "\n[INFO] Tier 1 layer sucessfully deployed.\n"

@@ -5,12 +5,12 @@ metadata:
   namespace: victoriametrics
 spec:
   parentRefs:
-  - name: k8s-lab
+  - name: k8s
     namespace: istio-gateway
     sectionName: wildcard-https-termination
  
   hostnames:
-  - "grafana.k8s-lab.local"
+  - "grafana.lab.k8s.local"
  
   rules:
   - matches:

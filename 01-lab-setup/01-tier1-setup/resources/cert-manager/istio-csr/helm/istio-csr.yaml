@@ -1,8 +1,13 @@
 app:
   tls:
-    rootCAFile: "/var/run/secrets/istio-csr/ca.pem"
+    rootCAFile: "/var/run/secrets/istio-csr/root-cert.pem"
   server: 
     caTrustedNodeAccounts: "istio-system/ztunnel"
+  certmanager:
+    issuer:
+      group: cert-manager.io
+      kind: ClusterIssuer
+      name: istio-ca-issuer
 
 volumeMounts:
   - name: "root-ca"
@@ -10,5 +15,5 @@ volumeMounts:
 
 volumes: 
   - name: root-ca
-    secret: 
-      secretName: "istio-root-ca"
+    configMap: 
+      name: "istio-root-ca-bundle"

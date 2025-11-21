@@ -21,7 +21,7 @@ docker run \
   --env BIND9_USER=bind \
   --env TZ=Europe/Paris \
   --volume ./resources/named.conf:/etc/bind/named.conf \
-  --volume ./resources/db.k8s-lab.local:/etc/bind/zones/db.k8s-lab.local \
+  --volume ./resources/db.lab.k8s.local:/etc/bind/zones/db.lab.k8s.local \
   --cap-add=NET_ADMIN \
   ubuntu/bind9
 

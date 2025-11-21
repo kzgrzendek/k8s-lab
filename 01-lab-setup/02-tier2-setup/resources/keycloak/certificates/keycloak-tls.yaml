@@ -11,4 +11,4 @@ spec:
   commonName: keycloak-service.keycloak.svc.cluster.local
   dnsNames:
   - keycloak-service.keycloak.svc.cluster.local
-  - keycloak.k8s-lab.local
+  - keycloak.auth.k8s.local

@@ -62,6 +62,7 @@ echo -e "[INFO] ...done."
 ### Keycloak Operator
 echo -e "\n[INFO] Installing Keycloak Operator..."
 kubectl create namespace keycloak --dry-run=client -o yaml | kubectl apply -f -
+kubectl label namespace keycloak service-type=auth
 kubectl label namespace keycloak trust-manager/inject-secret=enabled
 
 kubectl -n keycloak apply -f https://raw.githubusercontent.com/keycloak/keycloak-k8s-resources/26.4.1/kubernetes/keycloaks.k8s.keycloak.org-v1.yml
@@ -92,7 +93,10 @@ echo -e "[INFO] ...done"
 ## OAuth2-Proxy
 echo -e "\n[INFO] Installing OAuth2-Proxy..."
 kubectl create namespace oauth2-proxy --dry-run=client -o yaml | kubectl apply -f -
+
+kubectl label namespace oauth2-proxy service-type=auth
 kubectl label namespace oauth2-proxy trust-manager/inject-secret=enabled
+
 kubectl -n oauth2-proxy apply -R -f ./resources/oauth2-proxy/secrets
 
 helm upgrade oauth2-proxy oauth2-proxy/oauth2-proxy \
@@ -100,6 +104,7 @@ helm upgrade oauth2-proxy oauth2-proxy/oauth2-proxy \
   --namespace oauth2-proxy \
   -f ./resources/oauth2-proxy/helm/oauth2-proxy.yaml \
   --wait
+kubectl -n oauth2-proxy apply -R -f ./resources/oauth2-proxy/httproutes
 echo -e "[INFO] ...done."
 
 
@@ -118,6 +123,8 @@ echo -e "[INFO] ...done."
 ### Victoria Metrics K8S Stack
 echo -e "\n[INFO] Installing Victoria Metrics K8S Stack..."
 kubectl create namespace victoriametrics --dry-run=client -o yaml | kubectl apply -f -
+
+kubectl label namespace victoriametrics service-type=lab
 kubectl label namespace victoriametrics trust-manager/inject-secret=enabled
 
 kubectl -n victoriametrics apply -f ./resources/victoriametrics/secrets
