@@ -90,52 +90,52 @@ kubectl -n keycloak apply -R -f ./resources/keycloak/tlsroutes
 echo -e "[INFO] ...done"
 
 
-## OAuth2-Proxy
-echo -e "\n[INFO] Installing OAuth2-Proxy..."
-kubectl create namespace oauth2-proxy --dry-run=client -o yaml | kubectl apply -f -
+# ## OAuth2-Proxy
+# echo -e "\n[INFO] Installing OAuth2-Proxy..."
+# kubectl create namespace oauth2-proxy --dry-run=client -o yaml | kubectl apply -f -
 
-kubectl label namespace oauth2-proxy service-type=auth
-kubectl label namespace oauth2-proxy trust-manager/inject-secret=enabled
+# kubectl label namespace oauth2-proxy service-type=auth
+# kubectl label namespace oauth2-proxy trust-manager/inject-secret=enabled
 
-kubectl -n oauth2-proxy apply -R -f ./resources/oauth2-proxy/secrets
+# kubectl -n oauth2-proxy apply -R -f ./resources/oauth2-proxy/secrets
 
-helm upgrade oauth2-proxy oauth2-proxy/oauth2-proxy \
-  --install \
-  --namespace oauth2-proxy \
-  -f ./resources/oauth2-proxy/helm/oauth2-proxy.yaml \
-  --wait
-kubectl -n oauth2-proxy apply -R -f ./resources/oauth2-proxy/httproutes
-echo -e "[INFO] ...done."
+# helm upgrade oauth2-proxy oauth2-proxy/oauth2-proxy \
+#   --install \
+#   --namespace oauth2-proxy \
+#   -f ./resources/oauth2-proxy/helm/oauth2-proxy.yaml \
+#   --wait
+# kubectl -n oauth2-proxy apply -R -f ./resources/oauth2-proxy/httproutes
+# echo -e "[INFO] ...done."
 
 
-## Victoria Stack
-### Victoria Logs
-echo -e "\n[INFO] Installing Victoria Logs Server..."
-kubectl create namespace victorialogs --dry-run=client -o yaml | kubectl apply -f -
+# ## Victoria Stack
+# ### Victoria Logs
+# echo -e "\n[INFO] Installing Victoria Logs Server..."
+# kubectl create namespace victorialogs --dry-run=client -o yaml | kubectl apply -f -
 
-helm upgrade vls vm/victoria-logs-single \
-    --install \
-    --namespace victorialogs \
-    -f ./resources/victorialogs/helm/vlogs.yaml \
-    --wait
-echo -e "[INFO] ...done."
+# helm upgrade vls vm/victoria-logs-single \
+#     --install \
+#     --namespace victorialogs \
+#     -f ./resources/victorialogs/helm/vlogs.yaml \
+#     --wait
+# echo -e "[INFO] ...done."
 
-### Victoria Metrics K8S Stack
-echo -e "\n[INFO] Installing Victoria Metrics K8S Stack..."
-kubectl create namespace victoriametrics --dry-run=client -o yaml | kubectl apply -f -
+# ### Victoria Metrics K8S Stack
+# echo -e "\n[INFO] Installing Victoria Metrics K8S Stack..."
+# kubectl create namespace victoriametrics --dry-run=client -o yaml | kubectl apply -f -
 
-kubectl label namespace victoriametrics service-type=lab
-kubectl label namespace victoriametrics trust-manager/inject-secret=enabled
+# kubectl label namespace victoriametrics service-type=lab
+# kubectl label namespace victoriametrics trust-manager/inject-secret=enabled
 
-kubectl -n victoriametrics apply -f ./resources/victoriametrics/secrets
+# kubectl -n victoriametrics apply -f ./resources/victoriametrics/secrets
 
-helm upgrade vmks vm/victoria-metrics-k8s-stack \
-    --install \
-    --namespace victoriametrics \
-    -f ./resources/victoriametrics/helm/vmks.yaml \
-    --wait
+# helm upgrade vmks vm/victoria-metrics-k8s-stack \
+#     --install \
+#     --namespace victoriametrics \
+#     -f ./resources/victoriametrics/helm/vmks.yaml \
+#     --wait
 
-kubectl -n victoriametrics apply -f ./resources/victoriametrics/httproutes
-echo -e "[INFO] ...done."
+# kubectl -n victoriametrics apply -f ./resources/victoriametrics/httproutes
+# echo -e "[INFO] ...done."
 
 echo -e "\n[INFO] Tier 2 layer sucessfully deployed.\n"
