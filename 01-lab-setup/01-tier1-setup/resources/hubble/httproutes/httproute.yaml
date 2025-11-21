@@ -7,7 +7,7 @@ spec:
   parentRefs:
   - name: k8s
     namespace: istio-gateway
-    sectionName: wildcard-https-termination
+    sectionName: lab-https-termination
  
   hostnames:
   - "hubble.lab.k8s.local"
