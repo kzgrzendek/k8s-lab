@@ -90,22 +90,23 @@ kubectl -n keycloak apply -R -f ./resources/keycloak/tlsroutes
 echo -e "[INFO] ...done"
 
 
-# ## OAuth2-Proxy
-# echo -e "\n[INFO] Installing OAuth2-Proxy..."
-# kubectl create namespace oauth2-proxy --dry-run=client -o yaml | kubectl apply -f -
+## OAuth2-Proxy
+echo -e "\n[INFO] Installing OAuth2-Proxy..."
+kubectl create namespace oauth2-proxy --dry-run=client -o yaml | kubectl apply -f -
 
-# kubectl label namespace oauth2-proxy service-type=auth
-# kubectl label namespace oauth2-proxy trust-manager/inject-secret=enabled
+kubectl label namespace oauth2-proxy service-type=auth
+kubectl label namespace oauth2-proxy trust-manager/inject-secret=enabled
 
-# kubectl -n oauth2-proxy apply -R -f ./resources/oauth2-proxy/secrets
+kubectl -n oauth2-proxy apply -R -f ./resources/oauth2-proxy/certificates
+kubectl -n oauth2-proxy apply -R -f ./resources/oauth2-proxy/secrets
 
-# helm upgrade oauth2-proxy oauth2-proxy/oauth2-proxy \
-#   --install \
-#   --namespace oauth2-proxy \
-#   -f ./resources/oauth2-proxy/helm/oauth2-proxy.yaml \
-#   --wait
-# kubectl -n oauth2-proxy apply -R -f ./resources/oauth2-proxy/httproutes
-# echo -e "[INFO] ...done."
+helm upgrade oauth2-proxy oauth2-proxy/oauth2-proxy \
+  --install \
+  --namespace oauth2-proxy \
+  -f ./resources/oauth2-proxy/helm/oauth2-proxy.yaml \
+  --wait
+kubectl -n oauth2-proxy apply -R -f ./resources/oauth2-proxy/tlsroutes
+echo -e "[INFO] ...done."
 
 
 # ## Victoria Stack

@@ -17,7 +17,7 @@ extraArgs:
   insecure-oidc-allow-unverified-email: true
   oidc-issuer-url: https://keycloak.auth.k8s.local/realms/k8s-lab
   provider: keycloak-oidc
-  redirect-url: https://oauth.lab.k8s.local/oauth2/callback
+  redirect-url: https://proxy.auth.k8s.local/oauth2/callback
   code-challenge-method: "S256"
   reverse-proxy: true
   scope: openid email profile
@@ -27,6 +27,25 @@ extraArgs:
   email-domain: .k8s.local
   show-debug-on-error: true
 
+httpScheme: https
+
+ingress:
+  enabled: false
+
+readinessProbe:
+  enabled: true
+  initialDelaySeconds: 0
+  periodSeconds: 10
+  successThreshold: 1
+  timeoutSeconds: 1
+
+livenessProbe:
+  enabled: true
+  initialDelaySeconds: 5
+  timeoutSeconds: 1
+
+metrics:
+  enabled: true
 
 extraVolumes:
   - name: ca-bundle
@@ -43,27 +62,9 @@ extraVolumeMounts:
     mountPath: /etc/oauth2-proxy/tls
     readOnly: true
 
-ingress:
-  enabled: false
-
-livenessProbe:
-  enabled: true
-  initialDelaySeconds: 5
-  timeoutSeconds: 1
-
-metrics:
-  enabled: true
-
 podDisruptionBudget:
   enabled: true
   minAvailable: 1
-
-readinessProbe:
-  enabled: true
-  initialDelaySeconds: 0
-  periodSeconds: 10
-  successThreshold: 1
-  timeoutSeconds: 1
 
 securityContext:
   enabled: true
