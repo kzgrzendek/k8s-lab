@@ -30,8 +30,9 @@ fi
 echo -e "\n[INFO] Adding Helm repositories..."
 helm repo add kyverno https://kyverno.github.io/kyverno/ --force-update
 helm repo add falcosecurity https://falcosecurity.github.io/charts --force-update
-helm repo add vm https://victoriametrics.github.io/helm-charts --force-update
 helm repo add oauth2-proxy https://oauth2-proxy.github.io/manifests --force-update
+helm repo add cilium https://helm.cilium.io/ --force-update
+helm repo add vm https://victoriametrics.github.io/helm-charts --force-update
 helm repo update
 echo -e "[INFO] ...done."
 
@@ -63,7 +64,7 @@ echo -e "[INFO] ...done."
 echo -e "\n[INFO] Installing Keycloak Operator..."
 kubectl create namespace keycloak --dry-run=client -o yaml | kubectl apply -f -
 kubectl label namespace keycloak service-type=auth
-kubectl label namespace keycloak trust-manager/inject-secret=enabled
+kubectl label namespace keycloak trust-manager/inject-lab-ca-secret=enabled
 
 kubectl -n keycloak apply -f https://raw.githubusercontent.com/keycloak/keycloak-k8s-resources/26.4.1/kubernetes/keycloaks.k8s.keycloak.org-v1.yml
 kubectl -n keycloak apply -f https://raw.githubusercontent.com/keycloak/keycloak-k8s-resources/26.4.1/kubernetes/keycloakrealmimports.k8s.keycloak.org-v1.yml
@@ -94,10 +95,9 @@ echo -e "[INFO] ...done"
 echo -e "\n[INFO] Installing OAuth2-Proxy..."
 kubectl create namespace oauth2-proxy --dry-run=client -o yaml | kubectl apply -f -
 
-kubectl label namespace oauth2-proxy service-type=auth
-kubectl label namespace oauth2-proxy trust-manager/inject-secret=enabled
+kubectl label namespace oauth2-proxy service-type=lab
+kubectl label namespace oauth2-proxy trust-manager/inject-lab-ca-secret=enabled
 
-kubectl -n oauth2-proxy apply -R -f ./resources/oauth2-proxy/certificates
 kubectl -n oauth2-proxy apply -R -f ./resources/oauth2-proxy/secrets
 
 helm upgrade oauth2-proxy oauth2-proxy/oauth2-proxy \
@@ -105,7 +105,21 @@ helm upgrade oauth2-proxy oauth2-proxy/oauth2-proxy \
   --namespace oauth2-proxy \
   -f ./resources/oauth2-proxy/helm/oauth2-proxy.yaml \
   --wait
-kubectl -n oauth2-proxy apply -R -f ./resources/oauth2-proxy/tlsroutes
+kubectl -n oauth2-proxy apply -R -f ./resources/oauth2-proxy/httproutes
+
+echo -e "[INFO] ...done."
+
+
+## Hubble
+echo -e "\n[INFO] Installing Hubble..."
+kubectl label namespace kube-system service-type=lab
+helm upgrade cilium cilium/cilium \
+    --namespace kube-system \
+    --reuse-values \
+    -f ./resources/hubble/helm/hubble.yaml \
+    --wait
+
+kubectl -n kube-system apply -R -f ./resources/hubble/httproutes
 echo -e "[INFO] ...done."
 
 
@@ -126,7 +140,7 @@ echo -e "\n[INFO] Installing Victoria Metrics K8S Stack..."
 kubectl create namespace victoriametrics --dry-run=client -o yaml | kubectl apply -f -
 
 kubectl label namespace victoriametrics service-type=lab
-kubectl label namespace victoriametrics trust-manager/inject-secret=enabled
+kubectl label namespace victoriametrics trust-manager/inject-lab-ca-secret=enabled
 
 kubectl -n victoriametrics apply -f ./resources/victoriametrics/secrets
 

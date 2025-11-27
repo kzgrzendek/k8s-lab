@@ -1,0 +1,16 @@
+apiVersion: security.istio.io/v1
+kind: AuthorizationPolicy
+metadata:
+  name: oauth2-proxy-redirect
+  namespace: istio-gateway 
+spec:
+  selector:
+    matchLabels:
+      gateway.networking.k8s.io/gateway-name: k8s
+  action: CUSTOM
+  provider:
+    name: "oauth2-proxy"
+  rules:
+  - to:
+    - operation:
+        hosts: ["hubble.lab.k8s.local"]

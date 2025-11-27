@@ -4,8 +4,33 @@ global:
   nativeNftables: true
   caAddress: "cert-manager-istio-csr.cert-manager.svc:443"
   logging:
-    level: "default:debug"
+    level: "default:info"
 
 env:
   ENABLE_CA_SERVER: false
   PILOT_ENABLE_ALPHA_GATEWAY_API: true
+
+meshConfig:
+  extensionProviders:
+  - name: "oauth2-proxy"
+    envoyExtAuthzHttp:
+      service: "oauth2-proxy.oauth2-proxy.svc.cluster.local"
+      port: "4180"
+      includeAdditionalHeadersInCheck:
+        X-Auth-Request-Redirect: 'https://%REQ(:authority)%%REQ(:path)%'
+      includeRequestHeadersInCheck: 
+      - "x-auth-request-groups"
+      - "authorization"
+      - "cookie"
+      headersToUpstreamOnAllow:
+      - "authorization"
+      - "path"
+      - "x-auth-request-user"
+      - "x-auth-request-email"
+      - "x-auth-request-access-token"
+      - "x-auth-request-groups"
+      headersToDownstreamOnAllow: 
+      - "set-cookie"
+      headersToDownstreamOnDeny: 
+      - "content-type"
+      - "set-cookie"

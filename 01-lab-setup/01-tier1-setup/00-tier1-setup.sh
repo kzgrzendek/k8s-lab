@@ -103,7 +103,7 @@ helm upgrade trust-manager jetstack/trust-manager \
   --wait
 
 kubectl -n cert-manager apply -R -f ./resources/trust-manager/bundles
-kubectl label namespace cert-manager trust-manager/inject-secret=enabled
+kubectl label namespace cert-manager trust-manager/inject-lab-ca-secret=enabled
 kubectl label namespace cert-manager trust-manager/inject-istio-ca=enabled
 echo -e "[INFO] ...done."
 
@@ -175,23 +175,12 @@ echo -e "[INFO] ...done\n"
 ### Gateway
 echo -e "\n[INFO] Deploying cluster gateway..."
 kubectl create namespace istio-gateway --dry-run=client -o yaml | kubectl apply -f -
-kubectl label namespace istio-gateway trust-manager/inject-secret=enabled
+kubectl label namespace istio-gateway trust-manager/inject-lab-ca-secret=enabled
 kubectl -n istio-gateway apply -R -f ./resources/istio/certificates
 kubectl -n istio-gateway apply -R -f ./resources/istio/configmaps
 kubectl -n istio-gateway apply -R -f ./resources/istio/gateways
+kubectl -n istio-gateway apply -R -f ./resources/istio/requestAuthentications
+kubectl -n istio-gateway apply -R -f ./resources/istio/authorizationPolicies
 echo -e "[INFO] ...done\n"
-
-
-## Hubble
-echo -e "\n[INFO] Installing Hubble..."
-kubectl label namespace kube-system service-type=lab
-helm upgrade cilium cilium/cilium \
-    --install \
-    --namespace kube-system \
-    --reuse-values \
-    -f ./resources/hubble/helm/hubble.yaml \
-    --wait
-kubectl -n kube-system apply -R -f ./resources/hubble/httproutes
-echo -e "[INFO] ...done."
 
 echo -e "\n[INFO] Tier 1 layer sucessfully deployed.\n"

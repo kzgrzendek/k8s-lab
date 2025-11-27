@@ -19,7 +19,7 @@ fi
 
 echo -e "[INFO] Applying backup as CRD..."
 kubectl -n keycloak apply -R -f ../../01-lab-setup/02-tier2-setup/resources/keycloak/keycloakrealmimports
-kubectl -n keycloak wait --for=condition=Done keycloakrealmimports/k8s-lab --timeout=600s
+kubectl -n keycloak wait --for=condition=Done keycloakrealmimports/k8s-lab-import --timeout=600s
 echo -e "[INFO] ...done."
 
 echo -e "\n[INFO] ... done."

@@ -3,31 +3,48 @@ fullnameOverride: oauth2-proxy
 
 replicas: 1
 
+httpScheme: http
+
 config:
   existingSecret: oidc
   existingConfig: {}
 
 extraArgs:
-  cookie-secure: true
-  cookie-name: oauth2
-  https-address: ":4443"
-  tls-cert-file: "/etc/oauth2-proxy/tls/tls.crt"
-  tls-key-file: "/etc/oauth2-proxy/tls/tls.key"
-  proxy-prefix: /oauth2
-  insecure-oidc-allow-unverified-email: true
-  oidc-issuer-url: https://keycloak.auth.k8s.local/realms/k8s-lab
-  provider: keycloak-oidc
-  redirect-url: https://proxy.auth.k8s.local/oauth2/callback
-  code-challenge-method: "S256"
-  reverse-proxy: true
-  scope: openid email profile
-  set-authorization-header: true
-  whitelist-domain: .k8s.local
-  cookie-domain: .k8s.local
-  email-domain: .k8s.local
-  show-debug-on-error: true
+  skip-auth-preflight: true
+  skip-jwt-bearer-tokens: true
 
-httpScheme: https
+  reverse-proxy: true
+  upstream: "static://200"
+  pass-host-header: true
+  pass-user-headers: true
+  pass-access-token: true
+
+  set-xauthrequest: true
+  set-authorization-header: true
+
+  cookie-secure: true
+  cookie-name: _oauth2
+  cookie-domain: .k8s.local
+  whitelist-domain: .k8s.local
+
+  provider: "keycloak-oidc"
+  skip-provider-button: true
+  oidc-issuer-url: "https://keycloak.auth.k8s.local/realms/k8s-lab"
+  redirect-url: "https://proxy.lab.k8s.local/oauth2/callback"
+  code-challenge-method: "S256"
+  scope: "openid email profile"
+
+  exclude-logging-path: "/healthz,/ping"
+
+
+extraVolumes:
+  - name: ca-bundle
+    secret:
+      secretName: k8s-lab-ca-secret
+
+extraVolumeMounts:
+  - mountPath: /etc/ssl/certs
+    name: ca-bundle
 
 ingress:
   enabled: false
@@ -46,21 +63,6 @@ livenessProbe:
 
 metrics:
   enabled: true
-
-extraVolumes:
-  - name: ca-bundle
-    secret:
-      secretName: k8s-lab-ca-secret
-  - name: tls-certs
-    secret:
-      secretName: oauth2-proxy-tls
-
-extraVolumeMounts:
-  - mountPath: /etc/ssl/certs
-    name: ca-bundle
-  - name: tls-certs
-    mountPath: /etc/oauth2-proxy/tls
-    readOnly: true
 
 podDisruptionBudget:
   enabled: true

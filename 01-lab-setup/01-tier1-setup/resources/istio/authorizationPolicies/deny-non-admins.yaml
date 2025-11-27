@@ -1,0 +1,19 @@
+apiVersion: security.istio.io/v1
+kind: AuthorizationPolicy
+metadata:
+  name: deny-non-admins
+  namespace: istio-gateway
+spec:
+  selector:
+    matchLabels:
+      gateway.networking.k8s.io/gateway-name: k8s
+  action: DENY
+  rules:
+  - to:
+    - operation:
+        hosts: ["hubble.lab.k8s.local"]
+        ports:
+        - "443"  
+    when:
+    - key: request.auth.claims[groups]
+      notValues: ["ADMINS"]
