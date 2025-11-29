@@ -88,26 +88,8 @@ kubectl -n keycloak apply -R -f ./resources/keycloak/keycloakrealmimports
 kubectl -n keycloak wait --for=condition=Done keycloakrealmimports/k8s-lab-import --timeout=300s
 
 kubectl -n keycloak apply -R -f ./resources/keycloak/tlsroutes
+
 echo -e "[INFO] ...done"
-
-
-## OAuth2-Proxy
-echo -e "\n[INFO] Installing OAuth2-Proxy..."
-kubectl create namespace oauth2-proxy --dry-run=client -o yaml | kubectl apply -f -
-
-kubectl label namespace oauth2-proxy service-type=lab
-kubectl label namespace oauth2-proxy trust-manager/inject-lab-ca-secret=enabled
-
-kubectl -n oauth2-proxy apply -R -f ./resources/oauth2-proxy/secrets
-
-helm upgrade oauth2-proxy oauth2-proxy/oauth2-proxy \
-  --install \
-  --namespace oauth2-proxy \
-  -f ./resources/oauth2-proxy/helm/oauth2-proxy.yaml \
-  --wait
-kubectl -n oauth2-proxy apply -R -f ./resources/oauth2-proxy/httproutes
-
-echo -e "[INFO] ...done."
 
 
 ## Hubble
@@ -118,7 +100,10 @@ helm upgrade cilium cilium/cilium \
     --reuse-values \
     -f ./resources/hubble/helm/hubble.yaml \
     --wait
-
+kubectl -n kube-system apply -R -f ./resources/hubble/secrets
+kubectl -n kube-system apply -R -f ./resources/hubble/backends
+kubectl -n kube-system apply -R -f ./resources/hubble/backendtlspolicies
+kubectl -n kube-system apply -R -f ./resources/hubble/securitypolicies
 kubectl -n kube-system apply -R -f ./resources/hubble/httproutes
 echo -e "[INFO] ...done."
 

@@ -4,19 +4,22 @@ metadata:
   name: hubble-route
   namespace: kube-system
 spec:
-  parentRefs:
-  - name: k8s
-    namespace: istio-gateway
-    sectionName: lab-https-termination
- 
   hostnames:
-  - "hubble.lab.k8s.local"
- 
+  - hubble.lab.k8s.local
+  
+  parentRefs:
+  - group: gateway.networking.k8s.io
+    kind: Gateway
+    name: k8s-lab
+    namespace: envoy-gateway-system
+    sectionName: lab-https-termination
+  
   rules:
   - matches:
     - path:
-        type: PathPrefix 
+        type: PathPrefix
         value: /
+    
     backendRefs:
-    - name: hubble-ui 
+    - name: hubble-ui
       port: 80

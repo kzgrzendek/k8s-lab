@@ -1,1 +1,7 @@
 tty: true
+
+driver:
+  enabled: true
+  kind: modern_ebpf
+  ebpf:
+    leastPrivileged: true

@@ -1,0 +1,16 @@
+apiVersion: gateway.networking.k8s.io/v1alpha3
+kind: BackendTLSPolicy
+metadata:
+  name: keycloak
+  namespace: kube-system
+spec:
+  targetRefs:
+  - group: gateway.envoyproxy.io
+    kind: Backend
+    name: keycloak
+  validation:
+    caCertificateRefs:
+    - group: ""
+      kind: Secret
+      name: k8s-lab-ca-secret
+    hostname: my.keycloak.com

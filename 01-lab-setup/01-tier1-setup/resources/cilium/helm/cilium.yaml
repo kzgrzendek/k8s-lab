@@ -20,11 +20,12 @@ gatewayAPI:
 
 envoy:
   enabled: false
+
+policyEnforcementMode: "default" 
+
 loadBalancer:
   l7:
     backend: disabled
 
 ingressController:
   enabled: false
-
-

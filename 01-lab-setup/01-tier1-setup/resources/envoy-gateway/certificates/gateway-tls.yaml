@@ -2,7 +2,7 @@ apiVersion: cert-manager.io/v1
 kind: Certificate
 metadata:
   name: gateway-tls
-  namespace: istio-gateway
+  namespace: envoy-gateway-system
 spec:
   secretName: gateway-tls
   issuerRef:
@@ -11,4 +11,3 @@ spec:
   commonName: "*.lab.k8s.local"
   dnsNames:
   - "*.lab.k8s.local"
-  - gateway-tls-istio.istio-gateway.svc.cluster.local

@@ -5,8 +5,8 @@ metadata:
   namespace: victoriametrics
 spec:
   parentRefs:
-  - name: k8s
-    namespace: istio-gateway
+  - name: k8s-lab
+    namespace: envoy-gateway-system
     sectionName: lab-https-termination
  
   hostnames:

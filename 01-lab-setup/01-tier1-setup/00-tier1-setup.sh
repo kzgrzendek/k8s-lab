@@ -29,7 +29,6 @@ echo -e "\n[INFO] Adding Helm repositories..."
 helm repo add cilium https://helm.cilium.io/ --force-update
 helm repo add k8tz https://k8tz.github.io/k8tz/ --force-update
 helm repo add jetstack https://charts.jetstack.io --force-update
-helm repo add istio https://istio-release.storage.googleapis.com/charts --force-update
 helm repo update
 echo -e "[INFO] ...done"
 
@@ -48,8 +47,8 @@ helm upgrade cilium cilium/cilium \
     --wait
 echo -e "[INFO] ...done."
 
-echo -e "\n[INFO] Updating Core DNS configuration..."
 ## CoreDNS configuration
+echo -e "\n[INFO] Updating Core DNS configuration..."
 kubectl -n kube-system apply -R -f ./resources/coredns/configmaps
 echo -e "[INFO] ...done."
 
@@ -81,8 +80,9 @@ echo -e "[INFO] ...done."
 ## Cert Manager
 echo -e "\n[INFO] Installing Cert Manager..."
 kubectl create namespace cert-manager --dry-run=client -o yaml | kubectl apply -f -
-kubectl -n cert-manager apply -R -f ./resources/cert-manager/secrets
+kubectl label namespace cert-manager trust-manager/inject-lab-ca-secret=enabled
 
+kubectl -n cert-manager apply -R -f ./resources/cert-manager/secrets
 helm upgrade cert-manager jetstack/cert-manager \
   --install \
   --version v1.19.1 \
@@ -91,6 +91,7 @@ helm upgrade cert-manager jetstack/cert-manager \
   -f ./resources/cert-manager/helm/cert-manager.yaml \
   --wait
 
+kubectl -n cert-manager wait --for=condition=available deployment/cert-manager-webhook --timeout=300s
 kubectl -n cert-manager apply -R -f ./resources/cert-manager/clusterissuers
 echo -e "[INFO] ...done"
 
@@ -102,85 +103,40 @@ helm upgrade trust-manager jetstack/trust-manager \
   -f ./resources/trust-manager/helm/trust-manager.yaml \
   --wait
 
+kubectl -n cert-manager wait --for=condition=available deployment/trust-manager --timeout=300s
 kubectl -n cert-manager apply -R -f ./resources/trust-manager/bundles
-kubectl label namespace cert-manager trust-manager/inject-lab-ca-secret=enabled
-kubectl label namespace cert-manager trust-manager/inject-istio-ca=enabled
+
+echo -e "\n[INFO] Enabling Cilium Envoy L7 feature with CA Injection..."
+kubectl label namespace kube-system trust-manager/inject-lab-ca-secret=enabled
+helm upgrade cilium cilium/cilium \
+    --namespace kube-system \
+    --reuse-values \
+    -f ./resources/trust-manager/helm/cilium-envoy-mount-ca.yaml \
+    --wait
 echo -e "[INFO] ...done."
 
-## Istio CSR
-echo -e "\n[INFO] Deploying Istio CSR component..."
-
-#### Initialising Istio CAs Certs and Issuers
-kubectl -n cert-manager apply -R -f ./resources/cert-manager/istio-csr/clusterissuers
-kubectl -n cert-manager apply -R -f ./resources/cert-manager/istio-csr/certificates
-kubectl -n cert-manager apply -R -f ./resources/cert-manager/istio-csr/bundles
-
-echo -e "[INFO] ...done."
-
-#### We need to create the istio-system namespace in advance here, so we can reference ztunnel SA
-kubectl create namespace istio-system --dry-run=client -o yaml | kubectl apply -f -
-kubectl label namespace istio-system trust-manager/inject-istio-ca=enabled
-
-#### Deploying the chart
-echo -e "\n[INFO] Installing Cert Manager Istio CSR..."
-
-helm upgrade cert-manager-istio-csr jetstack/cert-manager-istio-csr \
-  --install \
-  --namespace cert-manager \
-  -f ./resources/cert-manager/istio-csr/helm/istio-csr.yaml \
-  --wait
-echo -e "[INFO] ...done."
-
-
-## Istio
-echo -e "\n[INFO] Installing Istio ..."
-
-### Base components setup
-echo -e "\n[INFO] Installing Istio base components..."
-helm upgrade istio-base istio/base \
-  --install \
-  --namespace istio-system \
-  --wait
-
-### K8S Gateway CRDs
-echo -e "\n[INFO] Installing K8S Gateway CRDs..."
-kubectl get crd gateways.gateway.networking.k8s.io &> /dev/null || \
-kubectl apply --server-side -f https://github.com/kubernetes-sigs/gateway-api/releases/download/v1.4.0/experimental-install.yaml
-
-### Control plane
-echo -e "\n[INFO] Installing Istio Control Plane..."
-helm upgrade istiod istio/istiod \
-  --install \
-  --namespace istio-system \
-  -f ./resources/istio/helm/control-plane.yaml \
-  --wait
-
-### CNI Node Agent
-echo -e "\n[INFO] Installing Istio CNI Node Agent..."
-helm upgrade istio-cni istio/cni \
-  --install \
-  --namespace istio-system \
-  -f ./resources/istio/helm/cni-node-agent.yaml \
-  --wait
-echo -e "[INFO] ...done\n"
-
-### ZTunnel
-echo -e "\n[INFO] Installing Istio ZTunnel..."
-helm upgrade ztunnel istio/ztunnel \
-  --install \
-  --namespace istio-system \
-  --wait
-echo -e "[INFO] ...done\n"
 
 ### Gateway
 echo -e "\n[INFO] Deploying cluster gateway..."
-kubectl create namespace istio-gateway --dry-run=client -o yaml | kubectl apply -f -
-kubectl label namespace istio-gateway trust-manager/inject-lab-ca-secret=enabled
-kubectl -n istio-gateway apply -R -f ./resources/istio/certificates
-kubectl -n istio-gateway apply -R -f ./resources/istio/configmaps
-kubectl -n istio-gateway apply -R -f ./resources/istio/gateways
-kubectl -n istio-gateway apply -R -f ./resources/istio/requestAuthentications
-kubectl -n istio-gateway apply -R -f ./resources/istio/authorizationPolicies
+kubectl create namespace envoy-gateway-system --dry-run=client -o yaml | kubectl apply -f -
+kubectl label namespace envoy-gateway-system  trust-manager/inject-lab-ca-secret=enabled
+
+helm template envoy-gateway-crds oci://docker.io/envoyproxy/gateway-crds-helm \
+  --server-side \
+  --namespace envoy-gateway-system \
+  -f ./resources/envoy-gateway/helm/crds.yaml \
+| kubectl apply --server-side -f -
+
+helm upgrade envoy-gateway oci://docker.io/envoyproxy/gateway-helm \
+  --install \
+  --namespace envoy-gateway-system \
+  -f ./resources/envoy-gateway/helm/gateway.yaml \
+  --wait
+
+kubectl -n envoy-gateway-system apply -R -f ./resources/envoy-gateway/certificates
+kubectl -n envoy-gateway-system apply -R -f ./resources/envoy-gateway/envoyproxies
+kubectl -n envoy-gateway-system apply -R -f ./resources/envoy-gateway/gatewayclasses
+kubectl -n envoy-gateway-system apply -R -f ./resources/envoy-gateway/gateways
 echo -e "[INFO] ...done\n"
 
 echo -e "\n[INFO] Tier 1 layer sucessfully deployed.\n"

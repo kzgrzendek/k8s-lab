@@ -1,21 +1,15 @@
 apiVersion: gateway.networking.k8s.io/v1
 kind: Gateway
 metadata:
-  name: k8s
-  namespace: istio-gateway
-  annotations:
-    networking.istio.io/service-type: NodePort
+  name: k8s-lab
+  namespace: envoy-gateway-system
 spec:
-  infrastructure:
-    parametersRef:
-      group: ""
-      kind: ConfigMap
-      name: k8s-lab-gateway-config
-  gatewayClassName: istio
+  gatewayClassName: eg 
+
   listeners:
   - name: keycloak-tls-passthrough
     hostname: "keycloak.auth.k8s.local"
-    port: 443
+    port: 10443
     protocol: TLS
     tls:
       mode: Passthrough
@@ -28,7 +22,7 @@ spec:
 
   - name: lab-https-termination
     hostname: "*.lab.k8s.local"
-    port: 443
+    port: 10443
     protocol: HTTPS
     tls:
       mode: Terminate

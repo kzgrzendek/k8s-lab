@@ -1,19 +1,16 @@
 hubble:
   relay:
     enabled: true
+
   ui:
     enabled: true
     baseUrl: "/"
     ingress:
+      enabled: false
+
+  metrics:
+    serviceMonitor:
       enabled: true
-      annotations:
-        cert-manager.io/cluster-issuer: selfsigned-issuer
-      className: "cilium"
-      hosts:
-        - "hubble.lab.k8s.local"
-      tls:
-        - hosts:
-          - "hubble.lab.k8s.local"
-          secretName: hubble-ui-tls
-    service:
-      type: "ClusterIP"
+    
+    dashboards:
+      enabled: true 
