@@ -13,4 +13,4 @@ spec:
     - group: ""
       kind: Secret
       name: k8s-lab-ca-secret
-    hostname: my.keycloak.com
+    hostname: keycloak.auth.k8s.local

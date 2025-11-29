@@ -25,7 +25,7 @@ spec:
     clientSecret:
       name: hubble-oidc
 
-    redirectURL: https://hubble.lab.k8s.local
+    redirectURL: https://hubble.lab.k8s.local/oauth2/callback
     logoutPath: /oauth2/sign_out
 
     scopes:
@@ -36,3 +36,29 @@ spec:
     
     forwardAccessToken: true
     refreshToken: true
+
+  jwt:
+    providers:
+    - name: keycloak
+      issuer: https://keycloak.auth.k8s.local/realms/k8s-lab
+      remoteJWKS:
+        uri: https://keycloak.auth.k8s.local/realms/k8s-lab/protocol/openid-connect/certs
+        
+        backendRefs:
+        - group: gateway.envoyproxy.io
+          kind: Backend
+          name: keycloak      # ← réutilise ton Backend existant
+          port: 443
+
+  authorization:
+    defaultAction: Deny
+    rules:
+    - name: allow-admins
+      action: Allow
+      principal:
+        jwt:
+          provider: keycloak
+          claims:
+          - name: groups
+            valueType: StringArray
+            values: ["ADMINS"]
