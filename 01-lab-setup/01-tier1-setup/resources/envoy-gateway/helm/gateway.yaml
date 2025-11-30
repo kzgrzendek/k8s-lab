@@ -1,5 +1,8 @@
+deployment:
+  name: "envoy-control-plane"
+
 service:
-  type: NodePort
+  type: "NodePort"
 
 config:
   envoyGateway:

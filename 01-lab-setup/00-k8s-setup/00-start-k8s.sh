@@ -7,8 +7,6 @@
 # Description: Helper script to start a multi-node local Minikube cluster.                                   #
 ############################################################################################################## 
 
-set -eup
-
 echo -e "[INFO] Starting Minkube provisioning script v1.0"
 
 echo -e "[INFO] Checking if minikube is installed..."
@@ -26,7 +24,6 @@ echo -e "\n[INFO] Starting Minikube cluster..."
 minikube start \
     --install-addons=false \
     --driver docker \
-    --docker-env TZ=Europe/Paris \
     --cpus 4 \
     --memory 4096 \
     --container-runtime docker \

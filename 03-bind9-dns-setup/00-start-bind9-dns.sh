@@ -19,7 +19,6 @@ docker run \
   --publish 30053:53/tcp \
   --publish 30053:53/udp \
   --env BIND9_USER=bind \
-  --env TZ=Europe/Paris \
   --volume ./resources/named.conf:/etc/bind/named.conf \
   --volume ./resources/db.lab.k8s.local:/etc/bind/zones/db.lab.k8s.local \
   --volume ./resources/db.lab.k8s.local:/etc/bind/zones/db.auth.k8s.local \

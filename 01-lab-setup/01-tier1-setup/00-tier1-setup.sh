@@ -27,7 +27,7 @@ fi
 
 echo -e "\n[INFO] Adding Helm repositories..."
 helm repo add cilium https://helm.cilium.io/ --force-update
-helm repo add k8tz https://k8tz.github.io/k8tz/ --force-update
+helm repo add nvidia https://helm.ngc.nvidia.com/nvidia --force-update
 helm repo add jetstack https://charts.jetstack.io --force-update
 helm repo update
 echo -e "[INFO] ...done"
@@ -52,27 +52,28 @@ echo -e "\n[INFO] Updating Core DNS configuration..."
 kubectl -n kube-system apply -R -f ./resources/coredns/configmaps
 echo -e "[INFO] ...done."
 
-## CSI Hostpath installation
-echo -e "\n[INFO] Enabling csi-hostpath-driver storage class as default..."
-minikube addons enable volumesnapshots
-minikube addons enable csi-hostpath-driver
-kubectl patch storageclass csi-hostpath-sc -p '{"metadata": {"annotations":{"storageclass.kubernetes.io/is-default-class":"true"}}}'
+
+## Local Path CSI Storage Provisioner support
+echo -e "\n[INFO] Deploying Local Hostpath CSI Provisioner..."
+kubectl create namespace local-path-storage --dry-run=client -o yaml | kubectl apply -f -
+
+kubectl apply -f \
+  https://raw.githubusercontent.com/rancher/local-path-provisioner/master/deploy/local-path-storage.yaml
+kubectl patch storageclass local-path \
+  --patch-file ./resources/local-path-provisioner/patches/sc-default.yaml
+kubectl patch configmap local-path-config \
+  --namespace local-path-storage \
+  --patch-file ./resources/local-path-provisioner/patches/storage-dir.yaml
 echo -e "[INFO] ...done."
 
 
 ## NVIDIA GPU support
-echo -e "\n[INFO] Enabling NVidia Device Plugin Support..."
-minikube addons enable nvidia-device-plugin
-echo -e "[INFO] ...done."
-
-
-## K8tz
-echo -e "\n[INFO] Installing K8tz Timezone Controller..."
-kubectl create namespace k8tz --dry-run=client -o yaml | kubectl apply -f -
-helm upgrade k8tz k8tz/k8tz  \
+echo -e "\n[INFO] Deploying NVidia GPU Operator..."
+kubectl create namespace nvidia-gpu-operator --dry-run=client -o yaml | kubectl apply -f -
+helm upgrade nvidia-gpu-operator nvidia/gpu-operator \
     --install \
-    --namespace k8tz \
-    -f ./resources/k8tz/helm/k8tz.yaml \
+    --namespace nvidia-gpu-operator \
+    -f ./resources/nvidia-gpu-operator/helm/operator.yaml \
     --wait
 echo -e "[INFO] ...done."
 
@@ -85,7 +86,6 @@ kubectl label namespace cert-manager trust-manager/inject-lab-ca-secret=enabled
 kubectl -n cert-manager apply -R -f ./resources/cert-manager/secrets
 helm upgrade cert-manager jetstack/cert-manager \
   --install \
-  --version v1.19.1 \
   --namespace cert-manager \
   --create-namespace \
   -f ./resources/cert-manager/helm/cert-manager.yaml \

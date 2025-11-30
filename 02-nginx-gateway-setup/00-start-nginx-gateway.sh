@@ -24,7 +24,6 @@ docker run \
     --detach \
     --name k8s-lab-nginx-gateway \
     --network minikube \
-    --env TZ=Europe/Paris \
     --publish 80:80 \
     --publish 443:443 \
     --volume ./resources/config/nginx.conf:/etc/nginx/nginx.conf \

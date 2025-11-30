@@ -7,5 +7,5 @@ spec:
   parametersRef:
     group: gateway.envoyproxy.io
     kind: EnvoyProxy
-    name: envoyproxy-nodeport
+    name: k8s-lab-gateway
     namespace: envoy-gateway-system

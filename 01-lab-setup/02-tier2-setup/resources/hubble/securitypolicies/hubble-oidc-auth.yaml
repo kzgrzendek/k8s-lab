@@ -43,11 +43,11 @@ spec:
       issuer: https://keycloak.auth.k8s.local/realms/k8s-lab
       remoteJWKS:
         uri: https://keycloak.auth.k8s.local/realms/k8s-lab/protocol/openid-connect/certs
-        
+
         backendRefs:
         - group: gateway.envoyproxy.io
           kind: Backend
-          name: keycloak      # ← réutilise ton Backend existant
+          name: keycloak
           port: 443
 
   authorization:
