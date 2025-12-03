@@ -1,0 +1,17 @@
+controller:
+  extraVolumes:
+    - name: trusted-ca
+      secret:
+        secretName: k8s-lab-ca-secret
+
+  extraVolumeMounts:
+    - name: trusted-ca
+      mountPath: /etc/ssl/certs/ca-certificates.crt
+      subPath: ca-certificates.crt
+      readOnly: true
+
+  extraEnvVars:
+    - name: SSL_CERT_FILE
+      value: /etc/ssl/certs/ca-certificates.crt
+    - name: REQUESTS_CA_BUNDLE
+      value: /etc/ssl/certs/ca-certificates.crt

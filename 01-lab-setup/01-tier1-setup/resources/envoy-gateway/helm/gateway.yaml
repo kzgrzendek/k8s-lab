@@ -8,3 +8,19 @@ config:
   envoyGateway:
     extensionApis:
       enableBackend: true
+    provider:
+      kubernetes:
+        rateLimitDeployment:
+          container:
+            env:
+              - name: REDIS_AUTH
+                valueFrom:
+                  secretKeyRef:
+                    name: redis
+                    key: redis-password
+
+    rateLimit:
+      backend:
+        type: Redis
+        redis:
+          url: redis-redis-ha.envoy-gateway-system.svc.cluster.local:6379

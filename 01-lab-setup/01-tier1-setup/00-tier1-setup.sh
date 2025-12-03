@@ -29,6 +29,7 @@ echo -e "\n[INFO] Adding Helm repositories..."
 helm repo add cilium https://helm.cilium.io/ --force-update
 helm repo add nvidia https://helm.ngc.nvidia.com/nvidia --force-update
 helm repo add jetstack https://charts.jetstack.io --force-update
+helm repo add dandydev https://dandydeveloper.github.io/charts --force-update
 helm repo update
 echo -e "[INFO] ...done"
 
@@ -59,8 +60,11 @@ kubectl create namespace local-path-storage --dry-run=client -o yaml | kubectl a
 
 kubectl apply -f \
   https://raw.githubusercontent.com/rancher/local-path-provisioner/master/deploy/local-path-storage.yaml
-kubectl patch storageclass local-path \
-  --patch-file ./resources/local-path-provisioner/patches/sc-default.yaml
+
+kubectl apply \
+  --namespace local-path-storage \
+  -f ./resources/local-path-provisioner/storageclasses/standard.yaml
+
 kubectl patch configmap local-path-config \
   --namespace local-path-storage \
   --patch-file ./resources/local-path-provisioner/patches/storage-dir.yaml
@@ -116,11 +120,36 @@ helm upgrade cilium cilium/cilium \
 echo -e "[INFO] ...done."
 
 
-### Gateway
-echo -e "\n[INFO] Deploying cluster gateway..."
+### Gateways
+echo -e "\n[INFO] Deploying Envoy AI Gateway..."
+kubectl create namespace envoy-ai-gateway-system --dry-run=client -o yaml | kubectl apply -f -
+kubectl label namespace envoy-gateway-system  trust-manager/inject-lab-ca-secret=enabled
+
+helm upgrade aieg-crd oci://docker.io/envoyproxy/ai-gateway-crds-helm \
+  --install \
+  --namespace envoy-ai-gateway-system \
+  --wait
+
+helm upgrade aieg oci://docker.io/envoyproxy/ai-gateway-helm \
+  --install \
+  --namespace envoy-ai-gateway-system \
+  -f ./resources/envoy-ai-gateway/helm/ai-gateway.yaml \
+  --wait
+echo -e "[INFO] ...done\n"
+
+echo -e "\n[INFO] Deploying Redis Envoy Gateway Backend..."
 kubectl create namespace envoy-gateway-system --dry-run=client -o yaml | kubectl apply -f -
 kubectl label namespace envoy-gateway-system  trust-manager/inject-lab-ca-secret=enabled
 
+kubectl -n envoy-gateway-system apply -R -f ./resources/envoy-gateway/redis/secrets
+helm upgrade redis dandydev/redis-ha \
+  --install \
+  --namespace envoy-gateway-system \
+  -f ./resources/envoy-gateway/redis/helm/redis.yaml \
+  --wait
+echo -e "[INFO] ...done\n"
+
+echo -e "\n[INFO] Deploying Envoy Gateway..."
 helm template envoy-gateway-crds oci://docker.io/envoyproxy/gateway-crds-helm \
   --server-side \
   --namespace envoy-gateway-system \
@@ -130,6 +159,9 @@ helm template envoy-gateway-crds oci://docker.io/envoyproxy/gateway-crds-helm \
 helm upgrade envoy-gateway oci://docker.io/envoyproxy/gateway-helm \
   --install \
   --namespace envoy-gateway-system \
+  -f https://raw.githubusercontent.com/envoyproxy/ai-gateway/main/manifests/envoy-gateway-values.yaml \
+  -f https://raw.githubusercontent.com/envoyproxy/ai-gateway/main/examples/token_ratelimit/envoy-gateway-values-addon.yaml \
+  -f https://raw.githubusercontent.com/envoyproxy/ai-gateway/main/examples/inference-pool/envoy-gateway-values-addon.yaml \
   -f ./resources/envoy-gateway/helm/gateway.yaml \
   --wait
 
