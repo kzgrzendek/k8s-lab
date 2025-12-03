@@ -120,16 +120,23 @@ helm upgrade cilium cilium/cilium \
 echo -e "[INFO] ...done."
 
 
-### Gateways
+## Gateways
+### Envoy AI Gateway
 echo -e "\n[INFO] Deploying Envoy AI Gateway..."
 kubectl create namespace envoy-ai-gateway-system --dry-run=client -o yaml | kubectl apply -f -
 kubectl label namespace envoy-gateway-system  trust-manager/inject-lab-ca-secret=enabled
 
+#### Inference Extension CRDs
+kubectl apply -f \
+  https://github.com/kubernetes-sigs/gateway-api-inference-extension/releases/download/v1.2.0/manifests.yaml
+
+#### IA Gateway CRDs
 helm upgrade aieg-crd oci://docker.io/envoyproxy/ai-gateway-crds-helm \
   --install \
   --namespace envoy-ai-gateway-system \
   --wait
 
+#### Envoy IA Gaeway CRDs
 helm upgrade aieg oci://docker.io/envoyproxy/ai-gateway-helm \
   --install \
   --namespace envoy-ai-gateway-system \
@@ -137,10 +144,13 @@ helm upgrade aieg oci://docker.io/envoyproxy/ai-gateway-helm \
   --wait
 echo -e "[INFO] ...done\n"
 
+### Envoy Gateway
+#### Envoy Redis backend
 echo -e "\n[INFO] Deploying Redis Envoy Gateway Backend..."
 kubectl create namespace envoy-gateway-system --dry-run=client -o yaml | kubectl apply -f -
 kubectl label namespace envoy-gateway-system  trust-manager/inject-lab-ca-secret=enabled
 
+#### Gateway CRDs
 kubectl -n envoy-gateway-system apply -R -f ./resources/envoy-gateway/redis/secrets
 helm upgrade redis dandydev/redis-ha \
   --install \
@@ -149,6 +159,7 @@ helm upgrade redis dandydev/redis-ha \
   --wait
 echo -e "[INFO] ...done\n"
 
+#### Envoy Gateway deployment
 echo -e "\n[INFO] Deploying Envoy Gateway..."
 helm template envoy-gateway-crds oci://docker.io/envoyproxy/gateway-crds-helm \
   --server-side \
