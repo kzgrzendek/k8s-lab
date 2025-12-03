@@ -12,6 +12,9 @@ data:
            lameduck 5s
         }
         ready
+
+        rewrite name exact keycloak.auth.k8s.local keycloak-service.keycloak.svc.cluster.local
+
         kubernetes cluster.local in-addr.arpa ip6.arpa {
            pods insecure
            fallthrough in-addr.arpa ip6.arpa
@@ -22,7 +25,7 @@ data:
            192.168.49.1 host.minikube.internal
            fallthrough
         }
-        rewrite name regex keycloak.auth.k8s.local keycloak-service.keycloak.svc.cluster.local
+
         forward . /etc/resolv.conf {
            max_concurrent 1000
         }

@@ -1,0 +1,153 @@
+persistence:
+  createPVC:
+  - name: data-pvc 
+    storageClassName: "standard"
+    accessMode: "ReadWriteOnce"
+    size: "5Gi"
+
+serviceAccount:
+  create: true
+  automount: true
+  annotations: {}
+  name: ""
+
+jupyterhub:
+  enabled: true
+  debug:
+    enabled: false
+
+  httpRoute:
+    enabled: true
+    gateway:
+      name: "k8s-lab"
+      namespace: "envoy-gateway-system"
+    hostnames: 
+      - "helix.lab.k8s.local"
+
+  hub:
+    image:
+      pullPolicy: "Always"
+    baseUrl: "/jupyter"
+    db:
+      type: "sqlite-pvc"
+      upgrade:
+      pvc:
+        annotations: {}
+        selector: {}
+        accessModes:
+          - "ReadWriteOnce"
+        storage: "2Gi"
+        storageClassName: "standard"
+
+    extraEnv:
+      PROJECT: "helix"
+      ALLOW_PRIVATE_JLAB: "TRUE"
+
+      JHUB_DEFAULT_URL: "/jupyter/hub/spawn/helix"
+
+      OIDC_ENABLED: "true"
+      OIDC_AUTHORIZE_URL: "https://keycloak.auth.k8s.local/realms/k8s-lab/protocol/openid-connect/auth"
+      OIDC_CALLBACK_URL: "https://helix.lab.k8s.local/jupyter/hub/oauth_callback"
+      OIDC_TOKEN_URL: "https://keycloak.auth.k8s.local/realms/k8s-lab/protocol/openid-connect/token"
+      OIDC_USERDATA_URL: "https://keycloak.auth.k8s.local/realms/k8s-lab/protocol/openid-connect/userinfo"
+      OIDC_REQUESTED_SCOPES: "openid"
+      OIDC_USERNAME_CLAIM: "name"
+      OIDC_CLAIM_GROUPS_KEY: "groups"
+      OIDC_ALLOWED_GROUPS: "USERS"
+      OIDC_ADMIN_GROUPS: "ADMINS"
+      OIDC_CLIENT_ID:
+        valueFrom:
+          secretKeyRef:
+            name: "oidc"
+            key: "client-id"
+      OIDC_CLIENT_SECRET:
+        valueFrom:
+          secretKeyRef:
+            name: "oidc"
+            key: "client-secret"
+
+    config:
+      GenericOAuthenticator:
+        http_request_kwargs:
+          ca_certs: /etc/ssl/certs/k8s-lab-ca/cert.pem
+
+    redirectToServer: false
+
+    networkPolicy:
+      enabled: false
+
+    extraVolumes:
+      - name: k8s-lab-ca
+        secret:
+          secretName: k8s-lab-ca-secret
+      - name: "extra-config"
+        configMap:
+          name: "jupyterhub-extra-config"
+
+    extraVolumeMounts:
+      - name: k8s-lab-ca
+        mountPath: /etc/ssl/certs/k8s-lab-ca
+      - name: "extra-config"
+        mountPath: "/usr/local/etc/jupyterhub/jupyterhub_config.d"
+
+  scheduling:
+    userScheduler:
+      enabled: false
+    podPriority:
+      enabled: false
+    userPlaceholder:
+      enabled: false
+
+  proxy:
+    service:
+      type: "ClusterIP"
+
+  prePuller:
+    continuous:
+      enabled: false
+    hook:
+      enabled: false
+
+  cull:
+    enabled: true
+    timeout: 3600
+    every: 300
+
+  singleuser:
+    podNameTemplate: "jupyter-{unescaped_username}"
+
+    extraEnv:
+      PYDEVD_DISABLE_FILE_VALIDATION: "1"
+
+    storage:
+      dynamic:
+        storageClass: "standard"
+        storageAccessModes:
+        - "ReadWriteOnce"
+      capacity: "5Gi"
+
+      extraVolumeMounts:
+        helix-data:
+          name: "helix-data"
+          mountPath: "/data"
+
+      extraVolumes:
+        helix-data:
+          name: "helix-data"
+          persistentVolumeClaim:
+            claimName: "data-pvc"
+
+    lifecycleHooks:
+      postStart:
+        exec:
+          command:
+          - "sh"
+          - "-c"
+          - "if [ -d /tmp/home ]; then cp -rf /tmp/home/.[^.]* /home/jovyan/; fi"
+
+    cpu:
+      limit: 2
+      guarantee: 1
+    memory:
+      limit: "4G"
+      guarantee: "2G"

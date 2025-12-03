@@ -28,14 +28,25 @@ else
 fi
 
 echo -e "\n[INFO] Adding Helm repositories..."
-helm repo add falcosecurity https://falcosecurity.github.io/charts --force-update
-helm repo add kyverno https://kyverno.github.io/kyverno/ --force-update
-helm repo add vm https://victoriametrics.github.io/helm-charts --force-update
+helm repo add aphp-helix https://aphp.github.io/HELIX
 helm repo update
 echo -e "\n[INFO] ...done"
 
 # Installing applicative stack
+## HELIX
+echo -e "\n[INFO] Installing HELIX..."
+kubectl create namespace helix --dry-run=client -o yaml | kubectl apply -f -
+kubectl label namespace helix trust-manager/inject-lab-ca-secret=enabled
+kubectl label namespace helix service-type=lab
 
-## Kubeflow
+kubectl -n helix apply -R -f ./resources/helix/secrets
+
+helm upgrade helix aphp-helix/helix \
+    --install \
+    --namespace helix \
+    -f ./resources/helix/helm/helix.yaml \
+    --wait
+echo -e "[INFO] ...done."
+
 
 echo -e "\n[INFO] Tier 3 layer sucessfully deployed.\n"
