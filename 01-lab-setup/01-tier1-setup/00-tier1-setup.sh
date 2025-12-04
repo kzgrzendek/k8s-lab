@@ -71,8 +71,27 @@ kubectl patch configmap local-path-config \
 echo -e "[INFO] ...done."
 
 
+## Falco
+echo -e "\n[INFO] Installing Falco..."
+kubectl create namespace falco --dry-run=client -o yaml | kubectl apply -f -
+helm upgrade falco falcosecurity/falco \
+    --install \
+    --namespace falco \
+    -f ./resources/falco/helm/falco.yaml \
+    --wait
+echo -e "[INFO] ...done."
+
+
 ## NVIDIA GPU support
 echo -e "\n[INFO] Deploying NVidia GPU Operator..."
+
+### Disabling GPU Operator deployment on master nodes if we have more then one node
+if [ "$(kubectl get nodes --no-headers | wc -l)" -gt 1 ]; then
+  MASTERS=$( (kubectl get nodes -l node-role.kubernetes.io/master= -o name 2>/dev/null; \
+              kubectl get nodes -l node-role.kubernetes.io/control-plane= -o name 2>/dev/null) | sort -u )
+  [ -n "$MASTERS" ] && kubectl label $MASTERS nvidia.com/gpu.deploy.operands=false --overwrite
+fi
+
 kubectl create namespace nvidia-gpu-operator --dry-run=client -o yaml | kubectl apply -f -
 helm upgrade nvidia-gpu-operator nvidia/gpu-operator \
     --install \
@@ -107,7 +126,13 @@ helm upgrade trust-manager jetstack/trust-manager \
   -f ./resources/trust-manager/helm/trust-manager.yaml \
   --wait
 
-kubectl -n cert-manager wait --for=condition=available deployment/trust-manager --timeout=300s
+### Waiting for trust-manager webhook endpoint to be ready
+until kubectl -n cert-manager get endpoints trust-manager \
+  -o jsonpath='{.subsets[*].addresses[*].ip}' | grep -qE '\S'; do
+  echo "  - still waiting for endpoints..."
+  sleep 2
+done
+
 kubectl -n cert-manager apply -R -f ./resources/trust-manager/bundles
 
 echo -e "\n[INFO] Enabling Cilium Envoy L7 feature with CA Injection..."
@@ -124,7 +149,7 @@ echo -e "[INFO] ...done."
 ### Envoy AI Gateway
 echo -e "\n[INFO] Deploying Envoy AI Gateway..."
 kubectl create namespace envoy-ai-gateway-system --dry-run=client -o yaml | kubectl apply -f -
-kubectl label namespace envoy-gateway-system  trust-manager/inject-lab-ca-secret=enabled
+kubectl label namespace envoy-ai-gateway-system  trust-manager/inject-lab-ca-secret=enabled
 
 #### Inference Extension CRDs
 kubectl apply -f \

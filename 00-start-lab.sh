@@ -12,10 +12,9 @@ set -eup
 echo -e "[INFO] Starting K8S Lab starting script v1.0 \n"
 
 # Host Setup
-# pushd 00-host-setup > /dev/null
-# . 00-host-setup.sh
-# popd > /dev/null
-
+pushd 00-host-setup > /dev/null
+. 00-host-setup.sh
+popd > /dev/null
 
 # Lab Setup
 ## K8S setup
@@ -33,10 +32,10 @@ pushd 01-lab-setup/02-tier2-setup > /dev/null
 . 00-tier2-setup.sh
 popd > /dev/null
 
-## Tier 3 setup
-# pushd 01-lab-setup/03-tier3-setup.sh > /dev/null
-# . 00-tier3-setup.sh
-# popd > /dev/null
+# Tier 3 setup
+pushd 01-lab-setup/03-tier3-setup.sh > /dev/null
+. 00-tier3-setup.sh
+popd > /dev/null
 
 
 # NGINX Gateway setup

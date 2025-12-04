@@ -47,18 +47,6 @@ helm upgrade kyverno kyverno/kyverno \
     --wait
 echo -e "[INFO] ...done."
 
-
-## Falco
-echo -e "\n[INFO] Installing Falco..."
-kubectl create namespace falco --dry-run=client -o yaml | kubectl apply -f -
-helm upgrade falco falcosecurity/falco \
-    --install \
-    --namespace falco \
-    -f ./resources/falco/helm/falco.yaml \
-    --wait
-echo -e "[INFO] ...done."
-
-
 ## Keycloak
 ### Keycloak Operator
 echo -e "\n[INFO] Installing Keycloak Operator..."
@@ -117,6 +105,12 @@ helm upgrade vls vm/victoria-logs-single \
     --install \
     --namespace victorialogs \
     -f ./resources/victorialogs/helm/vlogs.yaml \
+    --wait
+
+helm upgrade collector vm/victoria-logs-collector \
+    --install \
+    --namespace victorialogs \
+    -f ./resources/victorialogs/helm/collector.yaml \
     --wait
 echo -e "[INFO] ...done."
 
