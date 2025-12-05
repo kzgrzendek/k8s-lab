@@ -59,43 +59,6 @@ done
 echo -e "[INFO] ...done"
 
 
-# NVidia Operator deployent strategy
-echo -e "\n[INFO] Labeling the NVIDIA GPU node..."
-# Get master / control-plane nodes
-MASTERS=$(
-  (
-    kubectl get nodes -l node-role.kubernetes.io/master= -o name 2>/dev/null
-    kubectl get nodes -l node-role.kubernetes.io/control-plane= -o name 2>/dev/null
-  ) | sort -u
-)
-
-# Get worker nodes (nodes without master/control-plane role)
-WORKERS=$(kubectl get nodes -l '!node-role.kubernetes.io/master,!node-role.kubernetes.io/control-plane' -o name 2>/dev/null || true)
-
-# Choose target GPU node:
-# - Prefer a worker if any
-# - Otherwise use a master/control-plane node
-if [ -n "$WORKERS" ]; then
-  TARGET_NODE=$(echo "$WORKERS" | head -n1)
-  echo "[INFO] Workers detected, limiting GPU operands to worker node: $TARGET_NODE"
-elif [ -n "$MASTERS" ]; then
-  TARGET_NODE=$(echo "$MASTERS" | head -n1)
-  echo "[INFO] Only master/control-plane nodes detected, limiting GPU operands to master node: $TARGET_NODE"
-else
-  # Fallback: no role labels, pick the first node
-  TARGET_NODE=$(kubectl get nodes -o name | head -n1)
-  echo "[WARN] No role labels detected, falling back to first node: $TARGET_NODE"
-fi
-
-# Disable GPU operands on all nodes
-kubectl label nodes --all nvidia.com/gpu.deploy.operands=false --overwrite
-
-# Enable GPU operands on the selected node (remove the disabling label)
-kubectl label "$TARGET_NODE" nvidia.com/gpu.deploy.operands-
-
-echo -e "[INFO] ...done"
-
-
 # Applying master nodes taint only if the clutser has worker nodes
 echo "[INFO] Checking worker nodes..."
 
@@ -133,5 +96,46 @@ for NODE in $MASTERS; do
 done
 
 echo "[INFO] Done."
+
+# NVidia Operator deployent strategy
+echo -e "\n[INFO] Selecting the NVIDIA GPU node..."
+
+# Get master / control-plane nodes
+MASTERS=$(
+  (
+    kubectl get nodes -l node-role.kubernetes.io/master= -o name 2>/dev/null
+    kubectl get nodes -l node-role.kubernetes.io/control-plane= -o name 2>/dev/null
+  ) | sort -u
+)
+
+# Get worker nodes (nodes without master/control-plane role)
+WORKERS=$(
+  kubectl get nodes -l '!node-role.kubernetes.io/master,!node-role.kubernetes.io/control-plane' -o name 2>/dev/null || true
+)
+
+# Choose target GPU node:
+# - Prefer a worker if any
+# - Otherwise use a master/control-plane node
+if [ -n "$WORKERS" ]; then
+  TARGET_NODE=$(echo "$WORKERS" | head -n1)
+  echo "[INFO] Workers detected, limiting GPU operands to worker node: $TARGET_NODE"
+elif [ -n "$MASTERS" ]; then
+  TARGET_NODE=$(echo "$MASTERS" | head -n1)
+  echo "[INFO] Only master/control-plane nodes detected, limiting GPU operands to master node: $TARGET_NODE"
+else
+  # Fallback: no role labels, pick the first node
+  TARGET_NODE=$(kubectl get nodes -o name | head -n1)
+  echo "[WARN] No role labels detected, falling back to first node: $TARGET_NODE"
+fi
+
+# Disable GPU operands on all nodes
+echo "[INFO] Disabling GPU operands on all nodes..."
+kubectl label nodes --all nvidia.com/gpu.deploy.operands=false --overwrite
+
+# Enable GPU operands on the selected node (remove the disabling label)
+echo "[INFO] Enabling GPU operands on selected node: $TARGET_NODE"
+kubectl label "$TARGET_NODE" nvidia.com/gpu.deploy.operands-
+
+echo -e "[INFO] Done."
 
 echo -e "[INFO] Minikube cluster deployed. \n"

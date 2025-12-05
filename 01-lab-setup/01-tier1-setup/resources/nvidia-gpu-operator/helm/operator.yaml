@@ -1,5 +1,5 @@
 driver:
   enabled: false
 
-toolkit:   # (au passage tu avais écrit "tookit", donc ce bloc était ignoré)
+toolkit:
   enabled: false
