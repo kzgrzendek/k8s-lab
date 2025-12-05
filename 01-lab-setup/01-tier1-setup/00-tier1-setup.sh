@@ -85,13 +85,6 @@ echo -e "[INFO] ...done."
 ## NVIDIA GPU support
 echo -e "\n[INFO] Deploying NVidia GPU Operator..."
 
-### Disabling GPU Operator deployment on master nodes if we have more then one node
-if [ "$(kubectl get nodes --no-headers | wc -l)" -gt 1 ]; then
-  MASTERS=$( (kubectl get nodes -l node-role.kubernetes.io/master= -o name 2>/dev/null; \
-              kubectl get nodes -l node-role.kubernetes.io/control-plane= -o name 2>/dev/null) | sort -u )
-  [ -n "$MASTERS" ] && kubectl label $MASTERS nvidia.com/gpu.deploy.operands=false --overwrite
-fi
-
 kubectl create namespace nvidia-gpu-operator --dry-run=client -o yaml | kubectl apply -f -
 helm upgrade nvidia-gpu-operator nvidia/gpu-operator \
     --install \
@@ -126,7 +119,14 @@ helm upgrade trust-manager jetstack/trust-manager \
   -f ./resources/trust-manager/helm/trust-manager.yaml \
   --wait
 
-### Waiting for trust-manager webhook endpoint to be ready
+### Wait for trust-manager pods to be Ready
+kubectl -n cert-manager wait pod \
+  -l app.kubernetes.io/name=trust-manager \
+  --for=condition=Ready \
+  --timeout=300s
+
+### Wait until the Service has ready endpoints
+echo "[INFO] Waiting for trust-manager webhook endpoints..."
 until kubectl -n cert-manager get endpoints trust-manager \
   -o jsonpath='{.subsets[*].addresses[*].ip}' | grep -qE '\S'; do
   echo "  - still waiting for endpoints..."

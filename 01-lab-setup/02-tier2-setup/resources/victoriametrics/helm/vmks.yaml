@@ -17,7 +17,6 @@ vmagent:
       promscrape.dropOriginalLabels: "true"
       promscrape.streamParse: "true"
 
-
 kubelet:
   enabled: true
 
@@ -33,7 +32,6 @@ kubelet:
 
       bearerTokenFile: "/var/run/secrets/kubernetes.io/serviceaccount/token"
       tlsConfig:
-        insecureSkipVerify: true         # OK pour ton lab
         caFile: "/var/run/secrets/kubernetes.io/serviceaccount/ca.crt"
 
       metricRelabelConfigs:
@@ -50,7 +48,12 @@ kubelet:
           regex: "nvidia_com_.*"
         - action: replace
           source_labels: [image]
-          regex: ""
+          regex: "([^@]+)(?:@.*)?"
+          replacement: "$1"
+          target_label: image
+        - action: replace
+          source_labels: [image]
+          regex: "^$"
           replacement: "unknown"
           target_label: image
 
@@ -80,42 +83,22 @@ kubelet:
       spec:
         path: /metrics/resource
 
-
 kubeEtcd:
-  enabled: true
-  vmScrape:
-    spec:
-      endpoints:
-        - bearerTokenFile: /var/run/secrets/kubernetes.io/serviceaccount/token
-          port: http-metrics
-          scheme: https
-          tlsConfig:
-            caFile: /var/run/secrets/kubernetes.io/serviceaccount/ca.crt
-            insecureSkipVerify: true  # pour bypass le x509 en lab
+  enabled: false
 
 kubeControllerManager:
-  enabled: true
-  vmScrape:
-    spec:
-      endpoints:
-        - bearerTokenFile: /var/run/secrets/kubernetes.io/serviceaccount/token
-          port: http-metrics
-          scheme: https
-          tlsConfig:
-            caFile: /var/run/secrets/kubernetes.io/serviceaccount/ca.crt
-            insecureSkipVerify: true  # lab
+  enabled: false
 
 kubeScheduler:
-  enabled: true
-  vmScrape:
-    spec:
-      endpoints:
-        - bearerTokenFile: /var/run/secrets/kubernetes.io/serviceaccount/token
-          port: http-metrics
-          scheme: https
-          tlsConfig:
-            caFile: /var/run/secrets/kubernetes.io/serviceaccount/ca.crt
-            insecureSkipVerify: true  # lab
+  enabled: false
+
+defaultDatasources:
+  extra:
+    - name: VictoriaLogs
+      type: victoriametrics-logs-datasource
+      url: http://vls-victoria-logs-single-server.victorialogs.svc.cluster.local:9428
+      access: proxy
+      isDefault: false
 
 grafana:
   enabled: true
@@ -168,16 +151,6 @@ grafana:
   plugins:
     - victoriametrics-logs-datasource
 
-  datasources:
-    datasources.yaml:
-      apiVersion: 1
-      datasources:
-        - name: VictoriaLogs
-          type: victoriametrics-logs-datasource
-          url: http://vls-victoria-logs-single-server.victorialogs.svc.cluster.local:9428
-          access: proxy
-          isDefault: false
-
   ingress:
     enabled: false
 
@@ -185,6 +158,13 @@ grafana:
     - name: ca-bundle
       mountPath: /etc/ssl/certs
       secretName: k8s-lab-ca-secret
+
+  sidecar:
+    dashboards:
+      enabled: true
+      label: grafana_dashboard
+      labelValue: "1"
+      searchNamespace: "victoriametrics"
 
 extraObjects:
   - apiVersion: operator.victoriametrics.com/v1beta1
@@ -214,24 +194,52 @@ extraObjects:
           regex: "feature_node_kubernetes_io_.*"
         - action: labeldrop
           regex: "nvidia_com_.*"
+        - action: replace
+          source_labels: [image]
+          regex: "([^@]+)(?:@.*)?"
+          replacement: "$1"
+          target_label: image
+        - action: replace
+          source_labels: [image]
+          regex: "^$"
+          replacement: "unknown"
+          target_label: image
 
       relabelConfigs:
         - action: labelmap
           regex: __meta_kubernetes_node_label_(.+)
-
         - targetLabel: __address__
           replacement: kubernetes.default.svc:443
-
         - sourceLabels: [__meta_kubernetes_node_name]
           regex: (.+)
           targetLabel: __metrics_path__
           replacement: /api/v1/nodes/$1/proxy/metrics/cadvisor
-
         - targetLabel: metrics_path
           replacement: /metrics/cadvisor
-
         - targetLabel: job
           replacement: kubelet
-
         - source_labels: [__meta_kubernetes_node_name]
           target_label: kubernetes_node
+
+  - apiVersion: operator.victoriametrics.com/v1beta1
+    kind: VMPodScrape
+    metadata:
+      name: nvidia-dcgm-exporter
+      namespace: victoriametrics
+    spec:
+      namespaceSelector:
+        matchNames:
+          - nvidia-gpu-operator
+      selector:
+        matchLabels:
+          app: nvidia-dcgm-exporter
+      podMetricsEndpoints:
+        - port: metrics
+          path: /metrics
+          interval: 30s
+          scrapeTimeout: 5s
+          honorLabels: true
+          honorTimestamps: false
+          relabelConfigs:
+            - targetLabel: job
+              replacement: nvidia-dcgm-exporter

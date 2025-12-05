@@ -121,6 +121,7 @@ kubectl create namespace victoriametrics --dry-run=client -o yaml | kubectl appl
 kubectl label namespace victoriametrics service-type=lab
 kubectl label namespace victoriametrics trust-manager/inject-lab-ca-secret=enabled
 
+kubectl -n victoriametrics apply -f ./resources/victoriametrics/configmaps
 kubectl -n victoriametrics apply -f ./resources/victoriametrics/secrets
 
 helm upgrade vmks vm/victoria-metrics-k8s-stack \

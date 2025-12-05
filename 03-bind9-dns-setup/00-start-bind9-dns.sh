@@ -8,8 +8,6 @@
 #              local lab.                                                                                    #
 ############################################################################################################## 
 
-set -eup
-
 echo -e "[INFO] Starting K8S Lab BIND9 DNS Server provisioning script v1.0"
 docker rm -f k8s-lab-bind9-dns > /dev/null 2>&1
 

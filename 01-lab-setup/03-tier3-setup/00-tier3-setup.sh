@@ -7,8 +7,6 @@
 # Description: Helper script to the applicative stack that will address cross-cutting concerns               #
 ############################################################################################################## 
 
-set -eup
-
 echo -e "[INFO] Starting K8S transversal stack install script v1.0 \n"
 
 echo -e "[INFO] Checking if kubectl is installed..."
@@ -44,8 +42,7 @@ kubectl -n helix apply -R -f ./resources/helix/secrets
 helm upgrade helix aphp-helix/helix \
     --install \
     --namespace helix \
-    -f ./resources/helix/helm/helix.yaml \
-    --wait
+    -f ./resources/helix/helm/helix.yaml
 echo -e "[INFO] ...done."
 
 

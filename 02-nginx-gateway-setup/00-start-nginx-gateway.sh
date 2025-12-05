@@ -7,8 +7,6 @@
 # Description: Helper script to start a nginx instance to handle the traffic routing to the k8s local lab.   #                                                                                          #
 ############################################################################################################## 
 
-set -eup
-
 echo -e "[INFO] Starting K8S Lab NGINX Gateway provisioning script v1.0"
 docker rm -f k8s-lab-nginx-gateway > /dev/null 2>&1
 
