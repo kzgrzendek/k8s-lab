@@ -1,0 +1,85 @@
+servingEngineSpec:
+  enableEngine: true
+
+  # Empty = use default container runtime. Set to "nvidia" (or similar)
+  # if you have a GPU RuntimeClass configured in your cluster.
+  runtimeClassName: ""
+
+  # vLLM OpenAI-compatible server ports inside the container and Service
+  containerPort: 8000
+  servicePort: 8000
+
+  modelSpec:
+    - name: "model"
+
+      # vLLM OpenAI-compatible image
+      repository: "vllm/vllm-openai"
+      tag: "latest"
+
+      # Hugging Face model to load (transformer-based code model)
+      modelURL: "Qwen/Qwen2.5-Coder-1.5B-Instruct"
+
+      # Number of vLLM pods for this model
+      replicaCount: 1
+
+      # Kubernetes resource requests (adapt to your cluster)
+      requestCPU: 4
+      requestMemory: "4Gi"   # Increase to 6Gi or 8Gi if your node has enough RAM
+      requestGPU: 1          # 1 GPU per pod (you said: 8GB VRAM)
+
+      # Persistent volume size for model weights / HF cache
+      pvcStorage: "15Gi"
+      pvcAccessMode:
+        - ReadWriteOnce
+
+      # Shared memory size inside the container (useful for PyTorch)
+      shmSize: "1Gi"
+
+      vllmConfig:
+        # Maximum context length in tokens.
+        maxModelLen: 8192
+
+        # Single GPU → no tensor parallelism
+        tensorParallelSize: 1
+
+        # Safer default for most consumer GPUs; switch to "bfloat16"
+        # if your GPU fully supports BF16 and you use a recent vLLM image.
+        dtype: "float16"
+
+        # Extra arguments passed to vllm.entrypoints.openai.api_server
+        extraArgs:
+          # Public model name exposed by the OpenAI-compatible API
+          - "--served-model-name"
+          - "qwen-coder-1.5b"
+
+          # Target maximum GPU memory utilization (0.9 = 90%)
+          - "--gpu-memory-utilization"
+          - "0.9"
+
+          # Optional: disable per-request logging to reduce log noise
+          - "--disable-log-requests"
+
+      # No KV offloading / LMCache here
+      lmcacheConfig:
+        enabled: false
+
+      # If the model requires a private HF token, uncomment and set it:
+      # hf_token: "<YOUR_HF_TOKEN>"
+
+      env:
+        - name: VLLM_API_KEY
+          valueFrom:
+            secretKeyRef:
+              name: vllm-api-key
+              key: api-key
+
+
+# Disable the vLLM router (Envoy / your gateway will handle routing)
+routerSpec:
+  enableRouter: false
+
+# No LoRA controller or adapters for now
+loraController:
+  enableLoraController: false
+
+loraAdapters: []

@@ -1,0 +1,10 @@
+inferencePool:
+  targetPortNumber:
+  modelServerType:
+  modelServers:
+    matchLabels:
+      helm-release-name: "vllm"
+      model: "model"
+
+provider:
+  name: "none"

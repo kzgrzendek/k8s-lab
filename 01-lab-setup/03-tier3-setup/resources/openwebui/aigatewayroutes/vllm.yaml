@@ -1,0 +1,16 @@
+apiVersion: aigateway.envoyproxy.io/v1alpha1
+kind: AIGatewayRoute
+metadata:
+  name: vllm-openai-route
+  namespace: openwebui
+spec:
+  parentRefs:
+    - name: k8s-lab
+      namespace: envoy-gateway-system
+      group: gateway.networking.k8s.io
+      kind: Gateway
+
+  rules:
+    - backendRefs:
+        - name: vllm-openai-backend
+          namespace: openwebui
