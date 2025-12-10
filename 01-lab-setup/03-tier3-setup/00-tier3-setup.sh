@@ -51,7 +51,7 @@ helm upgrade vllm vllm-production-stack/vllm-stack \
 ### Inference Pool
 helm upgrade vllm-model-pool oci://registry.k8s.io/gateway-api-inference-extension/charts/inferencepool \
   --install \
-  --version v1.2.0 \
+  --version v1.2.1 \
   --namespace vllm \
   -f ./resources/vllm/inferencepools/helm/vllm.yaml
 
