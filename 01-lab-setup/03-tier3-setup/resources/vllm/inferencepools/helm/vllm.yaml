@@ -1,10 +1,16 @@
 inferencePool:
-  targetPortNumber:
-  modelServerType:
+  # Port du serveur vLLM (OpenAI compatible)
+  targetPortNumber: 8000
+
+  # Type de model server (vLLM)
+  modelServerType: vllm
+
+  # Quels pods appartiennent au pool ?
   modelServers:
     matchLabels:
-      helm-release-name: "vllm"
-      model: "model"
+      helm-release-name: vllm
+      model: model
 
+# Pas de “provider” managé (GKE/istio/kgateway/nginx)
 provider:
-  name: "none"
+  name: none

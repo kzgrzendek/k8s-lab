@@ -2,7 +2,7 @@ apiVersion: aigateway.envoyproxy.io/v1alpha1
 kind: AIServiceBackend
 metadata:
   name: vllm-openai-backend
-  namespace: openwebui
+  namespace: vllm
 spec:
   schema:
     name: OpenAI

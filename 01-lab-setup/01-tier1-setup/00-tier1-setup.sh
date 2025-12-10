@@ -28,6 +28,7 @@ fi
 echo -e "\n[INFO] Adding Helm repositories..."
 helm repo add cilium https://helm.cilium.io/ --force-update
 helm repo add nvidia https://helm.ngc.nvidia.com/nvidia --force-update
+helm repo add falcosecurity https://falcosecurity.github.io/charts --force-update
 helm repo add jetstack https://charts.jetstack.io --force-update
 helm repo add dandydev https://dandydeveloper.github.io/charts --force-update
 helm repo update
@@ -124,6 +125,9 @@ kubectl -n cert-manager wait pod \
   -l app.kubernetes.io/name=trust-manager \
   --for=condition=Ready \
   --timeout=300s
+
+### Sleep a few seconds in order to wait for the trust manager to be ready (ugly but will do for now)
+sleep 5
 
 ### Wait until the Service has ready endpoints
 echo "[INFO] Waiting for trust-manager webhook endpoints..."

@@ -7,7 +7,7 @@ spec:
   gatewayClassName: eg-lab
 
   listeners:
-  - name: lab-https-termination
+  - name: lab-wildcard
     hostname: "*.lab.k8s.local"
     port: 10443
     protocol: HTTPS

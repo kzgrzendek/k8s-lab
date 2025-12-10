@@ -2,7 +2,7 @@ apiVersion: gateway.envoyproxy.io/v1alpha1
 kind: Backend
 metadata:
   name: vllm-backend
-  namespace: openwebui
+  namespace: vllm
 spec:
   appProtocols:
     - gateway.envoyproxy.io/h2c

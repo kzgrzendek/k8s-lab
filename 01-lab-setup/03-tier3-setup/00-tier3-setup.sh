@@ -37,7 +37,7 @@ echo -e "\n[INFO] ...done"
 ## vLLM Stack
 echo -e "\n[INFO] Installing vLLM Stack..."
 kubectl create namespace vllm --dry-run=client -o yaml | kubectl apply -f -
-kubectl label namespace openwebui service-type=llm
+kubectl label namespace vllm service-type=llm
 
 ### vLLM
 kubectl -n vllm apply -f ./resources/vllm/secrets
@@ -51,9 +51,13 @@ helm upgrade vllm vllm-production-stack/vllm-stack \
 ### Inference Pool
 helm upgrade vllm-model-pool oci://registry.k8s.io/gateway-api-inference-extension/charts/inferencepool \
   --install \
-  --version v1.1.0 \
+  --version v1.2.0 \
   --namespace vllm \
   -f ./resources/vllm/inferencepools/helm/vllm.yaml
+
+kubectl -n vllm apply -f ./resources/vllm/backends
+kubectl -n vllm apply -f ./resources/vllm/aiservicebackends
+kubectl -n vllm apply -f ./resources/vllm/aigatewayroutes
   
 echo -e "[INFO] ...done."
 
@@ -64,9 +68,6 @@ kubectl label namespace openwebui service-type=lab
 kubectl label namespace openwebui trust-manager/inject-lab-ca-secret=enabled
 
 kubectl -n openwebui apply -f ./resources/openwebui/secrets
-kubectl -n openwebui apply -f ./resources/openwebui/backends
-kubectl -n openwebui apply -f ./resources/openwebui/aiservicebackends
-kubectl -n openwebui apply -f ./resources/openwebui/aigatewayroutes
 
 helm upgrade open-webui open-webui/open-webui \
    --install \

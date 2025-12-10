@@ -8,6 +8,7 @@ spec:
     type: Kubernetes
     kubernetes:
       envoyService:
+        name: gateway-k8s-internal
         type: ClusterIP
         patch:
           type: StrategicMerge

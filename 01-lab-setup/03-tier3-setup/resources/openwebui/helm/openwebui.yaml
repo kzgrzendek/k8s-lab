@@ -12,7 +12,7 @@ redis:
   enabled: false
 
 enableOpenaiApi: true
-openaiBaseApiUrl: "http://vllm-model-engine-service.vllm.svc.cluster.local:8000/v1"
+openaiBaseApiUrl: "https://vllm.internal.k8s.local/v1"
 openaiApiKey: ""
 
 volumes:
@@ -102,6 +102,6 @@ readinessProbe:
   httpGet:
     path: /health
     port: http
-  periodSeconds: 5
+  periodSeconds: 30
   failureThreshold: 3
 

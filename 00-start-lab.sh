@@ -33,7 +33,7 @@ pushd 01-lab-setup/02-tier2-setup > /dev/null
 popd > /dev/null
 
 # Tier 3 setup
-pushd 01-lab-setup/03-tier3-setup.sh > /dev/null
+pushd 01-lab-setup/03-tier3-setup > /dev/null
 . 00-tier3-setup.sh
 popd > /dev/null
 

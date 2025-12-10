@@ -29,7 +29,6 @@ fi
 
 echo -e "\n[INFO] Adding Helm repositories..."
 helm repo add kyverno https://kyverno.github.io/kyverno/ --force-update
-helm repo add falcosecurity https://falcosecurity.github.io/charts --force-update
 helm repo add oauth2-proxy https://oauth2-proxy.github.io/manifests --force-update
 helm repo add cilium https://helm.cilium.io/ --force-update
 helm repo add vm https://victoriametrics.github.io/helm-charts --force-update
@@ -63,7 +62,7 @@ echo -e "[INFO] ...done."
 
 ### Keycloak Instance
 echo -e "\n[INFO] Deploying a Keycloak Instance.."
-kubectl -n keycloak apply -R -f ./resources/keycloak/postresql
+kubectl -n keycloak apply -R -f ./resources/keycloak/postgresql
 kubectl -n keycloak wait -l statefulset.kubernetes.io/pod-name=postgresql-db-0 --for=condition=ready pod --timeout=300s
 
 kubectl -n keycloak apply -R -f ./resources/keycloak/secrets

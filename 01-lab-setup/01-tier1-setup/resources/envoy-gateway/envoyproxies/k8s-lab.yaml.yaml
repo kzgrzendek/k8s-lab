@@ -10,6 +10,7 @@ spec:
     type: Kubernetes
     kubernetes:
       envoyService:
+        name: gateway-k8s-lab
         type: NodePort
         patch:
           type: StrategicMerge

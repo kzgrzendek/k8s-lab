@@ -1,14 +1,14 @@
 apiVersion: gateway.networking.k8s.io/v1
 kind: Gateway
 metadata:
-  name: k8s-llm-internal
+  name: k8s-internal
   namespace: envoy-gateway-system
 spec:
   gatewayClassName: eg-internal
 
   listeners:
-  - name: llm-https-termination
-    hostname: "llm.internal.k8s.local"
+  - name: vllm
+    hostname: "vllm.internal.k8s.local"
 
     port: 10443
     protocol: HTTPS
