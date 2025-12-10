@@ -19,7 +19,7 @@ jupyterhub:
   httpRoute:
     enabled: true
     gateway:
-      name: "k8s-lab"
+      name: "k8s-lab-https"
       namespace: "envoy-gateway-system"
     hostnames: 
       - "helix.lab.k8s.local"

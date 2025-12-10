@@ -1,10 +1,10 @@
 apiVersion: cert-manager.io/v1
 kind: Certificate
 metadata:
-  name: gateway-tls
+  name: gateway-lab-tls
   namespace: envoy-gateway-system
 spec:
-  secretName: gateway-tls
+  secretName: gateway-lab-tls
   issuerRef:
     name: k8s-lab-issuer
     kind: ClusterIssuer

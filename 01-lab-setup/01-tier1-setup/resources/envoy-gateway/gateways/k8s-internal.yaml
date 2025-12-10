@@ -1,0 +1,28 @@
+apiVersion: gateway.networking.k8s.io/v1
+kind: Gateway
+metadata:
+  name: k8s-llm-internal
+  namespace: envoy-gateway-system
+spec:
+  gatewayClassName: eg-internal
+
+  listeners:
+  - name: llm-https-termination
+    hostname: "llm.internal.k8s.local"
+
+    port: 10443
+    protocol: HTTPS
+
+    tls:
+      mode: Terminate
+      certificateRefs:
+      - group: ""
+        kind: Secret
+        name: gateway-internal-tls
+
+    allowedRoutes:
+      namespaces:
+        from: Selector
+        selector:
+          matchLabels:
+            service-type: llm

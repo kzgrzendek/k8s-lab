@@ -1,25 +1,12 @@
 apiVersion: gateway.networking.k8s.io/v1
 kind: Gateway
 metadata:
-  name: k8s-lab
+  name: k8s-lab-https
   namespace: envoy-gateway-system
 spec:
-  gatewayClassName: eg 
+  gatewayClassName: eg-lab
 
   listeners:
-  - name: keycloak-tls-passthrough
-    hostname: "keycloak.auth.k8s.local"
-    port: 10443
-    protocol: TLS
-    tls:
-      mode: Passthrough
-    allowedRoutes:
-      namespaces:
-        from: Selector
-        selector:
-          matchLabels:
-            service-type: auth
-
   - name: lab-https-termination
     hostname: "*.lab.k8s.local"
     port: 10443
@@ -29,7 +16,8 @@ spec:
       certificateRefs:
       - group: ""
         kind: Secret
-        name: gateway-tls
+        name: gateway-lab-tls
+
     allowedRoutes:
       namespaces:
         from: Selector

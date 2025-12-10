@@ -37,6 +37,7 @@ echo -e "\n[INFO] ...done"
 ## vLLM Stack
 echo -e "\n[INFO] Installing vLLM Stack..."
 kubectl create namespace vllm --dry-run=client -o yaml | kubectl apply -f -
+kubectl label namespace openwebui service-type=llm
 
 ### vLLM
 kubectl -n vllm apply -f ./resources/vllm/secrets

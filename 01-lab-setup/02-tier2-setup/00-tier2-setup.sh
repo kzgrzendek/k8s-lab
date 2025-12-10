@@ -51,7 +51,7 @@ echo -e "[INFO] ...done."
 ### Keycloak Operator
 echo -e "\n[INFO] Installing Keycloak Operator..."
 kubectl create namespace keycloak --dry-run=client -o yaml | kubectl apply -f -
-kubectl label namespace keycloak service-type=auth
+kubectl label namespace keycloak service-type=keycloak
 kubectl label namespace keycloak trust-manager/inject-lab-ca-secret=enabled
 
 kubectl -n keycloak apply -f https://raw.githubusercontent.com/keycloak/keycloak-k8s-resources/26.4.1/kubernetes/keycloaks.k8s.keycloak.org-v1.yml

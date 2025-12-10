@@ -1,0 +1,13 @@
+apiVersion: cert-manager.io/v1
+kind: Certificate
+metadata:
+  name: gateway-internal-tls
+  namespace: envoy-gateway-system
+spec:
+  secretName: gateway-internal-tls
+  issuerRef:
+    name: k8s-lab-issuer
+    kind: ClusterIssuer
+  commonName: "*.internal.k8s.local"
+  dnsNames:
+  - "*.internal.k8s.local"

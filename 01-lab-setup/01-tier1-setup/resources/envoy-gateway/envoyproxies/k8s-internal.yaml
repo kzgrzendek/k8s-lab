@@ -1,28 +1,22 @@
 apiVersion: gateway.envoyproxy.io/v1alpha1
 kind: EnvoyProxy
 metadata:
-  name: k8s-lab-gateway
+  name: k8s-internal
   namespace: envoy-gateway-system
 spec:
   provider:
     type: Kubernetes
     kubernetes:
       envoyService:
-        type: NodePort
+        type: ClusterIP
         patch:
           type: StrategicMerge
           value:
             spec:
               ports:
-              - name: http
-                port: 80
-                targetPort: 8080
-                nodePort: 30080
-                protocol: TCP
               - name: https
                 port: 443
                 targetPort: 10443 
-                nodePort: 30443
                 protocol: TCP
       
       envoyDeployment:

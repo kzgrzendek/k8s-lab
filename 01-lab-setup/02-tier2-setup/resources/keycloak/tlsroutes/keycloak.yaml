@@ -5,9 +5,9 @@ metadata:
   namespace: keycloak
 spec:
   parentRefs:
-  - name: k8s-lab
+  - name: k8s-lab-passthough
     namespace: envoy-gateway-system
-    sectionName: keycloak-tls-passthrough
+    sectionName: keycloak
   
   hostnames:
   - "keycloak.auth.k8s.local"
