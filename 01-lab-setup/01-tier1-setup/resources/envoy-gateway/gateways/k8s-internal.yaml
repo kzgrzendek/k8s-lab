@@ -7,8 +7,8 @@ spec:
   gatewayClassName: eg-internal
 
   listeners:
-  - name: vllm
-    hostname: "vllm.internal.k8s.local"
+  - name: llmd
+    hostname: "llmd.internal.k8s.local"
 
     port: 10443
     protocol: HTTPS

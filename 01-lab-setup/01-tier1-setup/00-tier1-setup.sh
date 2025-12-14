@@ -157,17 +157,19 @@ kubectl label namespace envoy-ai-gateway-system  trust-manager/inject-lab-ca-sec
 
 #### Inference Extension CRDs
 kubectl apply -f \
-  https://github.com/kubernetes-sigs/gateway-api-inference-extension/releases/download/v1.2.0/manifests.yaml
+  https://github.com/kubernetes-sigs/gateway-api-inference-extension/releases/download/v1.2.1/manifests.yaml
 
 #### IA Gateway CRDs
 helm upgrade aieg-crd oci://docker.io/envoyproxy/ai-gateway-crds-helm \
   --install \
+  --version v0.4.0 \
   --namespace envoy-ai-gateway-system \
   --wait
 
 #### Envoy IA Gaeway CRDs
 helm upgrade aieg oci://docker.io/envoyproxy/ai-gateway-helm \
   --install \
+  --version v0.4.0 \
   --namespace envoy-ai-gateway-system \
   -f ./resources/envoy-ai-gateway/helm/ai-gateway.yaml \
   --wait
@@ -179,7 +181,7 @@ echo -e "\n[INFO] Deploying Redis Envoy Gateway Backend..."
 kubectl create namespace envoy-gateway-system --dry-run=client -o yaml | kubectl apply -f -
 kubectl label namespace envoy-gateway-system  trust-manager/inject-lab-ca-secret=enabled
 
-#### Gateway CRDs
+#### Redis for Envoy Gateway Extension (ratelimit)
 kubectl -n envoy-gateway-system apply -R -f ./resources/envoy-gateway/redis/secrets
 helm upgrade redis dandydev/redis-ha \
   --install \
@@ -191,6 +193,7 @@ echo -e "[INFO] ...done\n"
 #### Envoy Gateway deployment
 echo -e "\n[INFO] Deploying Envoy Gateway..."
 helm template envoy-gateway-crds oci://docker.io/envoyproxy/gateway-crds-helm \
+  --version v1.6.1 \
   --server-side \
   --namespace envoy-gateway-system \
   -f ./resources/envoy-gateway/helm/crds.yaml \
@@ -198,10 +201,11 @@ helm template envoy-gateway-crds oci://docker.io/envoyproxy/gateway-crds-helm \
 
 helm upgrade envoy-gateway oci://docker.io/envoyproxy/gateway-helm \
   --install \
+  --version v1.6.1 \
   --namespace envoy-gateway-system \
-  -f https://raw.githubusercontent.com/envoyproxy/ai-gateway/main/manifests/envoy-gateway-values.yaml \
-  -f https://raw.githubusercontent.com/envoyproxy/ai-gateway/main/examples/token_ratelimit/envoy-gateway-values-addon.yaml \
-  -f https://raw.githubusercontent.com/envoyproxy/ai-gateway/main/examples/inference-pool/envoy-gateway-values-addon.yaml \
+  -f https://raw.githubusercontent.com/envoyproxy/ai-gateway/v0.4.0/manifests/envoy-gateway-values.yaml \
+  -f https://raw.githubusercontent.com/envoyproxy/ai-gateway/v0.4.0/examples/token_ratelimit/envoy-gateway-values-addon.yaml \
+  -f https://raw.githubusercontent.com/envoyproxy/ai-gateway/v0.4.0/examples/inference-pool/envoy-gateway-values-addon.yaml \
   -f ./resources/envoy-gateway/helm/gateway.yaml \
   --wait
 

@@ -27,37 +27,34 @@ fi
 
 echo -e "\n[INFO] Adding Helm repositories..."
 helm repo add aphp-helix https://aphp.github.io/HELIX --force-update
-helm repo add vllm-production-stack https://vllm-project.github.io/production-stack --force-update
+helm repo add llm-d-modelservice https://llm-d-incubation.github.io/llm-d-modelservice --force-update
 helm repo add open-webui https://helm.openwebui.com/ --force-update
 helm repo update
 echo -e "\n[INFO] ...done"
 
 # Installing applicative stack
 
-## vLLM Stack
-echo -e "\n[INFO] Installing vLLM Stack..."
-kubectl create namespace vllm --dry-run=client -o yaml | kubectl apply -f -
-kubectl label namespace vllm service-type=llm
+## llm-d stack
+echo -e "\n[INFO] Installing llm-d Stack..."
+kubectl create namespace llmd --dry-run=client -o yaml | kubectl apply -f -
+kubectl label namespace llmd service-type=llm
 
-### vLLM
-kubectl -n vllm apply -f ./resources/vllm/secrets
-
-helm upgrade vllm vllm-production-stack/vllm-stack \
+### llm-d
+helm upgrade llmd llm-d-modelservice/llm-d-modelservice \
     --install \
-    --namespace vllm \
-    -f ./resources/vllm/helm/vllm.yaml \
+    --namespace llmd \
+    -f ./resources/llmd/helm/llmd.yaml \
     --wait
 
 ### Inference Pool
-helm upgrade vllm-model-pool oci://registry.k8s.io/gateway-api-inference-extension/charts/inferencepool \
+helm upgrade llmd-qwen3-pool oci://registry.k8s.io/gateway-api-inference-extension/charts/inferencepool \
   --install \
   --version v1.2.1 \
-  --namespace vllm \
-  -f ./resources/vllm/inferencepools/helm/vllm.yaml
+  --namespace llmd \
+  -f ./resources/llmd/inferencepools/helm/ip-llmd.yaml
 
-kubectl -n vllm apply -f ./resources/vllm/backends
-kubectl -n vllm apply -f ./resources/vllm/aiservicebackends
-kubectl -n vllm apply -f ./resources/vllm/aigatewayroutes
+kubectl -n llmd apply -f ./resources/llmd/inferenceobjectives
+kubectl -n llmd apply -f ./resources/llmd/aigateawayroutes
   
 echo -e "[INFO] ...done."
 

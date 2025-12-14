@@ -12,7 +12,7 @@ redis:
   enabled: false
 
 enableOpenaiApi: true
-openaiBaseApiUrl: "https://vllm.internal.k8s.local/v1"
+openaiBaseApiUrl: "https://llmd.internal.k8s.local/v1"
 openaiApiKey: ""
 
 volumes:
