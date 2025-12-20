@@ -37,6 +37,7 @@ echo -e "\n[INFO] ...done"
 ## llm-d stack
 echo -e "\n[INFO] Installing llm-d Stack..."
 kubectl create namespace llmd --dry-run=client -o yaml | kubectl apply -f -
+kubectl label namespace llmd trust-manager/inject-lab-ca-secret=enabled
 kubectl label namespace llmd service-type=llm
 
 ### llm-d

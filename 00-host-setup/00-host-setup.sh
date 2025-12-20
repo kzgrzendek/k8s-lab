@@ -7,7 +7,7 @@
 # Description: Helper script to generate the neccessaty resources on top of which the cluster will be deployed #                                                                               #
 ################################################################################################################
 
-set -eup
+set -euo pipefail
 
 echo -e "[INFO] hsot-setup script v0.1"
 

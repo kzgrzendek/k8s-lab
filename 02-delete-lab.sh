@@ -7,7 +7,7 @@
 # Description: Helper script to delete the K8S Lab                                                           #
 ############################################################################################################## 
 
-set -eup
+set -euo pipefail
 
 echo -e "[INFO] Starting K8S Lab delete script v1.0 \n"
 

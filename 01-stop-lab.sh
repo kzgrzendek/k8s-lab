@@ -7,7 +7,7 @@
 # Description: Helper script to stop the K8S Lab                                                             #
 ############################################################################################################## 
 
-set -eup
+set -euo pipefail
 
 echo -e "[INFO] Starting K8S Lab stopping script v1.0 \n"
 

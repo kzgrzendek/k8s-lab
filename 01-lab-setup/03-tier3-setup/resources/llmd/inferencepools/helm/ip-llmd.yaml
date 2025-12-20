@@ -17,5 +17,9 @@ inferencePool:
       "llm-d.ai/model": qwen3-0-6b
       "llm-d.ai/role": decode
 
+endpointPicker:
+  args:
+    - --secure-serving=false
+
 provider:
   name: none

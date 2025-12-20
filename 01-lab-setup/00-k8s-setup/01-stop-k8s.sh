@@ -7,7 +7,7 @@
 # Description: Helper script to stop a multi-node local Minikube cluster.                                    #
 ############################################################################################################## 
 
-set -eup
+set -euo pipefail
 
 echo -e "[INFO] Starting Minikube stopping script v1.0"
 

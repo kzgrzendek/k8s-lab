@@ -7,7 +7,7 @@
 # Description: Helper script to stop a nginx instance to handle the traffic routing to the k8s local lab.    #                                                                                          #
 ############################################################################################################## 
 
-set -eup
+set -euo pipefail
 
 echo -e "[INFO] Starting K8S Lab NGINX Gateway stopping script v1.0"
 

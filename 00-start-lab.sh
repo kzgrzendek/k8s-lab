@@ -7,7 +7,7 @@
 # Description: Helper script to start the K8S Lab                                                            #
 ############################################################################################################## 
 
-set -eup
+set -euo pipefail
 
 echo -e "[INFO] Starting K8S Lab starting script v1.0 \n"
 

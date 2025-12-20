@@ -7,7 +7,7 @@
 # Description: Helper script to stop the bind9 instance to handle the domain names tied to the k8s local lab. #                                                                                    #
 ############################################################################################################### 
 
-set -eup
+set -euo pipefail
 
 echo -e "[INFO] Starting K8S Lab BIND9 DNS Server stopping script v1.0"
 

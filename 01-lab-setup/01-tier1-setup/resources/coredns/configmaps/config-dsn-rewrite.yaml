@@ -14,7 +14,7 @@ data:
         ready
 
         rewrite name exact keycloak.auth.k8s.local keycloak-service.keycloak.svc.cluster.local
-        rewrite name exact llmd.internal.k8s.local gateway-k8s-internal.envoy-gateway-system.svc.cluster.local
+        rewrite name exact llmd.internal.k8s.local gateway-k8s-internal-simple.envoy-gateway-system.svc.cluster.local
 
         kubernetes cluster.local in-addr.arpa ip6.arpa {
            pods insecure

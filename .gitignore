@@ -4,6 +4,7 @@
 # User generated CA Cert and Key
 k8s-lab-ca.crt
 k8s-lab-ca.key
+k8s-lab-cacert.yaml
 
 # VScode Continue extension configs directory
 .continue

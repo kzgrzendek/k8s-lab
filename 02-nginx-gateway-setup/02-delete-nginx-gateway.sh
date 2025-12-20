@@ -7,7 +7,7 @@
 # Description: Helper script to delete a nginx instance to handle the traffic routing to the k8s local lab.  #                                                                                          #
 ############################################################################################################## 
 
-set -eup
+set -euo pipefail
 
 echo -e "[INFO] Starting NGINX delete script v1.0"
 

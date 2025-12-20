@@ -7,7 +7,7 @@
 # Description: Helper script to the transversal stack that will address cross-cutting concerns               #
 ############################################################################################################## 
 
-set -eup
+set -euo pipefail
 
 echo -e "[INFO] Starting K8S transversal stack install script v1.0 \n"
 

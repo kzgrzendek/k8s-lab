@@ -7,7 +7,7 @@
 # Description: Helper script to delete a multi-node local Minikube cluster.                                   #
 ############################################################################################################## 
 
-set -eup
+set -euo pipefail
 
 echo -e "[INFO] Starting Minikube deleting script v1.0"
 
