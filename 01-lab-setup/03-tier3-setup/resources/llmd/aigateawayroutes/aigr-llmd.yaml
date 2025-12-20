@@ -7,7 +7,7 @@ spec:
   parentRefs:
     - group: gateway.networking.k8s.io
       kind: Gateway
-      name: k8s-llmd
+      name: k8s-internal-llmd
       namespace: llmd
   rules:
     - matches:

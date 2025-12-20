@@ -8,5 +8,5 @@ spec:
     type: Kubernetes
     kubernetes:
       envoyService:
-        name: gateway-k8s-internal-simple
+        name: gateway-k8s-internal
         type: ClusterIP

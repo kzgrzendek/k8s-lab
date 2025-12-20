@@ -54,8 +54,12 @@ helm upgrade llmd-qwen3-pool oci://registry.k8s.io/gateway-api-inference-extensi
   --namespace llmd \
   -f ./resources/llmd/inferencepools/helm/ip-llmd.yaml
 
+kubectl -n llmd apply -f ./resources/llmd/referencegrants
 kubectl -n llmd apply -f ./resources/llmd/inferenceobjectives
+kubectl -n llmd apply -f ./resources/llmd/certificates
+kubectl -n llmd apply -f ./resources/llmd/gateways
 kubectl -n llmd apply -f ./resources/llmd/aigateawayroutes
+
   
 echo -e "[INFO] ...done."
 
