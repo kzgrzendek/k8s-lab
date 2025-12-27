@@ -18,6 +18,11 @@ func newStartCmd() *cobra.Command {
 		Short: "Start the NOVA lab environment",
 		Long: `Starts the NOVA lab environment up to the specified tier:
 
+  Tier 0 - Minikube Cluster (prerequisite):
+    • 3-node Kubernetes cluster with GPU support
+    • BPF filesystem for eBPF/Cilium
+    • Control-plane taints and GPU configuration
+
   Tier 1 - Infrastructure:
     • Cilium CNI, Falco, NVIDIA GPU Operator
     • Cert-Manager, Trust-Manager
@@ -30,20 +35,21 @@ func newStartCmd() *cobra.Command {
   Tier 3 - Applications:
     • llm-d (LLM serving), Open WebUI, HELIX
 
-Tiers are cumulative: --tier=2 deploys both Tier 1 and Tier 2.`,
+Tiers are cumulative: --tier=2 deploys Tier 0, 1, and 2.
+Use --tier=0 to deploy only the Minikube cluster.`,
 		RunE: func(cmd *cobra.Command, args []string) error {
 			return runStart(cmd, tier)
 		},
 	}
 
-	cmd.Flags().IntVar(&tier, "tier", 3, "deploy up to this tier (1, 2, or 3)")
+	cmd.Flags().IntVar(&tier, "tier", 3, "deploy up to this tier (0, 1, 2, or 3)")
 
 	return cmd
 }
 
 func runStart(cmd *cobra.Command, targetTier int) error {
-	if targetTier < 1 || targetTier > 3 {
-		return fmt.Errorf("tier must be 1, 2, or 3 (got %d)", targetTier)
+	if targetTier < 0 || targetTier > 3 {
+		return fmt.Errorf("tier must be 0, 1, 2, or 3 (got %d)", targetTier)
 	}
 
 	// Load config
