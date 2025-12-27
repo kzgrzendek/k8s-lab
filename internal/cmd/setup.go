@@ -161,9 +161,10 @@ func runSetup(cmd *cobra.Command, skipDNS bool, rootless bool) error {
 	ui.Info("Configuration:")
 	ui.Info("  • DNS domains: %s, %s", cfg.DNS.Domain, cfg.DNS.AuthDomain)
 	ui.Info("  • Bind9 port: %d", cfg.DNS.Bind9Port)
+	totalCPUs := cfg.Minikube.Nodes * cfg.Minikube.CPUs
 	totalRAM := cfg.Minikube.Nodes * cfg.Minikube.Memory
-	ui.Info("  • Minikube: %d nodes, %d CPUs/node, %dMB RAM/node (%dMB total)",
-		cfg.Minikube.Nodes, cfg.Minikube.CPUs, cfg.Minikube.Memory, totalRAM)
+	ui.Info("  • Minikube: %d nodes, %d CPUs/node (%d total), %dMB RAM/node (%dMB total)",
+		cfg.Minikube.Nodes, cfg.Minikube.CPUs, totalCPUs, cfg.Minikube.Memory, totalRAM)
 
 	return nil
 }
