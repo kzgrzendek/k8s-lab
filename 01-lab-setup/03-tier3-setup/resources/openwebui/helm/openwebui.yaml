@@ -30,6 +30,9 @@ volumeMounts:
       readOnly: true
 
 extraEnvVars:
+  - name: ENABLE_FORWARD_USER_INFO_HEADERS
+    value: "True"
+
   - name: WEBUI_URL
     value: "https://open-webui.lab.k8s.local"
 
