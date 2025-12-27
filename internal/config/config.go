@@ -66,8 +66,8 @@ func Default() *Config {
 			GPUs:              "all",
 		},
 		DNS: DNSConfig{
-			Domain:     "lab.k8s.local",
-			AuthDomain: "auth.k8s.local",
+			Domain:     "nova.local",
+			AuthDomain: "auth.nova.local",
 			Bind9Port:  30053,
 		},
 		State: StateConfig{

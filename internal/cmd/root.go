@@ -3,7 +3,6 @@ package cmd
 
 import (
 	"fmt"
-	"os"
 
 	"github.com/kzgrzendek/nova/internal/config"
 	"github.com/kzgrzendek/nova/internal/ui"
