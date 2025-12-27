@@ -4,6 +4,8 @@ import (
 	"fmt"
 
 	"github.com/kzgrzendek/nova/internal/config"
+	"github.com/kzgrzendek/nova/internal/deployer"
+	"github.com/kzgrzendek/nova/internal/minikube"
 	"github.com/kzgrzendek/nova/internal/ui"
 	"github.com/spf13/cobra"
 )
@@ -54,16 +56,24 @@ func runStart(cmd *cobra.Command, targetTier int) error {
 		return fmt.Errorf("nova not initialized, run 'nova setup' first")
 	}
 
-	ui.Header("Starting NOVA (Tier %d)", targetTier)
+	ui.Header("Starting NOVA (Tier 0-%d)", targetTier)
 
-	// TODO: Implement deployment logic
-	// 1. Start Minikube cluster if not running
-	// 2. Deploy tiers sequentially
-	// 3. Start NGINX and Bind9 containers
+	// Check if cluster is already running
+	running, err := minikube.IsRunning(cmd.Context())
+	if err != nil {
+		ui.Warn("Failed to check cluster status: %v", err)
+	}
 
-	ui.Step("Starting Minikube cluster...")
-	ui.Warn("Minikube start not yet implemented")
+	// Tier 0: Start Minikube cluster if not running
+	if !running {
+		if err := deployer.DeployTier0(cmd.Context(), cfg); err != nil {
+			return fmt.Errorf("failed to deploy tier 0: %w", err)
+		}
+	} else {
+		ui.Info("Minikube cluster already running")
+	}
 
+	// TODO: Deploy higher tiers
 	if targetTier >= 1 {
 		ui.Step("Deploying Tier 1 (Infrastructure)...")
 		ui.Warn("Tier 1 deployment not yet implemented")
@@ -79,6 +89,7 @@ func runStart(cmd *cobra.Command, targetTier int) error {
 		ui.Warn("Tier 3 deployment not yet implemented")
 	}
 
+	// TODO: Start host services
 	ui.Step("Starting host services (NGINX, Bind9)...")
 	ui.Warn("Host services not yet implemented")
 

@@ -7,6 +7,8 @@ import (
 	"strings"
 
 	"github.com/kzgrzendek/nova/internal/config"
+	"github.com/kzgrzendek/nova/internal/dns"
+	"github.com/kzgrzendek/nova/internal/minikube"
 	"github.com/kzgrzendek/nova/internal/ui"
 	"github.com/spf13/cobra"
 )
@@ -60,15 +62,15 @@ func runDelete(cmd *cobra.Command, purge, force bool) error {
 		}
 	}
 
-	// TODO: Implement delete logic
-	// 1. Delete Minikube cluster
-	// 2. Remove NGINX container
-	// 3. Remove Bind9 container
-	// 4. If purge: remove config directory and DNS config
-
+	// Delete Minikube cluster
 	ui.Step("Deleting Minikube cluster...")
-	ui.Warn("Minikube delete not yet implemented")
+	if err := minikube.Delete(cmd.Context()); err != nil {
+		ui.Warn("Failed to delete Minikube: %v", err)
+	} else {
+		ui.Success("Minikube cluster deleted")
+	}
 
+	// TODO: Remove host services
 	ui.Step("Removing NGINX gateway...")
 	ui.Warn("NGINX remove not yet implemented")
 
@@ -77,9 +79,21 @@ func runDelete(cmd *cobra.Command, purge, force bool) error {
 
 	if purge {
 		ui.Step("Purging configuration and certificates...")
+
+		// Remove DNS configuration
+		if err := dns.RemoveResolvconf(); err != nil {
+			ui.Warn("Failed to remove DNS config: %v", err)
+		} else {
+			ui.Info("  • Removed DNS configuration")
+		}
+
+		// Remove config directory
 		if err := os.RemoveAll(config.ConfigDir()); err != nil {
 			ui.Warn("Failed to remove config directory: %v", err)
+		} else {
+			ui.Info("  • Removed configuration directory")
 		}
+
 		ui.Success("Configuration purged")
 	}
 

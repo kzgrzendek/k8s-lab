@@ -1,6 +1,7 @@
 package cmd
 
 import (
+	"github.com/kzgrzendek/nova/internal/minikube"
 	"github.com/kzgrzendek/nova/internal/ui"
 	"github.com/spf13/cobra"
 )
@@ -23,14 +24,15 @@ All data is preserved and can be restarted with 'nova start'.`,
 func runStop(cmd *cobra.Command, args []string) error {
 	ui.Header("Stopping NOVA")
 
-	// TODO: Implement stop logic
-	// 1. Stop Minikube
-	// 2. Stop NGINX container
-	// 3. Stop Bind9 container
-
+	// Stop Minikube cluster
 	ui.Step("Stopping Minikube cluster...")
-	ui.Warn("Minikube stop not yet implemented")
+	if err := minikube.Stop(cmd.Context()); err != nil {
+		ui.Warn("Failed to stop Minikube: %v", err)
+	} else {
+		ui.Success("Minikube cluster stopped")
+	}
 
+	// TODO: Stop host services
 	ui.Step("Stopping NGINX gateway...")
 	ui.Warn("NGINX stop not yet implemented")
 
