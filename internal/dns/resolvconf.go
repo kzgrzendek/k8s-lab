@@ -8,17 +8,26 @@ import (
 )
 
 const (
-	resolvconfDir  = "/etc/resolvconf/resolv.conf.d"
-	novaConfFile   = "nova.conf"
-	bind9LocalPort = 30053
+	resolvconfBaseDir = "/etc/resolvconf"
+	resolvconfDir     = "/etc/resolvconf/resolv.conf.d"
+	novaConfFile      = "nova.conf"
+	bind9LocalPort    = 30053
 )
 
 // ConfigureResolvconf adds a dedicated DNS entry for NOVA domains.
 // Creates /etc/resolvconf/resolv.conf.d/nova.conf with nameserver configuration.
 func ConfigureResolvconf(domains []string, port int) error {
-	// Check if resolvconf is available
+	// Verify resolvconf is available first
+	if err := CheckResolvconfAvailable(); err != nil {
+		return err
+	}
+
+	// Ensure the resolv.conf.d directory exists (create if needed)
 	if _, err := os.Stat(resolvconfDir); os.IsNotExist(err) {
-		return fmt.Errorf("resolvconf not found at %s - install resolvconf package", resolvconfDir)
+		cmd := exec.Command("sudo", "mkdir", "-p", resolvconfDir)
+		if output, err := cmd.CombinedOutput(); err != nil {
+			return fmt.Errorf("failed to create %s: %w\nOutput: %s", resolvconfDir, err, string(output))
+		}
 	}
 
 	// Create nova.conf content
@@ -89,15 +98,17 @@ func IsConfigured() bool {
 
 // CheckResolvconfAvailable checks if resolvconf is installed and available.
 func CheckResolvconfAvailable() error {
-	// Check directory exists
-	if _, err := os.Stat(resolvconfDir); os.IsNotExist(err) {
-		return fmt.Errorf("resolvconf not installed (directory %s not found)", resolvconfDir)
+	// Check resolvconf binary first (most reliable indicator)
+	if _, err := exec.LookPath("resolvconf"); err != nil {
+		return fmt.Errorf("resolvconf command not found in PATH\n\nInstall resolvconf:\n  Ubuntu/Debian: sudo apt install resolvconf\n  Arch: sudo pacman -S openresolv")
 	}
 
-	// Check resolvconf binary
-	if _, err := exec.LookPath("resolvconf"); err != nil {
-		return fmt.Errorf("resolvconf command not found in PATH")
+	// Check base directory exists (should exist if resolvconf is properly installed)
+	if _, err := os.Stat(resolvconfBaseDir); os.IsNotExist(err) {
+		return fmt.Errorf("resolvconf base directory %s not found - resolvconf may not be properly installed", resolvconfBaseDir)
 	}
+
+	// Note: We don't check for resolv.conf.d here because we'll create it if needed
 
 	return nil
 }

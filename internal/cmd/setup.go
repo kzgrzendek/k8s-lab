@@ -61,30 +61,44 @@ func runSetup(cmd *cobra.Command, skipDNS bool) error {
 	if !skipDNS {
 		ui.Step("Configuring DNS (resolvconf)...")
 
-		// Check if resolvconf is available
+		// Check if resolvconf is available - FAIL if not available
 		if err := dns.CheckResolvconfAvailable(); err != nil {
-			ui.Warn("resolvconf not available: %v", err)
-			ui.Info("Skipping DNS configuration. You'll need to manually configure DNS for:")
-			ui.Info("  • %s", cfg.DNS.Domain)
-			ui.Info("  • %s", cfg.DNS.AuthDomain)
-			ui.Info("Add this to your DNS: nameserver 127.0.0.1#%d", cfg.DNS.Bind9Port)
+			ui.Error("DNS configuration failed")
+			ui.Info("")
+			ui.Info("resolvconf is required but not available:")
+			ui.Info("  %v", err)
+			ui.Info("")
+			ui.Info("Options:")
+			ui.Info("  1. Install resolvconf and run setup again")
+			ui.Info("  2. Run setup with --skip-dns and configure DNS manually")
+			ui.Info("")
+			return fmt.Errorf("resolvconf not available - install it or use --skip-dns")
+		}
+
+		// Check if already configured
+		if dns.IsConfigured() {
+			ui.Info("DNS already configured")
 		} else {
-			// Check if already configured
-			if dns.IsConfigured() {
-				ui.Info("DNS already configured")
-			} else {
-				// Configure DNS
-				domains := []string{cfg.DNS.Domain, cfg.DNS.AuthDomain}
-				if err := dns.ConfigureResolvconf(domains, cfg.DNS.Bind9Port); err != nil {
-					ui.Warn("Failed to configure DNS: %v", err)
-					ui.Info("You may need to configure DNS manually")
-				} else {
-					ui.Success("DNS configured for %s and %s", cfg.DNS.Domain, cfg.DNS.AuthDomain)
-				}
+			// Configure DNS
+			domains := []string{cfg.DNS.Domain, cfg.DNS.AuthDomain}
+			if err := dns.ConfigureResolvconf(domains, cfg.DNS.Bind9Port); err != nil {
+				ui.Error("Failed to configure DNS")
+				ui.Info("")
+				ui.Info("Error: %v", err)
+				ui.Info("")
+				ui.Info("Make sure you have sudo privileges and try again")
+				ui.Info("Or run setup with --skip-dns to configure DNS manually")
+				ui.Info("")
+				return fmt.Errorf("DNS configuration failed: %w", err)
 			}
+			ui.Success("DNS configured for %s and %s", cfg.DNS.Domain, cfg.DNS.AuthDomain)
 		}
 	} else {
 		ui.Info("Skipping DNS configuration (--skip-dns)")
+		ui.Warn("You'll need to manually configure DNS for:")
+		ui.Info("  • %s", cfg.DNS.Domain)
+		ui.Info("  • %s", cfg.DNS.AuthDomain)
+		ui.Info("Add nameserver: 127.0.0.1#%d", cfg.DNS.Bind9Port)
 	}
 
 	// Step 5: Generate mkcert CA
