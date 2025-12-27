@@ -2,6 +2,7 @@ package cmd
 
 import (
 	"fmt"
+	"os/exec"
 
 	"github.com/kzgrzendek/nova/internal/config"
 	"github.com/kzgrzendek/nova/internal/dns"
@@ -13,6 +14,7 @@ import (
 
 func newSetupCmd() *cobra.Command {
 	var skipDNS bool
+	var rootless bool
 
 	cmd := &cobra.Command{
 		Use:   "setup",
@@ -21,23 +23,35 @@ func newSetupCmd() *cobra.Command {
 
   • Checking required dependencies (docker, minikube, mkcert, certutil)
   • Verifying Linux distribution (Ubuntu/Debian)
-  • Configuring DNS via resolvconf
-  • Generating mkcert Root CA
+  • Configuring DNS via resolvconf (requires sudo)
+  • Generating mkcert Root CA (requires sudo)
   • Creating initial configuration file
 
 This command should be run once before using 'nova start'.`,
 		RunE: func(cmd *cobra.Command, args []string) error {
-			return runSetup(cmd, skipDNS)
+			return runSetup(cmd, skipDNS, rootless)
 		},
 	}
 
-	cmd.Flags().BoolVar(&skipDNS, "skip-dns", false, "skip DNS configuration")
+	cmd.Flags().BoolVar(&skipDNS, "skip-dns", false, "skip DNS configuration (fail if resolvconf unavailable)")
+	cmd.Flags().BoolVar(&rootless, "rootless", false, "rootless mode - skip DNS and warn instead of failing")
 
 	return cmd
 }
 
-func runSetup(cmd *cobra.Command, skipDNS bool) error {
+func runSetup(cmd *cobra.Command, skipDNS bool, rootless bool) error {
 	ui.Header("NOVA Setup")
+
+	// If not in rootless mode and not skipping DNS, prompt for sudo password upfront
+	if !rootless && !skipDNS {
+		ui.Step("Requesting sudo privileges...")
+		ui.Info("DNS configuration requires sudo access")
+		sudoCmd := exec.Command("sudo", "-v")
+		if err := sudoCmd.Run(); err != nil {
+			return fmt.Errorf("sudo authentication failed - DNS configuration requires sudo privileges")
+		}
+		ui.Success("Sudo privileges granted")
+	}
 
 	// Step 1: Run preflight checks
 	ui.Step("Checking dependencies...")
@@ -58,7 +72,13 @@ func runSetup(cmd *cobra.Command, skipDNS bool) error {
 	cfg := config.LoadOrDefault()
 
 	// Step 4: Configure DNS
-	if !skipDNS {
+	if rootless {
+		ui.Info("Skipping DNS configuration (--rootless mode)")
+		ui.Warn("You'll need to manually configure DNS for:")
+		ui.Info("  • %s", cfg.DNS.Domain)
+		ui.Info("  • %s", cfg.DNS.AuthDomain)
+		ui.Info("Add nameserver: 127.0.0.1#%d", cfg.DNS.Bind9Port)
+	} else if !skipDNS {
 		ui.Step("Configuring DNS (resolvconf)...")
 
 		// Check if resolvconf is available - FAIL if not available
@@ -70,29 +90,24 @@ func runSetup(cmd *cobra.Command, skipDNS bool) error {
 			ui.Info("")
 			ui.Info("Options:")
 			ui.Info("  1. Install resolvconf and run setup again")
-			ui.Info("  2. Run setup with --skip-dns and configure DNS manually")
+			ui.Info("  2. Run setup with --rootless to skip DNS and continue")
 			ui.Info("")
-			return fmt.Errorf("resolvconf not available - install it or use --skip-dns")
+			return fmt.Errorf("resolvconf not available - install it or use --rootless")
 		}
 
-		// Check if already configured
-		if dns.IsConfigured() {
-			ui.Info("DNS already configured")
-		} else {
-			// Configure DNS
-			domains := []string{cfg.DNS.Domain, cfg.DNS.AuthDomain}
-			if err := dns.ConfigureResolvconf(domains, cfg.DNS.Bind9Port); err != nil {
-				ui.Error("Failed to configure DNS")
-				ui.Info("")
-				ui.Info("Error: %v", err)
-				ui.Info("")
-				ui.Info("Make sure you have sudo privileges and try again")
-				ui.Info("Or run setup with --skip-dns to configure DNS manually")
-				ui.Info("")
-				return fmt.Errorf("DNS configuration failed: %w", err)
-			}
-			ui.Success("DNS configured for %s and %s", cfg.DNS.Domain, cfg.DNS.AuthDomain)
+		// Always reconfigure DNS (supports updates)
+		domains := []string{cfg.DNS.Domain, cfg.DNS.AuthDomain}
+		if err := dns.ConfigureResolvconf(domains, cfg.DNS.Bind9Port); err != nil {
+			ui.Error("Failed to configure DNS")
+			ui.Info("")
+			ui.Info("Error: %v", err)
+			ui.Info("")
+			ui.Info("Make sure you have sudo privileges and try again")
+			ui.Info("Or run setup with --rootless to skip DNS and continue")
+			ui.Info("")
+			return fmt.Errorf("DNS configuration failed: %w", err)
 		}
+		ui.Success("DNS configured for %s and %s", cfg.DNS.Domain, cfg.DNS.AuthDomain)
 	} else {
 		ui.Info("Skipping DNS configuration (--skip-dns)")
 		ui.Warn("You'll need to manually configure DNS for:")

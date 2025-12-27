@@ -41,14 +41,14 @@ func ConfigureResolvconf(domains []string, port int) error {
 
 	confPath := filepath.Join(resolvconfDir, novaConfFile)
 
-	// Write configuration file (requires sudo)
+	// Write configuration file to temp location
 	tmpFile := filepath.Join(os.TempDir(), novaConfFile)
 	if err := os.WriteFile(tmpFile, []byte(content), 0644); err != nil {
 		return fmt.Errorf("failed to write temp config: %w", err)
 	}
 
-	// Move to /etc/resolvconf with sudo
-	cmd := exec.Command("sudo", "cp", tmpFile, confPath)
+	// Move to /etc/resolvconf with sudo (overwrites existing file to support updates)
+	cmd := exec.Command("sudo", "cp", "-f", tmpFile, confPath)
 	if output, err := cmd.CombinedOutput(); err != nil {
 		return fmt.Errorf("failed to install DNS config (need sudo): %w\nOutput: %s", err, string(output))
 	}
