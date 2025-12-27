@@ -1,4 +1,0 @@
-secretTargets:
-  enabled: true
-  authorizedSecrets:
-    - "k8s-lab-ca-secret"

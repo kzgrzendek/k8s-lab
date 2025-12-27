@@ -237,16 +237,6 @@ nova/
 └── magefiles/          # Build targets
 ```
 
-## Legacy Shell Scripts
-
-The original shell scripts are still available for reference:
-
-```bash
-./00-start-lab.sh    # Deploy everything (legacy)
-./01-stop-lab.sh     # Stop cluster & containers
-./02-delete-lab.sh   # Delete everything
-```
-
 ## License
 
 Apache 2.0
