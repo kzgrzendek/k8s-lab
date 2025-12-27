@@ -77,14 +77,8 @@ func Delete(ctx context.Context) error {
 
 // GetNodeNames returns the names of all nodes in the cluster.
 func GetNodeNames(ctx context.Context) ([]string, error) {
-	cmd := exec.CommandContext(ctx, "minikube", "node", "list", "--output", "json")
-	output, err := cmd.Output()
-	if err != nil {
-		return nil, fmt.Errorf("failed to list nodes: %w", err)
-	}
-
-	// Parse node names from output
 	// For simplicity, assume nodes are named: minikube, minikube-m02, minikube-m03
+	// This matches Minikube's default naming convention
 	var nodes []string
 	nodesCount := 3 // Default from config
 	for i := 1; i <= nodesCount; i++ {
