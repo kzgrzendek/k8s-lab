@@ -47,6 +47,7 @@ func runSetup(cmd *cobra.Command, skipDNS bool, rootless bool) error {
 		"Check dependencies",
 		"Check system requirements",
 		"Load configuration",
+		"Check GPU configuration",
 		"Configure DNS",
 		"Install mkcert CA",
 		"Generate CA secret",
@@ -92,7 +93,20 @@ func runSetup(cmd *cobra.Command, skipDNS bool, rootless bool) error {
 	progress.CompleteStep(currentStep)
 	currentStep++
 
-	// Step 4: Configure DNS
+	// Step 4: Check GPU configuration
+	progress.StartStep(currentStep)
+	gpuCfg, err := checker.CheckGPU(cmd.Context(), cfg.Minikube.GPUs)
+	if err != nil {
+		ui.Warn("GPU check failed: %v", err)
+		ui.Info("Continuing with CPU-only mode...")
+		cfg.Minikube.GPUs = "none"
+	} else if !gpuCfg.Enabled {
+		ui.Info("Proceeding in CPU-only mode")
+	}
+	progress.CompleteStep(currentStep)
+	currentStep++
+
+	// Step 5: Configure DNS
 	progress.StartStep(currentStep)
 	if rootless {
 		ui.Info("Skipping DNS configuration (--rootless mode)")

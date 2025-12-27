@@ -5,6 +5,7 @@ import (
 	"context"
 	"fmt"
 
+	"github.com/kzgrzendek/nova/internal/gpu"
 	"github.com/kzgrzendek/nova/internal/ui"
 )
 
@@ -92,4 +93,31 @@ func (c *Checker) CheckBinaries() error {
 		}
 	}
 	return nil
+}
+
+// CheckGPU checks GPU availability and configuration.
+func (c *Checker) CheckGPU(ctx context.Context, requestedMode string) (*gpu.Config, error) {
+	cfg, err := gpu.GetGPUConfig(ctx, requestedMode)
+	if err != nil {
+		return nil, fmt.Errorf("GPU configuration failed: %w", err)
+	}
+
+	if cfg.Enabled {
+		ui.Success("GPU mode: %s", cfg.Mode.String())
+
+		// Get GPU info if NVIDIA
+		if cfg.Mode == gpu.ModeNVIDIA {
+			detector := gpu.NewDetector(ctx)
+			gpus, err := detector.GetNVIDIAGPUInfo()
+			if err == nil && len(gpus) > 0 {
+				for i, gpuInfo := range gpus {
+					ui.Info("  GPU %d: %s", i, gpuInfo)
+				}
+			}
+		}
+	} else {
+		ui.Info("GPU mode: disabled (CPU-only)")
+	}
+
+	return cfg, nil
 }

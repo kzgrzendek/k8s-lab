@@ -148,20 +148,24 @@ func deployFalco(ctx context.Context, cfg *config.Config) error {
 }
 
 func deployGPUOperator(ctx context.Context, cfg *config.Config) error {
-	// Skip if no GPU configured
-	if cfg.Minikube.GPUs == "" || cfg.Minikube.GPUs == "none" {
-		ui.Info("  • No GPU configured - skipping GPU operator")
+	// Skip if no GPU configured or disabled
+	if cfg.Minikube.GPUs == "" || cfg.Minikube.GPUs == "none" || cfg.Minikube.GPUs == "disabled" {
+		ui.Info("  • GPU mode disabled - skipping NVIDIA GPU operator")
 		return nil
 	}
+
+	ui.Info("  • GPU mode: %s", cfg.Minikube.GPUs)
 
 	createNamespace(ctx, "nvidia-gpu-operator")
 
 	args := []string{
 		"upgrade", "--install", "gpu-operator", "nvidia/gpu-operator",
 		"--namespace", "nvidia-gpu-operator",
-		"--set", "driver.enabled=false",
+		"--set", "driver.enabled=false", // Use host drivers
 		"--set", "toolkit.enabled=true",
+		"--set", "operator.defaultRuntime=docker",
 		"--wait",
+		"--timeout", "10m",
 	}
 
 	cmd := exec.CommandContext(ctx, "helm", args...)
@@ -169,6 +173,7 @@ func deployGPUOperator(ctx context.Context, cfg *config.Config) error {
 		return fmt.Errorf("failed to install gpu-operator: %w", err)
 	}
 
+	ui.Info("  • NVIDIA GPU operator deployed (using host drivers)")
 	return nil
 }
 
