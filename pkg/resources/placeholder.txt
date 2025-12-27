@@ -1,0 +1,3 @@
+# Placeholder file for go:embed
+# This file exists so the embed directive works before actual resources are added.
+# It will be removed once the resources/ directory is populated.
