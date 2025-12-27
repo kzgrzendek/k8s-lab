@@ -3,9 +3,11 @@ package cmd
 import (
 	"fmt"
 
+	"github.com/kzgrzendek/nova/internal/bind9"
 	"github.com/kzgrzendek/nova/internal/config"
 	"github.com/kzgrzendek/nova/internal/deployer"
 	"github.com/kzgrzendek/nova/internal/minikube"
+	"github.com/kzgrzendek/nova/internal/nginx"
 	"github.com/kzgrzendek/nova/internal/ui"
 	"github.com/spf13/cobra"
 )
@@ -95,9 +97,24 @@ func runStart(cmd *cobra.Command, targetTier int) error {
 		ui.Warn("Tier 3 deployment not yet implemented")
 	}
 
-	// TODO: Start host services
-	ui.Step("Starting host services (NGINX, Bind9)...")
-	ui.Warn("Host services not yet implemented")
+	// Start host services (Bind9 DNS and NGINX gateway)
+	ui.Step("Starting host services...")
+
+	// Start Bind9 DNS
+	ui.Info("  • Starting Bind9 DNS server...")
+	if err := bind9.Start(cmd.Context(), cfg); err != nil {
+		ui.Warn("Failed to start Bind9: %v", err)
+	} else {
+		ui.Success("Bind9 DNS server started on port %d", cfg.DNS.Bind9Port)
+	}
+
+	// Start NGINX gateway
+	ui.Info("  • Starting NGINX gateway...")
+	if err := nginx.Start(cmd.Context(), cfg); err != nil {
+		ui.Warn("Failed to start NGINX: %v", err)
+	} else {
+		ui.Success("NGINX gateway started (HTTP:80, HTTPS:443)")
+	}
 
 	// Update state
 	cfg.State.LastDeployedTier = targetTier

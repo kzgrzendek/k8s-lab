@@ -6,9 +6,11 @@ import (
 	"os"
 	"strings"
 
+	"github.com/kzgrzendek/nova/internal/bind9"
 	"github.com/kzgrzendek/nova/internal/config"
 	"github.com/kzgrzendek/nova/internal/dns"
 	"github.com/kzgrzendek/nova/internal/minikube"
+	"github.com/kzgrzendek/nova/internal/nginx"
 	"github.com/kzgrzendek/nova/internal/ui"
 	"github.com/spf13/cobra"
 )
@@ -70,12 +72,24 @@ func runDelete(cmd *cobra.Command, purge, force bool) error {
 		ui.Success("Minikube cluster deleted")
 	}
 
-	// TODO: Remove host services
-	ui.Step("Removing NGINX gateway...")
-	ui.Warn("NGINX remove not yet implemented")
+	// Remove host services
+	ui.Step("Removing host services...")
 
-	ui.Step("Removing Bind9 DNS...")
-	ui.Warn("Bind9 remove not yet implemented")
+	// Remove NGINX gateway
+	ui.Info("  • Removing NGINX gateway...")
+	if err := nginx.Delete(cmd.Context()); err != nil {
+		ui.Warn("Failed to remove NGINX: %v", err)
+	} else {
+		ui.Success("NGINX gateway removed")
+	}
+
+	// Remove Bind9 DNS
+	ui.Info("  • Removing Bind9 DNS server...")
+	if err := bind9.Delete(cmd.Context()); err != nil {
+		ui.Warn("Failed to remove Bind9: %v", err)
+	} else {
+		ui.Success("Bind9 DNS server removed")
+	}
 
 	if purge {
 		ui.Step("Purging configuration and certificates...")

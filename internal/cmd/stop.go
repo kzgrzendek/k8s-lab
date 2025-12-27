@@ -1,7 +1,9 @@
 package cmd
 
 import (
+	"github.com/kzgrzendek/nova/internal/bind9"
 	"github.com/kzgrzendek/nova/internal/minikube"
+	"github.com/kzgrzendek/nova/internal/nginx"
 	"github.com/kzgrzendek/nova/internal/ui"
 	"github.com/spf13/cobra"
 )
@@ -32,12 +34,24 @@ func runStop(cmd *cobra.Command, args []string) error {
 		ui.Success("Minikube cluster stopped")
 	}
 
-	// TODO: Stop host services
-	ui.Step("Stopping NGINX gateway...")
-	ui.Warn("NGINX stop not yet implemented")
+	// Stop host services
+	ui.Step("Stopping host services...")
 
-	ui.Step("Stopping Bind9 DNS...")
-	ui.Warn("Bind9 stop not yet implemented")
+	// Stop NGINX gateway
+	ui.Info("  • Stopping NGINX gateway...")
+	if err := nginx.Stop(cmd.Context()); err != nil {
+		ui.Warn("Failed to stop NGINX: %v", err)
+	} else {
+		ui.Success("NGINX gateway stopped")
+	}
+
+	// Stop Bind9 DNS
+	ui.Info("  • Stopping Bind9 DNS server...")
+	if err := bind9.Stop(cmd.Context()); err != nil {
+		ui.Warn("Failed to stop Bind9: %v", err)
+	} else {
+		ui.Success("Bind9 DNS server stopped")
+	}
 
 	ui.Header("NOVA Stopped")
 	ui.Info("Run 'nova start' to restart")
