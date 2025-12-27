@@ -162,7 +162,7 @@ nova delete --purge
 
 ### Host Services
 - **NGINX** - Reverse proxy (ports 80/443)
-- **Bind9** - DNS server for `*.lab.k8s.local`
+- **Bind9** - DNS server for `*.nova.local`
 
 ## Configuration
 
@@ -175,7 +175,7 @@ minikube:
   nodes: 3
   kubernetesVersion: v1.33.5
 dns:
-  domain: lab.k8s.local
+  domain: nova.local
   bind9Port: 30053
 ```
 
@@ -185,10 +185,10 @@ dns:
 
 | Service | URL | Credentials |
 |---------|-----|-------------|
-| Keycloak | `https://keycloak.lab.k8s.local` | `admin` / (see secret) |
-| Hubble UI | `https://hubble.lab.k8s.local` | - |
-| Grafana | `https://grafana.lab.k8s.local` | `admin` / `admin` |
-| Open WebUI | `https://chat.lab.k8s.local` | Create account |
+| Keycloak | `https://keycloak.nova.local` | `admin` / (see secret) |
+| Hubble UI | `https://hubble.nova.local` | - |
+| Grafana | `https://grafana.nova.local` | `admin` / `admin` |
+| Open WebUI | `https://chat.nova.local` | Create account |
 
 ### SSL/TLS Certificates
 

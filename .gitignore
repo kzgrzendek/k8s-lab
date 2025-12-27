@@ -20,8 +20,6 @@ go.work.sum
 *.swo
 *~
 
-# VSCode Continue extension
-.continue/
 
 # OS
 .DS_Store

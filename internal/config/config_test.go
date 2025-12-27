@@ -19,8 +19,8 @@ func TestDefault(t *testing.T) {
 	assert.Equal(t, "docker", cfg.Minikube.Driver)
 	assert.Equal(t, "all", cfg.Minikube.GPUs)
 
-	assert.Equal(t, "lab.k8s.local", cfg.DNS.Domain)
-	assert.Equal(t, "auth.k8s.local", cfg.DNS.AuthDomain)
+	assert.Equal(t, "nova.local", cfg.DNS.Domain)
+	assert.Equal(t, "auth.nova.local", cfg.DNS.AuthDomain)
 	assert.Equal(t, 30053, cfg.DNS.Bind9Port)
 
 	assert.False(t, cfg.State.Initialized)
