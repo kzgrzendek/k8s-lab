@@ -1,6 +1,7 @@
 package dns
 
 import (
+	"fmt"
 	"os"
 	"os/exec"
 	"path/filepath"
@@ -51,12 +52,12 @@ func TestConfigureResolvconf_GeneratesCorrectContent(t *testing.T) {
 	tmpFile := filepath.Join(tmpDir, "nova.conf")
 
 	// Generate content (same as ConfigureResolvconf does)
-	content := "# NOVA DNS configuration\n# Managed by nova CLI - DO NOT EDIT MANUALLY\n\n"
-	content += "# DNS server for NOVA domains (Bind9 on localhost:30053)\n"
-	content += "nameserver 127.0.0.1#30053\n\n"
+	content := fmt.Sprintf("# NOVA DNS configuration\n# Managed by nova CLI - DO NOT EDIT MANUALLY\n\n")
+	content += fmt.Sprintf("# DNS server for NOVA domains (Bind9 on localhost:%d)\n", port)
+	content += fmt.Sprintf("nameserver 127.0.0.1#%d\n\n", port)
 	content += "# Search domains\n"
 	for _, domain := range domains {
-		content += "search " + domain + "\n"
+		content += fmt.Sprintf("search %s\n", domain)
 	}
 
 	// Write to temp file
