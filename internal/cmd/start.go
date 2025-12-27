@@ -106,7 +106,11 @@ func runStart(cmd *cobra.Command, targetTier int) error {
 	// Deploy higher tiers
 	if targetTier >= 1 {
 		progress.StartStep(currentStep)
-		ui.Warn("Tier 1 deployment not yet implemented")
+		if err := deployer.DeployTier1(cmd.Context(), cfg); err != nil {
+			progress.FailStep(currentStep, err)
+			return fmt.Errorf("failed to deploy tier 1: %w", err)
+		}
+		progress.CompleteStep(currentStep)
 		currentStep++
 	}
 
