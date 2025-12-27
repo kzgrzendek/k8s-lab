@@ -42,6 +42,20 @@ This command should be run once before using 'nova start'.`,
 func runSetup(cmd *cobra.Command, skipDNS bool, rootless bool) error {
 	ui.Header("NOVA Setup")
 
+	// Define setup steps
+	steps := []string{
+		"Check dependencies",
+		"Check system requirements",
+		"Load configuration",
+		"Configure DNS",
+		"Install mkcert CA",
+		"Generate CA secret",
+		"Save configuration",
+	}
+
+	progress := ui.NewStepProgress(steps)
+	currentStep := 0
+
 	// If not in rootless mode and not skipping DNS, prompt for sudo password upfront
 	if !rootless && !skipDNS {
 		ui.Step("Requesting sudo privileges...")
@@ -54,33 +68,40 @@ func runSetup(cmd *cobra.Command, skipDNS bool, rootless bool) error {
 	}
 
 	// Step 1: Run preflight checks
-	ui.Step("Checking dependencies...")
+	progress.StartStep(currentStep)
 	checker := preflight.NewChecker()
 	if err := checker.CheckAll(cmd.Context()); err != nil {
+		progress.FailStep(currentStep, err)
 		return err
 	}
-	ui.Success("All dependencies satisfied")
+	progress.CompleteStep(currentStep)
+	currentStep++
 
 	// Step 2: Check system requirements
-	ui.Step("Checking system requirements...")
+	progress.StartStep(currentStep)
 	if err := checker.CheckSystem(); err != nil {
+		progress.FailStep(currentStep, err)
 		return err
 	}
-	ui.Success("System requirements met")
+	progress.CompleteStep(currentStep)
+	currentStep++
 
 	// Step 3: Load or create config
+	progress.StartStep(currentStep)
 	cfg := config.LoadOrDefault()
+	progress.CompleteStep(currentStep)
+	currentStep++
 
 	// Step 4: Configure DNS
+	progress.StartStep(currentStep)
 	if rootless {
 		ui.Info("Skipping DNS configuration (--rootless mode)")
 		ui.Warn("You'll need to manually configure DNS for:")
 		ui.Info("  • %s", cfg.DNS.Domain)
 		ui.Info("  • %s", cfg.DNS.AuthDomain)
 		ui.Info("Add nameserver: 127.0.0.1#%d", cfg.DNS.Bind9Port)
+		progress.CompleteStep(currentStep)
 	} else if !skipDNS {
-		ui.Step("Configuring DNS (resolvconf)...")
-
 		// Check if resolvconf is available - FAIL if not available
 		if err := dns.CheckResolvconfAvailable(); err != nil {
 			ui.Error("DNS configuration failed")
@@ -92,6 +113,7 @@ func runSetup(cmd *cobra.Command, skipDNS bool, rootless bool) error {
 			ui.Info("  1. Install resolvconf and run setup again")
 			ui.Info("  2. Run setup with --rootless to skip DNS and continue")
 			ui.Info("")
+			progress.FailStep(currentStep, err)
 			return fmt.Errorf("resolvconf not available - install it or use --rootless")
 		}
 
@@ -105,23 +127,28 @@ func runSetup(cmd *cobra.Command, skipDNS bool, rootless bool) error {
 			ui.Info("Make sure you have sudo privileges and try again")
 			ui.Info("Or run setup with --rootless to skip DNS and continue")
 			ui.Info("")
+			progress.FailStep(currentStep, err)
 			return fmt.Errorf("DNS configuration failed: %w", err)
 		}
 		ui.Success("DNS configured for %s and %s", cfg.DNS.Domain, cfg.DNS.AuthDomain)
+		progress.CompleteStep(currentStep)
 	} else {
 		ui.Info("Skipping DNS configuration (--skip-dns)")
 		ui.Warn("You'll need to manually configure DNS for:")
 		ui.Info("  • %s", cfg.DNS.Domain)
 		ui.Info("  • %s", cfg.DNS.AuthDomain)
 		ui.Info("Add nameserver: 127.0.0.1#%d", cfg.DNS.Bind9Port)
+		progress.CompleteStep(currentStep)
 	}
+	currentStep++
 
 	// Step 5: Generate mkcert CA
-	ui.Step("Installing mkcert Root CA...")
+	progress.StartStep(currentStep)
 
 	// Check if already installed
 	installed, err := pki.IsInstalled()
 	if err != nil {
+		progress.FailStep(currentStep, err)
 		return fmt.Errorf("failed to check mkcert status: %w", err)
 	}
 
@@ -134,26 +161,37 @@ func runSetup(cmd *cobra.Command, skipDNS bool, rootless bool) error {
 	} else {
 		// Install CA
 		if err := pki.InstallRootCA(); err != nil {
+			progress.FailStep(currentStep, err)
 			return fmt.Errorf("failed to install mkcert CA: %w", err)
 		}
 		ui.Success("mkcert Root CA installed")
 	}
+	progress.CompleteStep(currentStep)
+	currentStep++
 
 	// Step 6: Generate Kubernetes secret YAML
-	ui.Step("Generating Kubernetes CA secret...")
+	progress.StartStep(currentStep)
 	secretPath := pki.GetDefaultSecretPath()
 	if err := pki.GenerateKubernetesSecret(secretPath); err != nil {
+		progress.FailStep(currentStep, err)
 		return fmt.Errorf("failed to generate CA secret: %w", err)
 	}
 	ui.Success("CA secret saved to %s", secretPath)
+	progress.CompleteStep(currentStep)
+	currentStep++
 
 	// Step 7: Save config
-	ui.Step("Saving configuration...")
+	progress.StartStep(currentStep)
 	cfg.State.Initialized = true
 	if err := cfg.Save(); err != nil {
+		progress.FailStep(currentStep, err)
 		return err
 	}
 	ui.Success("Configuration saved to %s", config.DefaultConfigPath())
+	progress.CompleteStep(currentStep)
+
+	// Mark all steps complete
+	progress.Complete()
 
 	ui.Header("Setup Complete")
 	ui.Info("Run 'nova start' to deploy the lab environment")

@@ -66,6 +66,23 @@ func runStart(cmd *cobra.Command, targetTier int) error {
 
 	ui.Header("Starting NOVA (Tier 0-%d)", targetTier)
 
+	// Build deployment steps based on target tier
+	steps := []string{"Tier 0: Minikube Cluster"}
+	if targetTier >= 1 {
+		steps = append(steps, "Tier 1: Infrastructure")
+	}
+	if targetTier >= 2 {
+		steps = append(steps, "Tier 2: Platform")
+	}
+	if targetTier >= 3 {
+		steps = append(steps, "Tier 3: Applications")
+	}
+	steps = append(steps, "Host Services (Bind9 & NGINX)")
+
+	// Create progress tracker
+	progress := ui.NewStepProgress(steps)
+	currentStep := 0
+
 	// Check if cluster is already running
 	running, err := minikube.IsRunning(cmd.Context())
 	if err != nil {
@@ -73,32 +90,40 @@ func runStart(cmd *cobra.Command, targetTier int) error {
 	}
 
 	// Tier 0: Start Minikube cluster if not running
+	progress.StartStep(currentStep)
 	if !running {
 		if err := deployer.DeployTier0(cmd.Context(), cfg); err != nil {
+			progress.FailStep(currentStep, err)
 			return fmt.Errorf("failed to deploy tier 0: %w", err)
 		}
+		progress.CompleteStep(currentStep)
 	} else {
-		ui.Info("Minikube cluster already running")
+		ui.Info("Minikube cluster already running - skipping")
+		progress.CompleteStep(currentStep)
 	}
+	currentStep++
 
-	// TODO: Deploy higher tiers
+	// Deploy higher tiers
 	if targetTier >= 1 {
-		ui.Step("Deploying Tier 1 (Infrastructure)...")
+		progress.StartStep(currentStep)
 		ui.Warn("Tier 1 deployment not yet implemented")
+		currentStep++
 	}
 
 	if targetTier >= 2 {
-		ui.Step("Deploying Tier 2 (Platform)...")
+		progress.StartStep(currentStep)
 		ui.Warn("Tier 2 deployment not yet implemented")
+		currentStep++
 	}
 
 	if targetTier >= 3 {
-		ui.Step("Deploying Tier 3 (Applications)...")
+		progress.StartStep(currentStep)
 		ui.Warn("Tier 3 deployment not yet implemented")
+		currentStep++
 	}
 
 	// Start host services (Bind9 DNS and NGINX gateway)
-	ui.Step("Starting host services...")
+	progress.StartStep(currentStep)
 
 	// Start Bind9 DNS
 	ui.Info("  • Starting Bind9 DNS server...")
@@ -115,6 +140,11 @@ func runStart(cmd *cobra.Command, targetTier int) error {
 	} else {
 		ui.Success("NGINX gateway started (HTTP:80, HTTPS:443)")
 	}
+
+	progress.CompleteStep(currentStep)
+
+	// Mark all steps complete
+	progress.Complete()
 
 	// Update state
 	cfg.State.LastDeployedTier = targetTier
