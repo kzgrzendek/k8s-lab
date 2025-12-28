@@ -96,6 +96,7 @@ nova delete --purge
 | `nova start [--tier=N]` | Start lab up to tier N (1, 2, or 3). Default: 3 |
 | `nova stop` | Stop lab, preserve state |
 | `nova delete [--purge]` | Delete lab. `--purge` removes config/certs |
+| `nova status [-v]` | Show status of all components. `-v` for verbose output |
 | `nova kubectl ...` | Run kubectl against NOVA cluster |
 | `nova helm ...` | Run helm commands against NOVA cluster |
 | `nova version` | Show version information |
@@ -202,16 +203,37 @@ NOVA uses mkcert to generate a Root CA that's automatically trusted by your brow
 # Install Mage
 go install github.com/magefile/mage@latest
 
-# Build
+# Available Mage targets
+mage -l
+
+# Build for current platform
 mage build
+
+# Build for all platforms
+mage buildAll
 
 # Run tests
 mage test
 
+# Run tests in short mode
+mage testShort
+
+# Run tests with coverage report (generates coverage/coverage.html)
+mage testCoverage
+
+# Format code
+mage fmt
+
+# Run linter
+mage lint
+
+# Run all CI checks (format, lint, test)
+mage ci
+
 # Install to $GOPATH/bin
 mage install
 
-# Clean
+# Clean build artifacts
 mage clean
 ```
 

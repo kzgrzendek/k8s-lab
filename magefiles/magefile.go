@@ -74,6 +74,37 @@ func TestShort() error {
 	return sh.RunV("go", "test", "-v", "-short", "./...")
 }
 
+// TestCoverage runs tests and generates coverage report.
+func TestCoverage() error {
+	fmt.Println("Running tests with coverage...")
+	coverageDir := "coverage"
+	if err := os.MkdirAll(coverageDir, 0755); err != nil {
+		return err
+	}
+
+	coverProfile := filepath.Join(coverageDir, "coverage.out")
+	coverHTML := filepath.Join(coverageDir, "coverage.html")
+
+	// Run tests with coverage
+	if err := sh.RunV("go", "test", "-v", "-race", "-coverprofile="+coverProfile, "./..."); err != nil {
+		return err
+	}
+
+	// Generate HTML report
+	if err := sh.RunV("go", "tool", "cover", "-html="+coverProfile, "-o", coverHTML); err != nil {
+		return err
+	}
+
+	fmt.Printf("Coverage report generated: %s\n", coverHTML)
+	return nil
+}
+
+// Ci runs all checks for continuous integration (format, lint, test).
+func Ci() error {
+	mg.Deps(Fmt, Lint, Test)
+	return nil
+}
+
 // Lint runs golangci-lint.
 func Lint() error {
 	fmt.Println("Running linter...")
