@@ -59,6 +59,7 @@ func init() {
 	rootCmd.AddCommand(newStartCmd())
 	rootCmd.AddCommand(newStopCmd())
 	rootCmd.AddCommand(newDeleteCmd())
+	rootCmd.AddCommand(newStatusCmd())
 	rootCmd.AddCommand(newVersionCmd())
 	rootCmd.AddCommand(newKubectlCmd())
 	rootCmd.AddCommand(newHelmCmd())
