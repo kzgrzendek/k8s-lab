@@ -220,15 +220,8 @@ func (c *Checker) GetHostServicesStatus() *HostServicesStatus {
 func (c *Checker) GetDeploymentsStatus() *DeploymentsStatus {
 	status := &DeploymentsStatus{}
 
-	// Tier 0 is the cluster itself (already checked)
-	status.Tier0Components = []ComponentStatus{
-		{
-			Name:    "Minikube Cluster",
-			Status:  "running",
-			Healthy: true,
-			Details: fmt.Sprintf("%d nodes", c.cfg.Minikube.Nodes),
-		},
-	}
+	// Check Tier 0 components
+	status.Tier0Components = c.checkTier0Components()
 
 	// Check Tier 1 components
 	status.Tier1Components = c.checkTier1Components()
@@ -239,6 +232,83 @@ func (c *Checker) GetDeploymentsStatus() *DeploymentsStatus {
 	status.Tier3Components = []ComponentStatus{}
 
 	return status
+}
+
+// checkTier0Components checks Tier 0 (Minikube cluster) components.
+func (c *Checker) checkTier0Components() []ComponentStatus {
+	components := []ComponentStatus{}
+
+	// Check cluster status
+	clusterStatus, err := c.GetClusterStatus()
+	if err != nil || !clusterStatus.Running {
+		components = append(components, ComponentStatus{
+			Name:    "Minikube Cluster",
+			Status:  "stopped",
+			Healthy: false,
+			Details: "Not running",
+		})
+		return components
+	}
+
+	// Cluster is running
+	components = append(components, ComponentStatus{
+		Name:    "Minikube Cluster",
+		Status:  "running",
+		Healthy: clusterStatus.Healthy,
+		Details: fmt.Sprintf("%d nodes", len(clusterStatus.Nodes)),
+	})
+
+	// Check BPF filesystem (Tier 0 requirement for Cilium)
+	if c.checkBPFMounted() {
+		components = append(components, ComponentStatus{
+			Name:    "BPF Filesystem",
+			Status:  "mounted",
+			Healthy: true,
+			Details: "Required for Cilium CNI",
+		})
+	}
+
+	// Check GPU labeling if GPU is enabled
+	if c.cfg.HasGPU() {
+		gpuLabeled := c.checkGPULabeling()
+		components = append(components, ComponentStatus{
+			Name:    "GPU Node Labeling",
+			Status:  map[bool]string{true: "configured", false: "not configured"}[gpuLabeled],
+			Healthy: gpuLabeled,
+			Details: fmt.Sprintf("Mode: %s", c.cfg.Minikube.GPUs),
+		})
+	}
+
+	return components
+}
+
+// checkBPFMounted checks if BPF filesystem is mounted on nodes.
+func (c *Checker) checkBPFMounted() bool {
+	// Check if bpf is mounted on the first node
+	cmd := exec.CommandContext(c.ctx, "kubectl", "get", "nodes", "-o", "jsonpath={.items[0].metadata.name}")
+	output, err := cmd.Output()
+	if err != nil {
+		return false
+	}
+	nodeName := strings.TrimSpace(string(output))
+	if nodeName == "" {
+		return false
+	}
+
+	// Check mount via minikube ssh
+	checkCmd := exec.CommandContext(c.ctx, "minikube", "ssh", "-n", nodeName, "--", "mount | grep bpf")
+	err = checkCmd.Run()
+	return err == nil
+}
+
+// checkGPULabeling checks if GPU nodes are properly labeled.
+func (c *Checker) checkGPULabeling() bool {
+	cmd := exec.CommandContext(c.ctx, "kubectl", "get", "nodes", "-l", "nvidia.com/gpu=true", "-o", "name")
+	output, err := cmd.Output()
+	if err != nil {
+		return false
+	}
+	return len(strings.TrimSpace(string(output))) > 0
 }
 
 // checkTier1Components checks Tier 1 infrastructure components.

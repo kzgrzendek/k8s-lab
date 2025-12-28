@@ -131,6 +131,16 @@ func displayDeploymentsStatus(deployments *status.DeploymentsStatus, verbose boo
 	ui.Info("")
 	ui.Header("Deployed Components")
 
+	// Display Tier 0
+	if len(deployments.Tier0Components) > 0 {
+		ui.Info("")
+		ui.Info("Tier 0 - Minikube Cluster:")
+		for _, comp := range deployments.Tier0Components {
+			displayComponentStatus(comp, verbose)
+		}
+	}
+
+	// Display Tier 1
 	if len(deployments.Tier1Components) > 0 {
 		ui.Info("")
 		ui.Info("Tier 1 - Infrastructure:")
@@ -138,6 +148,7 @@ func displayDeploymentsStatus(deployments *status.DeploymentsStatus, verbose boo
 			displayComponentStatus(comp, verbose)
 		}
 	} else {
+		ui.Info("")
 		ui.Info("Tier 1: not deployed")
 	}
 
