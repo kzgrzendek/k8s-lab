@@ -31,10 +31,16 @@ func DeployTier0(ctx context.Context, cfg *config.Config) error {
 
 	// Step 2: Mount BPF filesystem on all nodes
 	ui.Step("Mounting BPF filesystem on nodes...")
-	nodes, err := minikube.GetNodeNames(ctx)
+	nodes, err := minikube.GetNodeNames(ctx, cfg)
 	if err != nil {
 		return fmt.Errorf("failed to get node names: %w", err)
 	}
+
+	clusterMode := "multi-node"
+	if cfg.IsSingleNode() {
+		clusterMode = "single-node"
+	}
+	ui.Info("  • Cluster mode: %s (%d node%s)", clusterMode, cfg.Minikube.Nodes, plural(cfg.Minikube.Nodes))
 
 	for _, node := range nodes {
 		if err := minikube.MountBPFFS(ctx, node); err != nil {
@@ -122,4 +128,12 @@ func DeployTier0(ctx context.Context, cfg *config.Config) error {
 	ui.Info("Run 'nova kubectl get nodes' to verify cluster status")
 
 	return nil
+}
+
+// plural returns "s" for counts != 1, empty string for count == 1.
+func plural(count int) string {
+	if count == 1 {
+		return ""
+	}
+	return "s"
 }

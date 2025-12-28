@@ -75,13 +75,11 @@ func Delete(ctx context.Context) error {
 	return nil
 }
 
-// GetNodeNames returns the names of all nodes in the cluster.
-func GetNodeNames(ctx context.Context) ([]string, error) {
-	// For simplicity, assume nodes are named: minikube, minikube-m02, minikube-m03
-	// This matches Minikube's default naming convention
+// GetNodeNames returns the names of all nodes in the cluster based on config.
+func GetNodeNames(ctx context.Context, cfg *config.Config) ([]string, error) {
+	// Minikube naming convention: minikube, minikube-m02, minikube-m03, ...
 	var nodes []string
-	nodesCount := 3 // Default from config
-	for i := 1; i <= nodesCount; i++ {
+	for i := 1; i <= cfg.Minikube.Nodes; i++ {
 		if i == 1 {
 			nodes = append(nodes, "minikube")
 		} else {
@@ -90,6 +88,18 @@ func GetNodeNames(ctx context.Context) ([]string, error) {
 	}
 
 	return nodes, nil
+}
+
+// GetNodeCount returns the number of nodes from a running cluster.
+func GetNodeCount(ctx context.Context) (int, error) {
+	cmd := exec.CommandContext(ctx, "kubectl", "get", "nodes", "-o", "jsonpath={.items[*].metadata.name}")
+	output, err := cmd.Output()
+	if err != nil {
+		return 0, fmt.Errorf("failed to get nodes: %w", err)
+	}
+
+	nodes := strings.Fields(string(output))
+	return len(nodes), nil
 }
 
 // MountBPFFS mounts the BPF filesystem on a node.

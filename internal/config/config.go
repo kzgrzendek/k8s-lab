@@ -145,3 +145,46 @@ func GetInt(key string) int {
 func GetBool(key string) bool {
 	return viper.GetBool(key)
 }
+
+// Validate checks if the configuration is valid.
+func (c *Config) Validate() error {
+	// Validate node count
+	if c.Minikube.Nodes < 1 {
+		return fmt.Errorf("minikube nodes must be at least 1 (got %d)", c.Minikube.Nodes)
+	}
+	if c.Minikube.Nodes > 10 {
+		return fmt.Errorf("minikube nodes should not exceed 10 (got %d)", c.Minikube.Nodes)
+	}
+
+	// Validate CPUs
+	if c.Minikube.CPUs < 2 {
+		return fmt.Errorf("minikube cpus must be at least 2 (got %d)", c.Minikube.CPUs)
+	}
+
+	// Validate Memory
+	if c.Minikube.Memory < 2048 {
+		return fmt.Errorf("minikube memory must be at least 2048MB (got %d)", c.Minikube.Memory)
+	}
+
+	// Validate DNS port
+	if c.DNS.Bind9Port < 1024 || c.DNS.Bind9Port > 65535 {
+		return fmt.Errorf("bind9 port must be between 1024-65535 (got %d)", c.DNS.Bind9Port)
+	}
+
+	return nil
+}
+
+// IsSingleNode returns true if configured for single-node deployment.
+func (c *Config) IsSingleNode() bool {
+	return c.Minikube.Nodes == 1
+}
+
+// IsMultiNode returns true if configured for multi-node deployment.
+func (c *Config) IsMultiNode() bool {
+	return c.Minikube.Nodes > 1
+}
+
+// HasGPU returns true if GPU support is enabled.
+func (c *Config) HasGPU() bool {
+	return c.Minikube.GPUs != "" && c.Minikube.GPUs != "none" && c.Minikube.GPUs != "disabled"
+}
