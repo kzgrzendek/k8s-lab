@@ -1,0 +1,10 @@
+apiVersion: gateway.envoyproxy.io/v1alpha1
+kind: Backend
+metadata:
+  name: keycloak
+  namespace: kube-system
+spec:
+  endpoints:
+    - fqdn:
+        hostname: keycloak.{{.Domain}}
+        port: 443

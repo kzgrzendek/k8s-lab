@@ -1,0 +1,7 @@
+# Trust Manager Configuration
+# Documentation: https://cert-manager.io/docs/trust/trust-manager/
+
+secretTargets:
+  enabled: true
+  authorizedSecrets:
+    - "nova-ca-secret"

@@ -1,0 +1,37 @@
+# Cilium CNI Configuration
+# Documentation: https://docs.cilium.io/en/stable/helm-reference/
+#
+# This file contains base configuration for Cilium CNI.
+# Dynamic values (k8sServiceHost, k8sServicePort) are set at deployment time.
+
+autoDirectNodeRoutes: false
+
+kubeProxyReplacement: true
+enableHostReachableServices: true
+
+cni:
+  exclusive: false
+
+bpf:
+  masquerade: false
+
+socketLB:
+  hostNamespaceOnly: true
+
+nodePort:
+  enabled: true
+
+gatewayAPI:
+  enabled: false
+
+envoy:
+  enabled: false
+
+policyEnforcementMode: "default"
+
+loadBalancer:
+  l7:
+    backend: disabled
+
+ingressController:
+  enabled: false

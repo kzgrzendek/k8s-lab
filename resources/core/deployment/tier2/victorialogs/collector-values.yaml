@@ -1,0 +1,5 @@
+# VictoriaLogs Collector - Log collection agent
+# Collects logs from all cluster pods
+
+remoteWrite:
+  - url: "http://vls-victoria-logs-single-server:9428"

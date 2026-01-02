@@ -1,0 +1,5 @@
+# Cert Manager Configuration
+# Documentation: https://cert-manager.io/docs/configuration/
+
+crds:
+  enabled: true

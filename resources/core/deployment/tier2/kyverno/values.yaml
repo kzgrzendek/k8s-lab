@@ -1,0 +1,44 @@
+# Kyverno Policy Engine
+# https://kyverno.io/
+
+# Admission webhooks configuration
+admissionController:
+  replicas: 1
+
+# Resource limits for lab environment
+resources:
+  limits:
+    memory: 512Mi
+  requests:
+    cpu: 100m
+    memory: 256Mi
+
+# Background controller for existing resources
+backgroundController:
+  enabled: true
+  resources:
+    limits:
+      memory: 512Mi
+    requests:
+      cpu: 100m
+      memory: 256Mi
+
+# Cleanup controller
+cleanupController:
+  enabled: true
+  resources:
+    limits:
+      memory: 256Mi
+    requests:
+      cpu: 50m
+      memory: 128Mi
+
+# Reports controller
+reportsController:
+  enabled: true
+  resources:
+    limits:
+      memory: 256Mi
+    requests:
+      cpu: 50m
+      memory: 128Mi

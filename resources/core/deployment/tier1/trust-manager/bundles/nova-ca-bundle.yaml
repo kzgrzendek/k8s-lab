@@ -1,0 +1,17 @@
+apiVersion: trust.cert-manager.io/v1alpha1
+kind: Bundle
+metadata:
+  name: nova-ca-secret
+  namespace: cert-manager
+spec:
+  sources:
+  - useDefaultCAs: true
+  - secret:
+      name: "nova-cacert"
+      key: "tls.crt"
+  target:
+    secret:
+      key: "cert.pem"
+    namespaceSelector:
+      matchLabels:
+        trust-manager/inject-ca-secret: "enabled"

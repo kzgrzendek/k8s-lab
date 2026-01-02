@@ -1,0 +1,39 @@
+/* NOVA Theme - Custom login styles */
+
+/* Background image */
+.kcLoginClass {
+  background-image: url("../assets/nova-background.jpg") !important;
+  background-size: cover !important;
+  background-position: center !important;
+  background-repeat: no-repeat !important;
+  min-height: 100vh !important;
+}
+
+/* Header styling */
+#kc-header {
+  background-color: rgba(0, 0, 0, 0.7) !important;
+  padding: 20px !important;
+}
+
+#kc-header-wrapper {
+  color: #fff !important;
+}
+
+/* Login card styling */
+.kcFormCardClass,
+#kc-form {
+  background-color: rgba(255, 255, 255, 0.95) !important;
+  border-radius: 8px !important;
+  box-shadow: 0 4px 20px rgba(0, 0, 0, 0.3) !important;
+}
+
+/* Button styling */
+.kcButtonPrimaryClass {
+  background-color: #1976d2 !important;
+  border-color: #1976d2 !important;
+}
+
+.kcButtonPrimaryClass:hover {
+  background-color: #1565c0 !important;
+  border-color: #1565c0 !important;
+}

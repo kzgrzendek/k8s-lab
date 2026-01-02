@@ -1,0 +1,19 @@
+# Hubble - Network Observability for Cilium
+# Extends Cilium with network visibility
+
+hubble:
+  relay:
+    enabled: true
+
+  ui:
+    enabled: true
+    baseUrl: "/"
+    ingress:
+      enabled: false
+
+  metrics:
+    serviceMonitor:
+      enabled: true
+
+    dashboards:
+      enabled: true

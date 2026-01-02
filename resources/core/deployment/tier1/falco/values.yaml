@@ -1,0 +1,10 @@
+# Falco Security Configuration
+# Documentation: https://github.com/falcosecurity/charts/tree/master/charts/falco
+
+tty: true
+
+driver:
+  enabled: true
+  kind: modern_ebpf
+  ebpf:
+    leastPrivileged: true

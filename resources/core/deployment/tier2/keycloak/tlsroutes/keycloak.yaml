@@ -1,0 +1,16 @@
+apiVersion: gateway.networking.k8s.io/v1alpha3
+kind: TLSRoute
+metadata:
+  name: keycloak-tls-route
+  namespace: keycloak
+spec:
+  parentRefs:
+    - name: nova-passthrough
+      namespace: envoy-gateway-system
+      sectionName: keycloak
+  hostnames:
+    - "keycloak.{{.Domain}}"
+  rules:
+    - backendRefs:
+        - name: keycloak-service
+          port: 443

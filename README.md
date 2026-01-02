@@ -6,7 +6,8 @@ A GPU-powered Kubernetes lab for AI/ML development on your local machine.
 
 ## Overview
 
-NOVA deploys a production-like, multi-tier Kubernetes environment optimized for AI/ML workloads. With a single command, you get:
+NOVA deploys a production-like, multi-tier Kubernetes environment optimized
+for AI/ML workloads. With a single command, you get:
 
 - **3-node Minikube cluster** with GPU support
 - **Infrastructure tier**: Cilium CNI, Cert-Manager, Envoy Gateway, NVIDIA GPU Operator
@@ -19,12 +20,12 @@ NOVA deploys a production-like, multi-tier Kubernetes environment optimized for 
 
 Install these tools before running NOVA:
 
-| Tool | Version | Installation |
-|------|---------|--------------|
-| Docker | 24.0+ | [docs.docker.com](https://docs.docker.com/get-docker/) |
-| Minikube | 1.32+ | [minikube.sigs.k8s.io](https://minikube.sigs.k8s.io/docs/start/) |
-| mkcert | latest | [github.com/FiloSottile/mkcert](https://github.com/FiloSottile/mkcert#installation) |
-| certutil | - | `apt install libnss3-tools` (Ubuntu/Debian) |
+| Tool     | Version | Installation                                                                        |
+|----------|---------|-------------------------------------------------------------------------------------|
+| Docker   | 24.0+   | [docs.docker.com](https://docs.docker.com/get-docker/)                              |
+| Minikube | 1.32+   | [minikube.sigs.k8s.io](https://minikube.sigs.k8s.io/docs/start/)                    |
+| mkcert   | latest  | [github.com/FiloSottile/mkcert](https://github.com/FiloSottile/mkcert#installation) |
+| certutil | -       | `apt install libnss3-tools` (Ubuntu/Debian)                                         |
 
 ### GPU Support (Optional)
 
@@ -88,22 +89,51 @@ nova delete
 nova delete --purge
 ```
 
+## Debugging and Troubleshooting
+
+### Export Logs
+
+When you encounter issues, export all cluster logs for analysis:
+
+```bash
+# Export to current directory
+nova export-logs
+
+# Export to specific directory
+nova export-logs -o /path/to/output
+```
+
+This creates a timestamped zip archive (e.g., `nova-logs-20250129-143022.zip`)
+containing:
+
+- **System Information** - Docker, Minikube, Kubectl versions
+- **Minikube Logs** - Cluster status and logs
+- **Kubernetes Cluster Logs** - Nodes, namespaces, resources, events
+- **Node Kubelet Logs** - Kubelet logs from all cluster nodes
+- **Pod Logs** - Current and previous logs from all pods (all namespaces)
+- **Docker Container Logs** - Bind9 DNS and NGINX gateway logs
+- **Configuration Files** - NOVA config and kubeconfig
+
+The archive is perfect for sharing when reporting issues or debugging complex
+problems.
+
 ## Commands
 
-| Command | Description |
-|---------|-------------|
-| `nova setup` | One-time setup: check dependencies, configure DNS, generate CA |
-| `nova start [--tier=N]` | Start lab up to tier N (1, 2, or 3). Default: 3 |
-| `nova stop` | Stop lab, preserve state |
-| `nova delete [--purge]` | Delete lab. `--purge` removes config/certs |
-| `nova status [-v]` | Show status of all components. `-v` for verbose output |
-| `nova kubectl ...` | Run kubectl against NOVA cluster |
-| `nova helm ...` | Run helm commands against NOVA cluster |
-| `nova version` | Show version information |
+| Command                      | Description                                                    |
+|------------------------------|----------------------------------------------------------------|
+| `nova setup`                 | One-time setup: check dependencies, configure DNS, generate CA |
+| `nova start [--tier=N]`      | Start lab up to tier N (1, 2, or 3). Default: 3                |
+| `nova stop`                  | Stop lab, preserve state                                       |
+| `nova delete [--purge]`      | Delete lab. `--purge` removes config/certs                     |
+| `nova status [-v]`           | Show status of all components. `-v` for verbose output         |
+| `nova export-logs [-o DIR]`  | Export all logs to timestamped zip archive                     |
+| `nova kubectl ...`           | Run kubectl against NOVA cluster                               |
+| `nova helm ...`              | Run helm commands against NOVA cluster                         |
+| `nova version`               | Show version information                                       |
 
 ## Architecture
 
-```
+```txt
 ┌─────────────────────────────────────────────────────────────────┐
 │                          HOST LAYER                             │
 │     ┌─────────────┐    ┌─────────────┐    ┌─────────────┐       │
@@ -142,6 +172,7 @@ nova delete --purge
 ```
 
 ### Tier 1: Infrastructure
+
 - **Cilium** - eBPF-based CNI with network policies
 - **Falco** - Runtime security monitoring
 - **NVIDIA GPU Operator** - GPU resource management
@@ -150,6 +181,7 @@ nova delete --purge
 - **Envoy AI Gateway** - LLM-aware routing
 
 ### Tier 2: Platform
+
 - **Kyverno** - Policy engine
 - **Keycloak** - Identity and access management
 - **Hubble** - Network observability
@@ -157,11 +189,13 @@ nova delete --purge
 - **Victoria Logs** - Centralized logging
 
 ### Tier 3: Applications
+
 - **llm-d** - LLM model serving with vLLM
 - **Open WebUI** - Web-based LLM chat interface
 - **HELIX** - Enterprise AI platform
 
 ### Host Services
+
 - **NGINX** - Reverse proxy (ports 80/443)
 - **Bind9** - DNS server for `*.nova.local`
 
@@ -184,16 +218,70 @@ dns:
 
 ### Default Endpoints
 
-| Service | URL | Credentials |
-|---------|-----|-------------|
-| Keycloak | `https://keycloak.nova.local` | `admin` / (see secret) |
-| Hubble UI | `https://hubble.nova.local` | - |
-| Grafana | `https://grafana.nova.local` | `admin` / `admin` |
-| Open WebUI | `https://chat.nova.local` | Create account |
+| Service    | URL                               | Credentials                       |
+|------------|-----------------------------------|-----------------------------------|
+| Dashboard  | `https://dashboard.nova.local`    | -                                 |
+| Keycloak   | `https://keycloak.nova.local`     | `admin` / (shown after deploy)    |
+| Hubble UI  | `https://hubble.nova.local`       | -                                 |
+| Grafana    | `https://grafana.nova.local`      | `admin` / `admin`                 |
+| Open WebUI | `https://webui.nova.local`        | Create account                    |
+
+After deployment, NOVA displays all available URLs and Keycloak credentials:
+
+```txt
+Cluster deployed. You can now access the following applications:
+  Kubernetes Dashboard: https://dashboard.nova.local
+  Keycloak: https://keycloak.nova.local
+  ...
+
+Log in via Keycloak:
+  As administrator: admin / <random_password>
+  As user: user / user
+  As developer: developer / developer
+```
 
 ### SSL/TLS Certificates
 
 NOVA uses mkcert to generate a Root CA that's automatically trusted by your browser. No certificate warnings!
+
+### Developer kubectl Context
+
+NOVA automatically creates a restricted kubectl context (`nova-developer`) during Tier 0 deployment. This context provides full read/write access to namespace-scoped resources, but only within the `developer` namespace.
+
+**Permissions include:**
+
+- Pods, Deployments, Services, ConfigMaps, Secrets
+- Jobs, CronJobs, StatefulSets, DaemonSets
+- PersistentVolumeClaims, ServiceAccounts
+- Ingresses, NetworkPolicies
+- Events, Endpoints, ResourceQuotas, LimitRanges
+
+**Restrictions:**
+
+- No access to cluster-scoped resources (nodes, namespaces, etc.)
+- No access to other namespaces (kube-system, etc.)
+
+**Switch contexts:**
+
+```bash
+# Use the developer context (restricted to 'developer' namespace)
+kubectl config use-context nova-developer
+
+# Switch back to admin context (full cluster access)
+kubectl config use-context minikube
+```
+
+**Example workflow:**
+
+```bash
+# As developer: deploy an application in the developer namespace
+kubectl config use-context nova-developer
+kubectl run nginx --image=nginx
+kubectl get pods  # Shows pods in 'developer' namespace only
+
+# Cannot access other namespaces
+kubectl get pods -n kube-system  # Error: forbidden
+```
 
 ## Development
 
@@ -239,24 +327,38 @@ mage clean
 
 ### Project Structure
 
-```
+```txt
 nova/
-├── cmd/nova/           # Entry point
+├── cmd/nova/                      # Entry point
 ├── internal/
-│   ├── cmd/            # Cobra commands
-│   ├── config/         # Configuration
-│   ├── deployer/       # Tier deployment
-│   ├── docker/         # Docker SDK wrapper
-│   ├── helm/           # Helm SDK wrapper
-│   ├── k8s/            # Kubernetes client
-│   ├── minikube/       # Minikube wrapper
-│   ├── preflight/      # Dependency checks
-│   ├── pki/            # Certificate ops
-│   ├── dns/            # DNS configuration
-│   └── ui/             # Terminal UI
-├── pkg/resources/      # Embedded resources
-├── resources/          # Helm values, manifests
-└── magefiles/          # Build targets
+│   ├── cli/                       # CLI layer
+│   │   ├── commands/             # Cobra command implementations
+│   │   └── ui/                   # Terminal UI utilities
+│   ├── core/                      # Core business logic
+│   │   ├── config/               # Configuration management
+│   │   ├── deployer/             # Deployment coordination
+│   │   └── status/               # System status checking
+│   ├── setup/                     # One-time initialization
+│   │   ├── preflight/            # Dependency checks
+│   │   ├── certificates/         # mkcert CA management
+│   │   └── system/               # System configuration (DNS)
+│   ├── deployment/                # Runtime tier deployments
+│   │   ├── tier0/                # Minikube cluster + GPU detection
+│   │   ├── tier1/                # Infrastructure (ready for components)
+│   │   ├── tier2/                # Platform (future)
+│   │   └── tier3/                # Applications (future)
+│   ├── host/                      # Host services (outside k8s)
+│   │   ├── dns/bind9/            # Bind9 DNS server
+│   │   └── gateway/nginx/        # NGINX reverse proxy
+│   ├── tools/                     # External tool integrations
+│   │   ├── docker/               # Docker SDK wrapper
+│   │   ├── helm/                 # Helm SDK wrapper
+│   │   ├── kubectl/              # Kubernetes client-go wrapper
+│   │   └── minikube/             # Minikube CLI wrapper
+│   └── shared/                    # Common utilities (future)
+├── pkg/resources/                 # Embedded resources
+├── resources/                     # Helm values, manifests
+└── magefiles/                     # Build targets
 ```
 
 ## License

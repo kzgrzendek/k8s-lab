@@ -1,0 +1,44 @@
+apiVersion: gateway.envoyproxy.io/v1alpha1
+kind: EnvoyProxy
+metadata:
+  name: nova
+  namespace: envoy-gateway-system
+spec:
+  mergeGateways: true
+
+  provider:
+    type: Kubernetes
+    kubernetes:
+      envoyService:
+        name: gateway-nova
+        type: NodePort
+        patch:
+          type: StrategicMerge
+          value:
+            spec:
+              ports:
+              - name: https
+                port: 443
+                targetPort: 10443 
+                nodePort: 30443
+                protocol: TCP
+      
+      envoyDeployment:
+        container:
+          env:
+          - name: SSL_CERT_FILE
+            value: /etc/envoy-trust/ca-bundle.pem
+          volumeMounts:
+          - name: trusted-ca
+            mountPath: /etc/envoy-trust
+            readOnly: true
+
+        pod:
+          volumes:
+          - name: trusted-ca
+            secret:
+              secretName: nova-ca-secret
+              defaultMode: 420
+              items:
+                - key: "cert.pem"
+                  path: "ca-bundle.pem"

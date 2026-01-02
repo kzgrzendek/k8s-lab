@@ -4,11 +4,11 @@ package main
 import (
 	"os"
 
-	"github.com/kzgrzendek/nova/internal/cmd"
+	"github.com/kzgrzendek/nova/internal/cli/commands"
 )
 
 func main() {
-	if err := cmd.Execute(); err != nil {
+	if err := commands.Execute(); err != nil {
 		os.Exit(1)
 	}
 }

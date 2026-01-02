@@ -1,0 +1,8 @@
+# NVIDIA GPU Operator Configuration
+# Documentation: https://docs.nvidia.com/datacenter/cloud-native/gpu-operator/
+
+driver:
+  enabled: false
+
+toolkit:
+  enabled: false

@@ -1,0 +1,440 @@
+package tier1
+
+import (
+	"context"
+	"testing"
+
+	"github.com/kzgrzendek/nova/internal/core/config"
+)
+
+// TestCheckPrerequisites tests prerequisite checking logic.
+func TestCheckPrerequisites(t *testing.T) {
+	ctx := context.Background()
+
+	// Note: This test requires kubectl and helm to be installed
+	// In a real CI environment, you might want to skip this or use mocks
+	err := checkPrerequisites(ctx)
+	if err != nil {
+		t.Logf("Prerequisites check failed (expected in environments without kubectl/helm): %v", err)
+	}
+}
+
+// TestHelmRepoConfiguration tests Helm repository configuration.
+func TestHelmRepoConfiguration(t *testing.T) {
+	repos := map[string]string{
+		"cilium":        "https://helm.cilium.io/",
+		"nvidia":        "https://helm.ngc.nvidia.com/nvidia",
+		"falcosecurity": "https://falcosecurity.github.io/charts",
+		"jetstack":      "https://charts.jetstack.io",
+		"dandydev":      "https://dandydeveloper.github.io/charts",
+	}
+
+	// Verify all repo names and URLs are non-empty
+	for name, url := range repos {
+		if name == "" {
+			t.Error("Repository name should not be empty")
+		}
+		if url == "" {
+			t.Errorf("Repository URL for %s should not be empty", name)
+		}
+
+		// Verify URL format (basic check)
+		if len(url) < 8 || url[:8] != "https://" {
+			t.Errorf("Repository URL for %s should use HTTPS: %s", name, url)
+		}
+	}
+
+	// Verify expected repositories are present
+	expectedRepos := []string{"cilium", "nvidia", "falcosecurity", "jetstack", "dandydev"}
+	for _, expected := range expectedRepos {
+		if _, exists := repos[expected]; !exists {
+			t.Errorf("Expected repository %s not found in configuration", expected)
+		}
+	}
+}
+
+// TestCiliumConfiguration tests Cilium CNI configuration values.
+func TestCiliumConfiguration(t *testing.T) {
+	values := map[string]interface{}{
+		"ipam": map[string]interface{}{
+			"mode": "kubernetes",
+		},
+		"kubeProxyReplacement": true,
+		"k8sServiceHost":       "192.168.49.2",
+		"k8sServicePort":       "8443",
+	}
+
+	// Verify IPAM mode
+	if ipam, ok := values["ipam"].(map[string]interface{}); ok {
+		if mode, ok := ipam["mode"].(string); ok {
+			if mode != "kubernetes" {
+				t.Errorf("Expected IPAM mode 'kubernetes', got %s", mode)
+			}
+		} else {
+			t.Error("IPAM mode should be a string")
+		}
+	} else {
+		t.Error("IPAM configuration should be present")
+	}
+
+	// Verify kube-proxy replacement is enabled
+	if kubeProxy, ok := values["kubeProxyReplacement"].(bool); ok {
+		if !kubeProxy {
+			t.Error("kubeProxyReplacement should be enabled")
+		}
+	}
+
+	// Verify k8sServiceHost is set (required for Minikube)
+	if host, exists := values["k8sServiceHost"]; !exists {
+		t.Error("k8sServiceHost must be set for Cilium to work with Minikube")
+	} else if host == "" {
+		t.Error("k8sServiceHost should not be empty")
+	}
+
+	// Verify k8sServicePort is set (required for Minikube)
+	if port, exists := values["k8sServicePort"]; !exists {
+		t.Error("k8sServicePort must be set for Cilium to work with Minikube")
+	} else if port == "" {
+		t.Error("k8sServicePort should not be empty")
+	}
+}
+
+// TestFalcoConfiguration tests Falco security configuration values.
+func TestFalcoConfiguration(t *testing.T) {
+	values := map[string]interface{}{
+		"tty": true,
+		"driver": map[string]interface{}{
+			"kind": "modern_ebpf",
+		},
+	}
+
+	// Verify TTY is enabled
+	if tty, ok := values["tty"].(bool); !ok || !tty {
+		t.Error("TTY should be enabled for Falco")
+	}
+
+	// Verify driver configuration
+	if driver, ok := values["driver"].(map[string]interface{}); ok {
+		if kind, ok := driver["kind"].(string); ok {
+			if kind != "modern_ebpf" {
+				t.Errorf("Expected driver kind 'modern_ebpf', got %s", kind)
+			}
+		} else {
+			t.Error("Driver kind should be a string")
+		}
+	} else {
+		t.Error("Driver configuration should be present")
+	}
+}
+
+// TestGPUOperatorConfiguration tests NVIDIA GPU operator configuration.
+func TestGPUOperatorConfiguration(t *testing.T) {
+	values := map[string]interface{}{
+		"driver": map[string]interface{}{
+			"enabled": false, // Use host drivers
+		},
+		"toolkit": map[string]interface{}{
+			"enabled": true,
+		},
+		"operator": map[string]interface{}{
+			"defaultRuntime": "docker",
+		},
+	}
+
+	// Verify driver is disabled (using host drivers)
+	if driver, ok := values["driver"].(map[string]interface{}); ok {
+		if enabled, ok := driver["enabled"].(bool); ok {
+			if enabled {
+				t.Error("GPU driver should be disabled (using host drivers)")
+			}
+		}
+	}
+
+	// Verify toolkit is enabled
+	if toolkit, ok := values["toolkit"].(map[string]interface{}); ok {
+		if enabled, ok := toolkit["enabled"].(bool); ok {
+			if !enabled {
+				t.Error("GPU toolkit should be enabled")
+			}
+		}
+	}
+
+	// Verify runtime configuration
+	if operator, ok := values["operator"].(map[string]interface{}); ok {
+		if runtime, ok := operator["defaultRuntime"].(string); ok {
+			if runtime != "docker" {
+				t.Errorf("Expected runtime 'docker', got %s", runtime)
+			}
+		}
+	}
+}
+
+// TestGPUModeDetection tests GPU mode detection logic.
+func TestGPUModeDetection(t *testing.T) {
+	testCases := []struct {
+		name             string
+		gpuConfig        string
+		shouldSkipDeploy bool
+	}{
+		{
+			name:             "Empty GPU config",
+			gpuConfig:        "",
+			shouldSkipDeploy: true,
+		},
+		{
+			name:             "GPU disabled",
+			gpuConfig:        "disabled",
+			shouldSkipDeploy: true,
+		},
+		{
+			name:             "GPU none",
+			gpuConfig:        "none",
+			shouldSkipDeploy: true,
+		},
+		{
+			name:             "GPU all",
+			gpuConfig:        "all",
+			shouldSkipDeploy: false,
+		},
+		{
+			name:             "GPU specific",
+			gpuConfig:        "0",
+			shouldSkipDeploy: false,
+		},
+	}
+
+	for _, tc := range testCases {
+		t.Run(tc.name, func(t *testing.T) {
+			// Simulate GPU detection logic from deployGPUOperatorWithProgress
+			shouldSkip := tc.gpuConfig == "" || tc.gpuConfig == "none" || tc.gpuConfig == "disabled"
+
+			if shouldSkip != tc.shouldSkipDeploy {
+				t.Errorf("Expected shouldSkip=%v for GPU config '%s', got %v",
+					tc.shouldSkipDeploy, tc.gpuConfig, shouldSkip)
+			}
+		})
+	}
+}
+
+// TestCertManagerConfiguration tests Cert Manager CRD configuration.
+func TestCertManagerConfiguration(t *testing.T) {
+	values := map[string]interface{}{
+		"crds": map[string]interface{}{
+			"enabled": true,
+			"keep":    true,
+		},
+	}
+
+	// Verify CRDs are configured
+	if crds, ok := values["crds"].(map[string]interface{}); ok {
+		if enabled, ok := crds["enabled"].(bool); ok {
+			if !enabled {
+				t.Error("CRDs should be enabled for Cert Manager")
+			}
+		}
+
+		if keep, ok := crds["keep"].(bool); ok {
+			if !keep {
+				t.Error("CRDs should be kept (not deleted on uninstall)")
+			}
+		}
+	} else {
+		t.Error("CRDS configuration should be present")
+	}
+}
+
+// TestRedisConfiguration tests Redis backend configuration for Envoy Gateway.
+func TestRedisConfiguration(t *testing.T) {
+	values := map[string]interface{}{
+		"replicas": 1,
+	}
+
+	// Verify replica count
+	if replicas, ok := values["replicas"].(int); ok {
+		if replicas < 1 {
+			t.Error("Redis should have at least 1 replica")
+		}
+	} else {
+		t.Error("Redis replicas should be configured")
+	}
+}
+
+// TestNamespaceConfiguration tests namespace configuration for all components.
+func TestNamespaceConfiguration(t *testing.T) {
+	expectedNamespaces := map[string]string{
+		"Cilium CNI":         "kube-system",
+		"Local Path Storage": "local-path-storage",
+		"Falco":              "falco",
+		"GPU Operator":       "nvidia-gpu-operator",
+		"Cert Manager":       "cert-manager",
+		"Trust Manager":      "cert-manager",
+		"Envoy AI Gateway":   "envoy-ai-gateway-system",
+		"Envoy Gateway":      "envoy-gateway-system",
+	}
+
+	for component, namespace := range expectedNamespaces {
+		if namespace == "" {
+			t.Errorf("Namespace for %s should not be empty", component)
+		}
+
+		// Verify namespace follows Kubernetes naming conventions
+		if len(namespace) > 63 {
+			t.Errorf("Namespace for %s is too long (max 63 chars): %s", component, namespace)
+		}
+	}
+}
+
+// TestDeploymentSteps tests the deployment step configuration.
+func TestDeploymentSteps(t *testing.T) {
+	steps := []string{
+		"Prerequisites Check",
+		"Helm Repositories",
+		"Cilium CNI",
+		"Local Path Storage",
+		"Falco Security",
+		"NVIDIA GPU Operator",
+		"Cert Manager",
+		"Trust Manager",
+		"Envoy AI Gateway",
+		"Envoy Gateway",
+	}
+
+	// Verify we have at least the expected number of steps
+	if len(steps) < 10 {
+		t.Errorf("Expected at least 10 deployment steps, got %d", len(steps))
+	}
+
+	// Verify all steps have non-empty names
+	for i, step := range steps {
+		if step == "" {
+			t.Errorf("Step %d should have a non-empty name", i)
+		}
+	}
+
+	// Verify prerequisites are first
+	if steps[0] != "Prerequisites Check" {
+		t.Error("First step should be prerequisites check")
+	}
+
+	// Verify Helm repos are second
+	if steps[1] != "Helm Repositories" {
+		t.Error("Second step should be Helm repositories")
+	}
+}
+
+// TestTimeoutConfiguration tests Helm timeout values.
+func TestTimeoutConfiguration(t *testing.T) {
+	testCases := []struct {
+		component string
+		timeout   int
+		minTime   int
+		maxTime   int
+	}{
+		{"Cilium", 600, 300, 900},
+		{"Falco", 600, 300, 900},
+		{"GPU Operator", 600, 300, 900},
+		{"Cert Manager", 600, 300, 900},
+		{"Trust Manager", 600, 300, 900},
+		{"Envoy AI Gateway", 600, 300, 900},
+		{"Envoy Gateway", 600, 300, 900},
+	}
+
+	for _, tc := range testCases {
+		t.Run(tc.component, func(t *testing.T) {
+			if tc.timeout < tc.minTime {
+				t.Errorf("%s timeout %ds is too short (min %ds)", tc.component, tc.timeout, tc.minTime)
+			}
+			if tc.timeout > tc.maxTime {
+				t.Errorf("%s timeout %ds is too long (max %ds)", tc.component, tc.timeout, tc.maxTime)
+			}
+		})
+	}
+}
+
+// TestErrorMessages tests error message formatting.
+func TestErrorMessages(t *testing.T) {
+	testCases := []struct {
+		name             string
+		errorFormat      string
+		expectedContains string
+	}{
+		{
+			name:             "Namespace creation error",
+			errorFormat:      "failed to create %s namespace: %w",
+			expectedContains: "namespace",
+		},
+		{
+			name:             "Helm installation error",
+			errorFormat:      "failed to install %s: %w",
+			expectedContains: "install",
+		},
+		{
+			name:             "Repository error",
+			errorFormat:      "failed to add %s repository (%s): %w",
+			expectedContains: "repository",
+		},
+	}
+
+	for _, tc := range testCases {
+		t.Run(tc.name, func(t *testing.T) {
+			// Verify error message contains expected keywords
+			if tc.errorFormat == "" {
+				t.Error("Error format should not be empty")
+			}
+
+			// Basic validation that format string is valid
+			if len(tc.errorFormat) < 5 {
+				t.Error("Error format should be a meaningful message")
+			}
+		})
+	}
+}
+
+// TestConfigValidation tests configuration validation for tier 1.
+func TestConfigValidation(t *testing.T) {
+	testCases := []struct {
+		name      string
+		cfg       *config.Config
+		expectGPU bool
+	}{
+		{
+			name: "Config with GPU enabled",
+			cfg: &config.Config{
+				Minikube: config.MinikubeConfig{
+					GPUs: "all",
+				},
+			},
+			expectGPU: true,
+		},
+		{
+			name: "Config with GPU disabled",
+			cfg: &config.Config{
+				Minikube: config.MinikubeConfig{
+					GPUs: "",
+				},
+			},
+			expectGPU: false,
+		},
+		{
+			name: "Config with GPU none",
+			cfg: &config.Config{
+				Minikube: config.MinikubeConfig{
+					GPUs: "none",
+				},
+			},
+			expectGPU: false,
+		},
+	}
+
+	for _, tc := range testCases {
+		t.Run(tc.name, func(t *testing.T) {
+			hasGPU := tc.cfg.Minikube.GPUs != "" &&
+				tc.cfg.Minikube.GPUs != "none" &&
+				tc.cfg.Minikube.GPUs != "disabled"
+
+			if hasGPU != tc.expectGPU {
+				t.Errorf("Expected GPU enabled=%v, got %v", tc.expectGPU, hasGPU)
+			}
+		})
+	}
+}

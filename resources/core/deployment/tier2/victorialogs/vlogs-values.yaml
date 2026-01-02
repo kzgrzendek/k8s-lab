@@ -1,0 +1,10 @@
+# VictoriaLogs - Log aggregation and storage
+# https://docs.victoriametrics.com/victorialogs/
+
+server:
+  # Disk-based retention
+  retentionDiskSpaceUsage: 10GB
+
+  # Storage size for ingested logs
+  persistentVolume:
+    size: 10Gi
