@@ -1,6 +1,6 @@
-/* NOVA Theme - Custom background with dimmed overlay and black login card */
+/* NOVA Theme - Minimal Custom Styling */
 
-/* Background image with dimming overlay */
+/* Background with dimmed overlay */
 .kcLoginClass {
   background-image: url("../assets/nova-background.jpg") !important;
   background-size: cover !important;
@@ -10,7 +10,6 @@
   position: relative !important;
 }
 
-/* Dimming overlay */
 .kcLoginClass::before {
   content: "" !important;
   position: absolute !important;
@@ -22,42 +21,42 @@
   z-index: 0 !important;
 }
 
-/* Ensure content is above the overlay */
-.kcLoginClass>* {
+.kcLoginClass > * {
   position: relative !important;
   z-index: 1 !important;
 }
 
-/* Black login card */
-#kc-form-wrapper,
-.card-pf {
-  background-color: #000000 !important;
-  border: 1px solid rgba(255, 255, 255, 0.1) !important;
-  box-shadow: 0 4px 6px rgba(0, 0, 0, 0.3) !important;
-}
-
-/* Adjust text colors for black background */
-#kc-form-wrapper label,
-#kc-form-wrapper .pf-c-form__label,
-.card-pf label,
-.card-pf h1,
-.card-pf h2,
-.card-pf p {
+/* Custom gradient button */
+.kcButtonClass,
+.pf-v5-c-button.pf-m-primary,
+button[name="login"] {
+  background: linear-gradient(45deg, #6a11cb, #2575fc) !important;
+  border: none !important;
+  border-radius: 25px !important;
   color: #ffffff !important;
+  font-weight: bold !important;
+  text-transform: uppercase !important;
+  transition: transform 0.2s, box-shadow 0.2s !important;
 }
 
-/* Style input fields for better contrast */
-#kc-form-wrapper input[type="text"],
-#kc-form-wrapper input[type="password"],
-#kc-form-wrapper input[type="email"] {
-  background-color: #1a1a1a !important;
-  border: 1px solid rgba(255, 255, 255, 0.2) !important;
-  color: #ffffff !important;
+.kcButtonClass:hover,
+.pf-v5-c-button.pf-m-primary:hover,
+button[name="login"]:hover {
+  transform: translateY(-2px) !important;
+  box-shadow: 0 6px 8px rgba(0, 0, 0, 0.2) !important;
 }
 
-#kc-form-wrapper input[type="text"]:focus,
-#kc-form-wrapper input[type="password"]:focus,
-#kc-form-wrapper input[type="email"]:focus {
-  border-color: rgba(255, 255, 255, 0.4) !important;
-  outline: none !important;
+.kcButtonClass:disabled,
+.pf-v5-c-button.pf-m-primary:disabled,
+button[name="login"]:disabled {
+  background: linear-gradient(45deg, #aaa, #ccc) !important;
+  opacity: 0.6 !important;
+  cursor: not-allowed !important;
+  transform: none !important;
+}
+
+/* Login card border matching button gradient */
+.pf-v5-c-login__main-header {
+  border-top: 4px solid !important;
+  border-image: linear-gradient(45deg, #6a11cb, #2575fc) 1 !important;
 }

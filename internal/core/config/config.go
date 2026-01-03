@@ -67,7 +67,7 @@ func Default() *Config {
 		},
 		DNS: DNSConfig{
 			Domain:     "nova.local",
-			AuthDomain: "auth.nova.local",
+			AuthDomain: "auth.local",
 			Bind9Port:  30053,
 		},
 		State: StateConfig{

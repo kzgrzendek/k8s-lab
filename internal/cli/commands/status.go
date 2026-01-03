@@ -110,10 +110,17 @@ func displayClusterStatus(cluster *status.ClusterStatus, verbose bool) {
 			if !strings.Contains(node.Status, "Ready") {
 				statusIcon = "✗"
 			}
+
+			// Build node display with optional GPU indicator
+			nodeName := node.Name
+			if node.HasGPU {
+				nodeName += " (GPU)"
+			}
+
 			if verbose {
-				ui.Info("  %s %s - %s (%s)", statusIcon, node.Name, node.Status, node.Roles)
+				ui.Info("  %s %s - %s (%s)", statusIcon, nodeName, node.Status, node.Roles)
 			} else {
-				ui.Info("  %s %s - %s", statusIcon, node.Name, node.Status)
+				ui.Info("  %s %s - %s", statusIcon, nodeName, node.Status)
 			}
 		}
 	}
@@ -173,26 +180,20 @@ func displayDeploymentsStatus(deployments *status.DeploymentsStatus, verbose boo
 
 	// Display Tier 2 credentials if available
 	if deployments.Tier2Credentials != nil && len(deployments.Tier2Credentials.KeycloakUsers) > 0 {
-		ui.Info("")
-		ui.Header("Keycloak Credentials")
-		ui.Info("URL: https://%s", cfg.DNS.AuthDomain)
-		ui.Info("")
-		for _, user := range deployments.Tier2Credentials.KeycloakUsers {
-			ui.Info("  %s / %s  (group: %s)", user.Username, user.Password, user.Group)
-		}
+		displayKeycloakCredentials(deployments.Tier2Credentials, cfg)
 	}
 }
 
 func displayComponentStatus(comp status.ComponentStatus, verbose bool) {
 	var statusIcon string
 	switch comp.Status {
-	case "running", "deployed":
+	case "running", "deployed", "mounted", "configured":
 		if comp.Healthy {
 			statusIcon = "✓"
 		} else {
 			statusIcon = "⚠"
 		}
-	case "stopped":
+	case "stopped", "not configured":
 		statusIcon = "✗"
 	default:
 		statusIcon = "?"

@@ -142,6 +142,45 @@ func Fmt() error {
 	return sh.RunV("go", "fmt", "./...")
 }
 
+// BuildTheme builds the Keycloak theme.
+func BuildTheme() error {
+	fmt.Println("Building Keycloak theme...")
+	themeDir := "resources/core/deployment/tier2/keycloak/theme"
+
+	// Check if npm is available
+	if err := checkCommand("npm"); err != nil {
+		return fmt.Errorf("npm not found - please install Node.js and npm")
+	}
+
+	// Change to theme directory
+	originalDir, err := os.Getwd()
+	if err != nil {
+		return err
+	}
+	defer os.Chdir(originalDir)
+
+	if err := os.Chdir(themeDir); err != nil {
+		return fmt.Errorf("failed to change to theme directory: %w", err)
+	}
+
+	// Run npm install if node_modules doesn't exist
+	if _, err := os.Stat("node_modules"); os.IsNotExist(err) {
+		fmt.Println("Installing theme dependencies...")
+		if err := sh.RunV("npm", "install"); err != nil {
+			return fmt.Errorf("failed to install dependencies: %w", err)
+		}
+	}
+
+	// Build the theme
+	fmt.Println("Building theme with keycloakify...")
+	if err := sh.RunV("npm", "run", "build-keycloak-theme"); err != nil {
+		return fmt.Errorf("failed to build theme: %w", err)
+	}
+
+	fmt.Println("Theme built successfully in dist_keycloak/")
+	return nil
+}
+
 // checkCommand checks if a command is available in PATH.
 func checkCommand(name string) error {
 	_, err := exec.LookPath(name)

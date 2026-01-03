@@ -11,3 +11,5 @@ spec:
   commonName: "*.{{.Domain}}"
   dnsNames:
   - "*.{{.Domain}}"
+  privateKey:
+    rotationPolicy: Always

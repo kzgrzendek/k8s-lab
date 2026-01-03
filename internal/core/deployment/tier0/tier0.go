@@ -29,12 +29,12 @@ func DeployTier0(ctx context.Context, cfg *config.Config) error {
 	}
 	ui.Success("Minikube cluster started")
 
-	// Rename minikube context to nova-admin for consistency
+	// Rename minikube context to cluster-admin for consistency
 	if k8s.ContextExists(ctx, "minikube") {
-		if err := k8s.RenameContext(ctx, "minikube", "nova-admin"); err != nil {
-			ui.Warn("Failed to rename context 'minikube' to 'nova-admin': %v", err)
+		if err := k8s.RenameContext(ctx, "minikube", "cluster-admin"); err != nil {
+			ui.Warn("Failed to rename context 'minikube' to 'cluster-admin': %v", err)
 		} else {
-			ui.Info("Renamed kubectl context 'minikube' to 'nova-admin'")
+			ui.Info("Renamed kubectl context 'minikube' to 'cluster-admin'")
 		}
 	}
 
@@ -132,68 +132,9 @@ func DeployTier0(ctx context.Context, cfg *config.Config) error {
 		ui.Success("GPU operator configured")
 	}
 
-	// Step 5: Create developer context
-	ui.Step("Creating developer kubectl context...")
-	if err := setupDeveloperContext(ctx); err != nil {
-		ui.Warn("Failed to create developer context: %v", err)
-	} else {
-		ui.Success("Developer kubectl context created")
-	}
-
 	ui.Header("Tier 0 Deployment Complete")
 	ui.Info("Minikube cluster is ready")
 	ui.Info("Run 'nova kubectl get nodes' to verify cluster status")
-
-	return nil
-}
-
-// setupDeveloperContext creates a developer namespace, RBAC, and kubectl context.
-// This provides a restricted context for developers to work in the 'developer' namespace.
-func setupDeveloperContext(ctx context.Context) error {
-	const developerNamespace = "developer"
-	const developerContextName = "nova-developer"
-	const developerServiceAccount = "developer"
-
-	// Check if context already exists
-	if k8s.ContextExists(ctx, developerContextName) {
-		ui.Info("Developer context already exists - skipping")
-		return nil
-	}
-
-	// Apply namespace
-	if err := k8s.ApplyYAML(ctx, "resources/core/deployment/tier0/developer-context/namespace.yaml"); err != nil {
-		return fmt.Errorf("failed to create developer namespace: %w", err)
-	}
-
-	// Apply service account
-	if err := k8s.ApplyYAML(ctx, "resources/core/deployment/tier0/developer-context/serviceaccount.yaml"); err != nil {
-		return fmt.Errorf("failed to create developer service account: %w", err)
-	}
-
-	// Apply role
-	if err := k8s.ApplyYAML(ctx, "resources/core/deployment/tier0/developer-context/role.yaml"); err != nil {
-		return fmt.Errorf("failed to create developer role: %w", err)
-	}
-
-	// Apply role binding
-	if err := k8s.ApplyYAML(ctx, "resources/core/deployment/tier0/developer-context/rolebinding.yaml"); err != nil {
-		return fmt.Errorf("failed to create developer role binding: %w", err)
-	}
-
-	// Apply secret (for service account token)
-	if err := k8s.ApplyYAML(ctx, "resources/core/deployment/tier0/developer-context/secret.yaml"); err != nil {
-		return fmt.Errorf("failed to create developer token secret: %w", err)
-	}
-
-	// Wait for the token to be populated
-	if err := k8s.WaitForSecret(ctx, developerNamespace, developerServiceAccount+"-token", 30); err != nil {
-		return fmt.Errorf("failed waiting for developer token: %w", err)
-	}
-
-	// Create kubectl context
-	if err := k8s.CreateKubectlContext(ctx, developerContextName, developerNamespace, developerServiceAccount); err != nil {
-		return fmt.Errorf("failed to create kubectl context: %w", err)
-	}
 
 	return nil
 }

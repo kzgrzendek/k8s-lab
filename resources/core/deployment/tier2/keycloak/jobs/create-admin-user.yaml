@@ -1,0 +1,150 @@
+apiVersion: batch/v1
+kind: Job
+metadata:
+  name: keycloak-create-admin
+  namespace: keycloak
+spec:
+  ttlSecondsAfterFinished: 300
+  template:
+    spec:
+      restartPolicy: OnFailure
+      containers:
+      - name: create-admin
+        image: curlimages/curl:latest
+        command:
+        - sh
+        - -c
+        - |
+          # --- Configuration ---
+          HEALTH_URL="https://auth.local:9000"
+          API_URL="https://auth.local"
+          REALM="master"
+
+          # --- Helpers ---
+          log() { echo "[$(date +'%T')] $1"; }
+          fail() { log "ERROR: $1"; exit 1; }
+
+          get_token() {
+            curl -k -sf -X POST "$API_URL/realms/$REALM/protocol/openid-connect/token" \
+              -H "Content-Type: application/x-www-form-urlencoded" \
+              --data-urlencode "username=$1" \
+              --data-urlencode "password=$2" \
+              -d "grant_type=password" \
+              -d "client_id=admin-cli" | grep -o '"access_token":"[^"]*' | cut -d'"' -f4
+          }
+
+          get_user_id() {
+            curl -k -sf -X GET "$API_URL/admin/realms/$REALM/users?username=$1&exact=true" \
+              -H "Authorization: Bearer $2" | grep -o '"id":"[^"]*' | head -1 | cut -d'"' -f4
+          }
+
+          assign_client_role() {
+            # $1=ClientName, $2=RoleName, $3=UserID, $4=Token
+            local CID=$(curl -k -sf -X GET "$API_URL/admin/realms/$REALM/clients?clientId=$1" \
+              -H "Authorization: Bearer $4" | grep -o '"id":"[^"]*' | head -1 | cut -d'"' -f4)
+            
+            if [ -n "$CID" ]; then
+              local RDEF=$(curl -k -sf -X GET "$API_URL/admin/realms/$REALM/clients/$CID/roles/$2" -H "Authorization: Bearer $4")
+              if [ -n "$RDEF" ]; then
+                curl -k -sf -X POST "$API_URL/admin/realms/$REALM/users/$3/role-mappings/clients/$CID" \
+                  -H "Authorization: Bearer $4" \
+                  -H "Content-Type: application/json" \
+                  -d "[$RDEF]"
+              fi
+            fi
+          }
+
+          # --- Main Execution ---
+
+          log "Waiting for Keycloak..."
+          until curl -k -sf "$HEALTH_URL/health/ready" > /dev/null 2>&1; do sleep 5; done
+          log "Keycloak is ready."
+
+          log "Authenticating as bootstrap admin..."
+          TOKEN=$(get_token "admin" "$BOOTSTRAP_ADMIN_PASSWORD")
+          [ -z "$TOKEN" ] && fail "Failed to get bootstrap token."
+
+          log "Creating cluster-admin user..."
+          CREATE_RESPONSE=$(curl -k -s -w "\n%{http_code}" -X POST "$API_URL/admin/realms/$REALM/users" \
+            -H "Authorization: Bearer $TOKEN" \
+            -H "Content-Type: application/json" \
+            -d '{
+              "username": "'"$CLUSTER_ADMIN_USER"'",
+              "enabled": true,
+              "credentials": [{
+                "type": "password",
+                "value": "'"$CLUSTER_ADMIN_PASSWORD"'",
+                "temporary": false
+              }]
+            }')
+
+          HTTP_CODE=$(echo "$CREATE_RESPONSE" | tail -n1)
+          [ "$HTTP_CODE" != "201" ] && [ "$HTTP_CODE" != "409" ] && fail "Failed to create user (HTTP $HTTP_CODE)"
+
+          log "Getting user ID..."
+          USER_ID=$(get_user_id "$CLUSTER_ADMIN_USER" "$TOKEN")
+          [ -z "$USER_ID" ] && fail "Could not find created user"
+          log "User ID: $USER_ID"
+
+          log "Assigning admin realm role..."
+          # Get the admin realm role definition
+          ADMIN_ROLE=$(curl -k -sf -X GET "$API_URL/admin/realms/$REALM/roles/admin" \
+            -H "Authorization: Bearer $TOKEN")
+          [ -z "$ADMIN_ROLE" ] && fail "Could not get admin role definition"
+
+          # Assign the admin realm role
+          ASSIGN_RESPONSE=$(curl -k -s -w "\n%{http_code}" -X POST "$API_URL/admin/realms/$REALM/users/$USER_ID/role-mappings/realm" \
+            -H "Authorization: Bearer $TOKEN" \
+            -H "Content-Type: application/json" \
+            -d "[$ADMIN_ROLE]")
+
+          ASSIGN_CODE=$(echo "$ASSIGN_RESPONSE" | tail -n1)
+          [ "$ASSIGN_CODE" != "204" ] && fail "Failed to assign admin realm role (HTTP $ASSIGN_CODE)"
+          log "Admin realm role assigned successfully"
+
+          log "Assigning super admin client roles (master-realm)..."
+          # Get the master-realm client ID
+          MASTER_CLIENT_ID=$(curl -k -sf -X GET "$API_URL/admin/realms/$REALM/clients?clientId=master-realm" \
+            -H "Authorization: Bearer $TOKEN" | grep -o '"id":"[^"]*' | head -1 | cut -d'"' -f4)
+          [ -z "$MASTER_CLIENT_ID" ] && fail "Could not find master-realm client"
+          log "Master-realm client ID: $MASTER_CLIENT_ID"
+
+          # Get all available roles from master-realm client for comprehensive admin access
+          ALL_ROLES=$(curl -k -sf -X GET "$API_URL/admin/realms/$REALM/clients/$MASTER_CLIENT_ID/roles" \
+            -H "Authorization: Bearer $TOKEN")
+          [ -z "$ALL_ROLES" ] && fail "Could not get master-realm roles"
+
+          # Assign all master-realm management roles for full cross-realm admin access
+          MASTER_ASSIGN_RESPONSE=$(curl -k -s -w "\n%{http_code}" -X POST "$API_URL/admin/realms/$REALM/users/$USER_ID/role-mappings/clients/$MASTER_CLIENT_ID" \
+            -H "Authorization: Bearer $TOKEN" \
+            -H "Content-Type: application/json" \
+            -d "$ALL_ROLES")
+
+          MASTER_ASSIGN_CODE=$(echo "$MASTER_ASSIGN_RESPONSE" | tail -n1)
+          [ "$MASTER_ASSIGN_CODE" != "204" ] && fail "Failed to assign master-realm roles (HTTP $MASTER_ASSIGN_CODE)"
+          log "Super admin client roles assigned successfully - user can now manage all realms"
+
+          log "Verifying new user..."
+          [ -z "$(get_token "$CLUSTER_ADMIN_USER" "$CLUSTER_ADMIN_PASSWORD")" ] && fail "Verification failed"
+
+          log "Deleting bootstrap admin..."
+          ADMIN_ID=$(get_user_id "admin" "$TOKEN")
+          [ -n "$ADMIN_ID" ] && curl -k -sf -X DELETE "$API_URL/admin/realms/$REALM/users/$ADMIN_ID" -H "Authorization: Bearer $TOKEN"
+
+          log "Setup complete!"
+        env:
+        - name: BOOTSTRAP_ADMIN_PASSWORD
+          valueFrom:
+            secretKeyRef:
+              name: keycloak-bootstrap-admin
+              key: password
+        - name: CLUSTER_ADMIN_USER
+          valueFrom:
+            secretKeyRef:
+              name: keycloak-admin-secret
+              key: username
+        - name: CLUSTER_ADMIN_PASSWORD
+          valueFrom:
+            secretKeyRef:
+              name: keycloak-admin-secret
+              key: password

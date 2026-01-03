@@ -58,8 +58,8 @@ func DeployTier2(ctx context.Context, cfg *config.Config) (*DeployResult, error)
 		"Kyverno Policy Engine",
 		"Keycloak Operator",
 		"Keycloak PostgreSQL Database",
-		"Keycloak Theme",
 		"Keycloak IAM Instance",
+		"Keycloak Theme",
 		"Hubble Network Observability",
 		"VictoriaLogs Server",
 		"VictoriaLogs Collector",
@@ -101,21 +101,28 @@ func DeployTier2(ctx context.Context, cfg *config.Config) (*DeployResult, error)
 		return nil, err
 	}
 
-	// 4. Keycloak Theme
+	// 4. Keycloak Theme (must come before Keycloak instance)
 	if err := runStep("Keycloak Theme", func() error {
+		// Create PVC for theme storage
+		if err := k8s.ApplyYAML(ctx, "resources/core/deployment/tier2/keycloak/pvc/theme-pvc.yaml"); err != nil {
+			return fmt.Errorf("failed to create theme PVC: %w", err)
+		}
+
+		// Deploy theme to PVC using helper pod
 		return deployKeycloakTheme(ctx)
 	}); err != nil {
 		return nil, err
 	}
 
-	// 5. Keycloak Instance
+	// 5. Keycloak Instance (after theme is ready)
 	if err := runStep("Keycloak Instance", func() error {
 		pwd, err := deployKeycloakInstance(ctx, cfg)
 		if err != nil {
 			return err
 		}
 		deploymentResult.KeycloakUsers = []KeycloakUser{
-			{Username: "admin", Password: pwd, Group: "ADMIN"},
+			{Username: "cluster-admin", Password: pwd, Group: "MASTER_ADMIN"},
+			{Username: "admin", Password: "admin", Group: "ADMIN"},
 			{Username: "developer", Password: "developer", Group: "DEVELOPER"},
 			{Username: "user", Password: "user", Group: "USER"},
 		}
@@ -251,34 +258,57 @@ func deployKeycloakPostgreSQL(ctx context.Context) error {
 	return nil
 }
 
-// deployKeycloakTheme installs the NOVA Keycloak theme.
+// deployKeycloakTheme installs the NOVA Keycloak theme by copying it to the PVC.
+// This should be called before deploying the Keycloak instance.
 func deployKeycloakTheme(ctx context.Context) error {
-	const pvcName = "keycloak-theme-pvc"
-	const helperPodName = "theme-copy-helper"
 	const jarPath = "resources/core/deployment/tier2/keycloak/theme/dist_keycloak/keycloak-theme-for-kc-all-other-versions.jar"
+	const helperPodName = "keycloak-theme-copy-helper"
 
-	// Always ensure the theme is deployed to pick up changes
-	ui.Info("Ensuring theme PVC and helper pod...")
-	if err := shared.ApplyTemplate(ctx, "resources/core/deployment/tier2/keycloak/theme-pvc/theme-pvc.yaml", nil); err != nil {
-		return err
-	}
-	if err := shared.ApplyTemplate(ctx, "resources/core/deployment/tier2/keycloak/theme-pvc/theme-copy-pod.yaml", nil); err != nil {
-		return err
+	// Create a temporary helper pod with the PVC mounted
+	ui.Info("Creating helper pod to copy theme...")
+	helperPodYAML := `apiVersion: v1
+kind: Pod
+metadata:
+  name: ` + helperPodName + `
+  namespace: ` + keycloakNamespace + `
+spec:
+  containers:
+  - name: helper
+    image: busybox:latest
+    command: ["sleep", "3600"]
+    volumeMounts:
+    - name: nova-theme
+      mountPath: /theme
+  volumes:
+  - name: nova-theme
+    persistentVolumeClaim:
+      claimName: keycloak-theme-pvc
+  restartPolicy: Never
+`
+
+	if err := k8s.ApplyYAMLContent(ctx, helperPodYAML); err != nil {
+		return fmt.Errorf("failed to create helper pod: %w", err)
 	}
 
-	ui.Info("Waiting for helper pod...")
-	if err := k8s.WaitForPodReady(ctx, keycloakNamespace, helperPodName, 120); err != nil {
-		_ = k8s.DeletePod(ctx, keycloakNamespace, helperPodName)
-		return err
+	// Clean up helper pod when done
+	defer func() {
+		ui.Info("Cleaning up helper pod...")
+		k8s.DeletePod(ctx, keycloakNamespace, helperPodName)
+	}()
+
+	// Wait for helper pod to be ready
+	ui.Info("Waiting for helper pod to be ready...")
+	if err := k8s.WaitForPodReady(ctx, keycloakNamespace, helperPodName, 60); err != nil {
+		return fmt.Errorf("helper pod not ready: %w", err)
 	}
 
-	ui.Info("Copying theme JAR...")
+	// Copy theme JAR to helper pod (which writes to the PVC)
+	ui.Info("Copying theme JAR to PVC...")
 	if err := k8s.CopyToPod(ctx, jarPath, keycloakNamespace, helperPodName, "/theme/nova-theme.jar"); err != nil {
-		_ = k8s.DeletePod(ctx, keycloakNamespace, helperPodName)
-		return err
+		return fmt.Errorf("failed to copy theme to PVC: %w", err)
 	}
 
-	_ = k8s.DeletePod(ctx, keycloakNamespace, helperPodName)
+	ui.Info("Theme successfully copied to PVC")
 	return nil
 }
 
@@ -311,6 +341,18 @@ func deployKeycloakInstance(ctx context.Context, cfg *config.Config) (string, er
 		"HubbleClientSecret":    hubbleSecret,
 	}
 
+	// Create bootstrap admin secret (temporary admin for initial setup)
+	bootstrapPwd, err := crypto.GenerateRandomPassword(16)
+	if err != nil {
+		return "", fmt.Errorf("failed to generate bootstrap password: %w", err)
+	}
+	if err := k8s.CreateSecret(ctx, keycloakNamespace, "keycloak-bootstrap-admin", map[string]string{
+		"username": "admin",
+		"password": bootstrapPwd,
+	}); err != nil {
+		return "", fmt.Errorf("failed to create keycloak-bootstrap-admin secret: %w", err)
+	}
+
 	// Create cluster-admin secret for master realm
 	if err := k8s.CreateSecret(ctx, keycloakNamespace, "keycloak-admin-secret", map[string]string{
 		"username": "cluster-admin",
@@ -340,7 +382,17 @@ func deployKeycloakInstance(ctx context.Context, cfg *config.Config) (string, er
 		return "", err
 	}
 
-	ui.Info("Importing Realm...")
+	ui.Info("Creating cluster-admin user via Job...")
+	if err := k8s.ApplyYAML(ctx, "resources/core/deployment/tier2/keycloak/jobs/create-admin-user.yaml"); err != nil {
+		return "", fmt.Errorf("failed to create admin user job: %w", err)
+	}
+
+	// Wait for the job to complete
+	if err := k8s.WaitForCondition(ctx, keycloakNamespace, "job/keycloak-create-admin", "Complete", 120); err != nil {
+		return "", fmt.Errorf("failed to create admin user: %w", err)
+	}
+
+	ui.Info("Importing Nova Realm...")
 	if err := shared.ApplyTemplate(ctx, "resources/core/deployment/tier2/keycloak/keycloakrealmimports/nova.yaml", data); err != nil {
 		return "", err
 	}

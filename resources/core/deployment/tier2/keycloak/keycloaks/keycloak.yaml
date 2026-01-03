@@ -16,7 +16,7 @@ spec:
       key: password
   bootstrapAdmin:
     user:
-      secret: keycloak-admin-secret
+      secret: keycloak-bootstrap-admin
   truststores:
     selfsigned-trustore:
       secret:
@@ -45,6 +45,5 @@ spec:
           - name: keycloak
             volumeMounts:
               - name: nova-theme
-                mountPath: /opt/keycloak/providers/nova-theme.jar
-                subPath: nova-theme.jar
+                mountPath: /opt/keycloak/providers
                 readOnly: true

@@ -61,4 +61,4 @@ spec:
           claims:
           - name: groups
             valueType: StringArray
-            values: ["ADMINS"]
+            values: ["ADMIN"]

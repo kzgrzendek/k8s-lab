@@ -1,0 +1,63 @@
+apiVersion: rbac.authorization.k8s.io/v1
+kind: Role
+metadata:
+  name: user-read-only
+  namespace: nova
+  labels:
+    nova.io/managed-by: nova
+rules:
+  # Core API resources - read-only access
+  - apiGroups: [""]
+    resources:
+      - pods
+      - pods/log
+      - services
+      - endpoints
+      - configmaps
+      - persistentvolumeclaims
+      - events
+    verbs: ["get", "list", "watch"]
+
+  # Apps API - read-only access to workloads
+  - apiGroups: ["apps"]
+    resources:
+      - deployments
+      - replicasets
+      - statefulsets
+      - daemonsets
+    verbs: ["get", "list", "watch"]
+
+  # Batch API - read-only access
+  - apiGroups: ["batch"]
+    resources:
+      - jobs
+      - cronjobs
+    verbs: ["get", "list", "watch"]
+
+  # Networking - read-only access
+  - apiGroups: ["networking.k8s.io"]
+    resources:
+      - ingresses
+      - networkpolicies
+    verbs: ["get", "list", "watch"]
+
+  # Autoscaling - read-only access
+  - apiGroups: ["autoscaling"]
+    resources:
+      - horizontalpodautoscalers
+    verbs: ["get", "list", "watch"]
+
+  # Policy - read-only access
+  - apiGroups: ["policy"]
+    resources:
+      - poddisruptionbudgets
+    verbs: ["get", "list", "watch"]
+
+  # Gateway API - read-only access
+  - apiGroups: ["gateway.networking.k8s.io"]
+    resources:
+      - httproutes
+      - grpcroutes
+      - tcproutes
+      - tlsroutes
+    verbs: ["get", "list", "watch"]

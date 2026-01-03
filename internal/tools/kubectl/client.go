@@ -24,8 +24,9 @@ import (
 	"github.com/kzgrzendek/nova/internal/tools/exec"
 )
 
-// getClient creates a Kubernetes client using the default kubeconfig.
-// This is a helper function used by all operations.
+// getClient creates a Kubernetes client using the cluster-admin context.
+// This ensures all nova operations have full cluster access and don't depend on
+// the user's current kubectl context. The current context is never modified.
 func getClient() (*kubernetes.Clientset, error) {
 	// Get kubeconfig path
 	var kubeconfig string
@@ -36,10 +37,16 @@ func getClient() (*kubernetes.Clientset, error) {
 		kubeconfig = kubeconfigEnv
 	}
 
-	// Build config from kubeconfig
-	config, err := clientcmd.BuildConfigFromFlags("", kubeconfig)
+	// Load kubeconfig with cluster-admin context override
+	loadingRules := &clientcmd.ClientConfigLoadingRules{ExplicitPath: kubeconfig}
+	configOverrides := &clientcmd.ConfigOverrides{
+		CurrentContext: "cluster-admin",
+	}
+
+	kubeConfig := clientcmd.NewNonInteractiveDeferredLoadingClientConfig(loadingRules, configOverrides)
+	config, err := kubeConfig.ClientConfig()
 	if err != nil {
-		return nil, fmt.Errorf("failed to build kubeconfig: %w", err)
+		return nil, fmt.Errorf("failed to build kubeconfig with cluster-admin context: %w", err)
 	}
 
 	// Suppress Kubernetes client-go warnings (e.g., deprecation warnings)
@@ -636,8 +643,28 @@ func WaitForPodReady(ctx context.Context, namespace, name string, timeoutSeconds
 	return fmt.Errorf("timeout waiting for pod %s/%s to be ready after %d seconds", namespace, name, timeoutSeconds)
 }
 
+// GetFirstPodName returns the name of the first pod matching the given label selector.
+func GetFirstPodName(ctx context.Context, namespace, labelSelector string) (string, error) {
+	clientset, err := getClient()
+	if err != nil {
+		return "", err
+	}
+
+	pods, err := clientset.CoreV1().Pods(namespace).List(ctx, metav1.ListOptions{
+		LabelSelector: labelSelector,
+	})
+	if err != nil {
+		return "", fmt.Errorf("failed to list pods: %w", err)
+	}
+
+	if len(pods.Items) == 0 {
+		return "", fmt.Errorf("no pods found with label selector %s in namespace %s", labelSelector, namespace)
+	}
+
+	return pods.Items[0].Name, nil
+}
+
 // CopyToPod copies a local file to a path inside a pod using kubectl cp.
-// destPath should be in the format "namespace/podname:path/in/container"
 func CopyToPod(ctx context.Context, localPath, namespace, podName, containerPath string) error {
 	dest := fmt.Sprintf("%s/%s:%s", namespace, podName, containerPath)
 

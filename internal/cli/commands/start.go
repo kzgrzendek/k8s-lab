@@ -178,14 +178,14 @@ func runStart(cmd *cobra.Command, targetTier int) error {
 		ui.Warn("Failed to save state: %v", err)
 	}
 
-	// Check if developer context exists and switch to it if configured
-	if k8s.ContextExists(cmd.Context(), "nova-developer") {
+	// Check if developer context exists and switch to it (if tier >= 1)
+	if targetTier >= 1 && k8s.ContextExists(cmd.Context(), "developer") {
 		ui.Info("")
 		ui.Info("Switching to developer context...")
-		if err := k8s.SwitchContext(cmd.Context(), "nova-developer"); err != nil {
-			ui.Warn("Failed to switch to nova-developer context: %v", err)
+		if err := k8s.SwitchContext(cmd.Context(), "developer"); err != nil {
+			ui.Warn("Failed to switch to developer context: %v", err)
 		} else {
-			ui.Success("Switched to kubectl context 'nova-developer'")
+			ui.Success("Switched to kubectl context 'developer'")
 		}
 	}
 
@@ -224,60 +224,16 @@ func displayDeploymentSummary(cfg *config.Config, targetTier int, tier2Result *t
 
 	// Display Keycloak credentials if Tier 2 was deployed
 	if tier2Result != nil && len(tier2Result.KeycloakUsers) > 0 {
-		ui.Info("")
-		ui.Header("Log in via Keycloak")
-		ui.Info("")
-
-		// Find credentials by username
-		var clusterAdminPassword, adminPassword, userPassword, developerPassword string
-		for _, user := range tier2Result.KeycloakUsers {
-			switch user.Username {
-			case "cluster-admin":
-				clusterAdminPassword = user.Password
-			case "admin":
-				adminPassword = user.Password
-			case "user":
-				userPassword = user.Password
-			case "developer":
-				developerPassword = user.Password
-			}
-		}
-
-		if clusterAdminPassword != "" {
-			ui.Info("Cluster administrator (master realm):")
-			ui.Info("  Username: cluster-admin")
-			ui.Info("  Password: %s", clusterAdminPassword)
-			ui.Info("")
-		}
-
-		if adminPassword != "" {
-			ui.Info("As administrator:")
-			ui.Info("  Username: admin")
-			ui.Info("  Password: %s", adminPassword)
-			ui.Info("")
-		}
-
-		if userPassword != "" {
-			ui.Info("As user:")
-			ui.Info("  Username: user")
-			ui.Info("  Password: %s", userPassword)
-			ui.Info("")
-		}
-
-		if developerPassword != "" {
-			ui.Info("As developer:")
-			ui.Info("  Username: developer")
-			ui.Info("  Password: %s", developerPassword)
-		}
+		displayKeycloakCredentials(tier2Result, cfg)
 	}
 
 	// Show developer context info
 	ui.Info("")
 	ui.Header("Developer kubectl context")
 	ui.Info("")
-	ui.Info("A restricted kubectl context 'nova-developer' has been created.")
-	ui.Info("It provides full access to the 'developer' namespace only.")
+	ui.Info("A restricted kubectl context 'developer' has been created.")
+	ui.Info("It provides full access to the 'nova' namespace only.")
 	ui.Info("")
 	ui.Info("To switch back to admin context:")
-	ui.Info("  kubectl config use-context nova-admin")
+	ui.Info("  kubectl config use-context cluster-admin")
 }

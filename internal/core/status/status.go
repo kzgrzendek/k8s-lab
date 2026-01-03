@@ -51,6 +51,7 @@ type NodeStatus struct {
 	Name   string
 	Status string // "Ready", "NotReady", etc.
 	Roles  string
+	HasGPU bool   // Whether this node is labeled for GPU workloads
 }
 
 // HostServicesStatus represents host services status.
@@ -106,7 +107,7 @@ func (c *Checker) GetSystemStatus() (*SystemStatus, error) {
 
 	// Check deployments (only if cluster is running)
 	if clusterStatus.Running {
-		status.Deployments = c.GetDeploymentsStatus()
+		status.Deployments = c.GetDeploymentsStatus(clusterStatus)
 	}
 
 	return status, nil
@@ -160,7 +161,8 @@ func (c *Checker) GetClusterStatus() (*ClusterStatus, error) {
 // getNodeStatuses gets the status of all nodes in the cluster.
 func (c *Checker) getNodeStatuses() ([]NodeStatus, error) {
 	cmd := exec.CommandContext(c.ctx, "kubectl", "get", "nodes",
-		"-o", "custom-columns=NAME:.metadata.name,STATUS:.status.conditions[-1].type,ROLES:.metadata.labels.node-role\\.kubernetes\\.io/control-plane",
+		"--context=cluster-admin",
+		"-o", "custom-columns=NAME:.metadata.name,STATUS:.status.conditions[-1].type,ROLES:.metadata.labels.node-role\\.kubernetes\\.io/control-plane,GPU:.metadata.labels.nvidia\\.com/gpu\\.count",
 		"--no-headers")
 	output, err := cmd.Output()
 	if err != nil {
@@ -187,6 +189,10 @@ func (c *Checker) getNodeStatuses() ([]NodeStatus, error) {
 		} else {
 			node.Roles = "worker"
 		}
+		// GPU count will be a number (e.g., "1") or "<none>" if not present
+		if len(fields) >= 4 && fields[3] != "<none>" {
+			node.HasGPU = true
+		}
 		nodes = append(nodes, node)
 	}
 
@@ -197,41 +203,67 @@ func (c *Checker) getNodeStatuses() ([]NodeStatus, error) {
 func (c *Checker) GetHostServicesStatus() *HostServicesStatus {
 	status := &HostServicesStatus{}
 
-	// Check Bind9
-	bind9Running := bind9.IsRunning(c.ctx)
-	status.Bind9 = ComponentStatus{
-		Name:    "Bind9 DNS",
-		Healthy: bind9Running,
-		Details: fmt.Sprintf("Port: %d", c.cfg.DNS.Bind9Port),
-	}
-	if bind9Running {
-		status.Bind9.Status = "running"
-	} else {
-		status.Bind9.Status = "stopped"
+	// Check both services concurrently
+	type serviceResult struct {
+		isBind9 bool
+		running bool
 	}
 
-	// Check NGINX
-	nginxRunning := nginx.IsRunning(c.ctx)
-	status.NGINX = ComponentStatus{
-		Name:    "NGINX Gateway",
-		Healthy: nginxRunning,
-		Details: "HTTP:80, HTTPS:443",
-	}
-	if nginxRunning {
-		status.NGINX.Status = "running"
-	} else {
-		status.NGINX.Status = "stopped"
+	resultChan := make(chan serviceResult, 2)
+
+	// Check Bind9 concurrently
+	go func() {
+		resultChan <- serviceResult{
+			isBind9: true,
+			running: bind9.IsRunning(c.ctx),
+		}
+	}()
+
+	// Check NGINX concurrently
+	go func() {
+		resultChan <- serviceResult{
+			isBind9: false,
+			running: nginx.IsRunning(c.ctx),
+		}
+	}()
+
+	// Collect results
+	for i := 0; i < 2; i++ {
+		result := <-resultChan
+		if result.isBind9 {
+			status.Bind9 = ComponentStatus{
+				Name:    "Bind9 DNS",
+				Healthy: result.running,
+				Details: fmt.Sprintf("Port: %d", c.cfg.DNS.Bind9Port),
+			}
+			if result.running {
+				status.Bind9.Status = "running"
+			} else {
+				status.Bind9.Status = "stopped"
+			}
+		} else {
+			status.NGINX = ComponentStatus{
+				Name:    "NGINX Gateway",
+				Healthy: result.running,
+				Details: "HTTP:80, HTTPS:443",
+			}
+			if result.running {
+				status.NGINX.Status = "running"
+			} else {
+				status.NGINX.Status = "stopped"
+			}
+		}
 	}
 
 	return status
 }
 
 // GetDeploymentsStatus checks Kubernetes deployments status.
-func (c *Checker) GetDeploymentsStatus() *DeploymentsStatus {
+func (c *Checker) GetDeploymentsStatus(clusterStatus *ClusterStatus) *DeploymentsStatus {
 	status := &DeploymentsStatus{}
 
-	// Check Tier 0 components
-	status.Tier0Components = c.checkTier0Components()
+	// Check Tier 0 components (pass cluster status to avoid re-checking)
+	status.Tier0Components = c.checkTier0Components(clusterStatus)
 
 	// Check Tier 1 components
 	status.Tier1Components = c.checkTier1Components()
@@ -251,12 +283,11 @@ func (c *Checker) GetDeploymentsStatus() *DeploymentsStatus {
 }
 
 // checkTier0Components checks Tier 0 (Minikube cluster) components.
-func (c *Checker) checkTier0Components() []ComponentStatus {
+func (c *Checker) checkTier0Components(clusterStatus *ClusterStatus) []ComponentStatus {
 	components := []ComponentStatus{}
 
-	// Check cluster status
-	clusterStatus, err := c.GetClusterStatus()
-	if err != nil || !clusterStatus.Running {
+	// Use the passed cluster status (no need to re-check)
+	if !clusterStatus.Running {
 		components = append(components, ComponentStatus{
 			Name:    "Minikube Cluster",
 			Status:  "stopped",
@@ -274,25 +305,57 @@ func (c *Checker) checkTier0Components() []ComponentStatus {
 		Details: fmt.Sprintf("%d nodes", len(clusterStatus.Nodes)),
 	})
 
-	// Check BPF filesystem (Tier 0 requirement for Cilium)
-	if c.checkBPFMounted() {
-		components = append(components, ComponentStatus{
-			Name:    "BPF Filesystem",
-			Status:  "mounted",
-			Healthy: true,
-			Details: "Required for Cilium CNI",
-		})
+	// Run additional checks concurrently
+	type checkResult struct {
+		component *ComponentStatus
 	}
 
-	// Check GPU labeling if GPU is enabled
+	checksToRun := 0
 	if c.cfg.HasGPU() {
-		gpuLabeled := c.checkGPULabeling()
-		components = append(components, ComponentStatus{
-			Name:    "GPU Node Labeling",
-			Status:  map[bool]string{true: "configured", false: "not configured"}[gpuLabeled],
-			Healthy: gpuLabeled,
-			Details: fmt.Sprintf("Mode: %s", c.cfg.Minikube.GPUs),
-		})
+		checksToRun = 2 // BPF + GPU
+	} else {
+		checksToRun = 1 // BPF only
+	}
+
+	resultChan := make(chan checkResult, checksToRun)
+
+	// Check BPF filesystem concurrently
+	go func() {
+		if c.checkBPFMounted() {
+			resultChan <- checkResult{
+				component: &ComponentStatus{
+					Name:    "BPF Filesystem",
+					Status:  "mounted",
+					Healthy: true,
+					Details: "Required for Cilium CNI",
+				},
+			}
+		} else {
+			resultChan <- checkResult{component: nil}
+		}
+	}()
+
+	// Check GPU labeling concurrently if GPU is enabled
+	if c.cfg.HasGPU() {
+		go func() {
+			gpuLabeled := c.checkGPULabeling()
+			resultChan <- checkResult{
+				component: &ComponentStatus{
+					Name:    "GPU Node Labeling",
+					Status:  map[bool]string{true: "configured", false: "not configured"}[gpuLabeled],
+					Healthy: gpuLabeled,
+					Details: fmt.Sprintf("Mode: %s", c.cfg.Minikube.GPUs),
+				},
+			}
+		}()
+	}
+
+	// Collect concurrent check results
+	for i := 0; i < checksToRun; i++ {
+		result := <-resultChan
+		if result.component != nil {
+			components = append(components, *result.component)
+		}
 	}
 
 	return components
@@ -301,7 +364,7 @@ func (c *Checker) checkTier0Components() []ComponentStatus {
 // checkBPFMounted checks if BPF filesystem is mounted on nodes.
 func (c *Checker) checkBPFMounted() bool {
 	// Check if bpf is mounted on the first node
-	cmd := exec.CommandContext(c.ctx, "kubectl", "get", "nodes", "-o", "jsonpath={.items[0].metadata.name}")
+	cmd := exec.CommandContext(c.ctx, "kubectl", "get", "nodes", "--context=cluster-admin", "-o", "jsonpath={.items[0].metadata.name}")
 	output, err := cmd.Output()
 	if err != nil {
 		return false
@@ -319,7 +382,8 @@ func (c *Checker) checkBPFMounted() bool {
 
 // checkGPULabeling checks if GPU nodes are properly labeled.
 func (c *Checker) checkGPULabeling() bool {
-	cmd := exec.CommandContext(c.ctx, "kubectl", "get", "nodes", "-l", "nvidia.com/gpu=true", "-o", "name")
+	// Check for nodes with GPU hardware detected by GPU operator
+	cmd := exec.CommandContext(c.ctx, "kubectl", "get", "nodes", "--context=cluster-admin", "-l", "nvidia.com/gpu.count", "-o", "name")
 	output, err := cmd.Output()
 	if err != nil {
 		return false
@@ -330,12 +394,6 @@ func (c *Checker) checkGPULabeling() bool {
 // checkTier1Components checks Tier 1 infrastructure components.
 func (c *Checker) checkTier1Components() []ComponentStatus {
 	// Define all Helm releases to check
-	type releaseCheck struct {
-		name        string
-		namespace   string
-		displayName string // optional, defaults to name
-	}
-
 	releases := []releaseCheck{
 		{name: "cilium", namespace: "kube-system"},
 		{name: "local-path-storage", namespace: "local-path-storage"},
@@ -419,12 +477,6 @@ func (c *Checker) checkTier2Components() []ComponentStatus {
 	components := []ComponentStatus{}
 
 	// Define Helm releases to check
-	type releaseCheck struct {
-		name        string
-		namespace   string
-		displayName string
-	}
-
 	releases := []releaseCheck{
 		{name: "kyverno", namespace: "kyverno"},
 		{name: "vls", namespace: "victorialogs", displayName: "VictoriaLogs"},
@@ -450,7 +502,7 @@ func (c *Checker) checkTier2Components() []ComponentStatus {
 
 // checkKeycloakDeployed checks if Keycloak is deployed.
 func (c *Checker) checkKeycloakDeployed() bool {
-	cmd := exec.CommandContext(c.ctx, "kubectl", "get", "keycloaks.k8s.keycloak.org", "keycloak", "-n", "keycloak", "-o", "name")
+	cmd := exec.CommandContext(c.ctx, "kubectl", "get", "keycloaks.k8s.keycloak.org", "keycloak", "-n", "keycloak", "--context=cluster-admin", "-o", "name")
 	err := cmd.Run()
 	return err == nil
 }

@@ -12,3 +12,5 @@ spec:
   dnsNames:
     - keycloak-service.keycloak.svc.cluster.local
     - {{.AuthDomain}}
+  privateKey:
+    rotationPolicy: Always

@@ -33,6 +33,7 @@ func DeployTier1(ctx context.Context, cfg *config.Config) error {
 		"Trust Manager",
 		"Envoy AI Gateway",
 		"Envoy Gateway",
+		"Nova Namespace & RBAC",
 	}
 
 	// Create progress tracker
@@ -124,6 +125,13 @@ func DeployTier1(ctx context.Context, cfg *config.Config) error {
 	// Step 10: Envoy Gateway
 	if err := runStep("Envoy Gateway", func() error {
 		return deployEnvoyGateway(ctx, cfg)
+	}); err != nil {
+		return err
+	}
+
+	// Step 11: Nova Namespace & RBAC
+	if err := runStep("Nova Namespace & RBAC", func() error {
+		return setupNovaNamespace(ctx)
 	}); err != nil {
 		return err
 	}
@@ -248,11 +256,7 @@ func deployCilium(ctx context.Context, cfg *config.Config) error {
 }
 
 func deployLocalPathStorage(ctx context.Context, cfg *config.Config) error {
-	if err := k8s.CreateNamespace(ctx, constants.NamespaceLocalPathStorage); err != nil {
-		return fmt.Errorf("failed to create local-path-storage namespace: %w", err)
-	}
-
-	// Apply local-path-provisioner
+	// Apply local-path-provisioner (includes namespace creation)
 	ui.Info("Installing Local Path Provisioner...")
 	if err := k8s.ApplyURL(ctx, constants.ManifestLocalPathProvisioner); err != nil {
 		return fmt.Errorf("failed to deploy local-path-provisioner: %w", err)
@@ -579,5 +583,80 @@ func deployCoreDNS(ctx context.Context, cfg *config.Config) error {
 		return fmt.Errorf("failed to restart coredns: %w", err)
 	}
 
+	return nil
+}
+
+// setupNovaNamespace creates the nova namespace, RBAC for developer and user roles, and kubectl contexts.
+func setupNovaNamespace(ctx context.Context) error {
+	const novaNamespace = "nova"
+	const developerContextName = "developer"
+	const developerServiceAccount = "developer"
+	const userServiceAccount = "user"
+
+	ui.Info("Creating nova namespace and RBAC...")
+
+	// Apply namespace
+	if err := k8s.ApplyYAML(ctx, "resources/core/deployment/tier1/nova-rbac/namespace.yaml"); err != nil {
+		return fmt.Errorf("failed to create nova namespace: %w", err)
+	}
+
+	// Apply developer service account, role, and binding
+	if err := k8s.ApplyYAML(ctx, "resources/core/deployment/tier1/nova-rbac/developer-serviceaccount.yaml"); err != nil {
+		return fmt.Errorf("failed to create developer service account: %w", err)
+	}
+
+	if err := k8s.ApplyYAML(ctx, "resources/core/deployment/tier1/nova-rbac/developer-role.yaml"); err != nil {
+		return fmt.Errorf("failed to create developer role: %w", err)
+	}
+
+	if err := k8s.ApplyYAML(ctx, "resources/core/deployment/tier1/nova-rbac/developer-rolebinding.yaml"); err != nil {
+		return fmt.Errorf("failed to create developer role binding: %w", err)
+	}
+
+	if err := k8s.ApplyYAML(ctx, "resources/core/deployment/tier1/nova-rbac/developer-secret.yaml"); err != nil {
+		return fmt.Errorf("failed to create developer token secret: %w", err)
+	}
+
+	// Apply user service account, role, and binding
+	if err := k8s.ApplyYAML(ctx, "resources/core/deployment/tier1/nova-rbac/user-serviceaccount.yaml"); err != nil {
+		return fmt.Errorf("failed to create user service account: %w", err)
+	}
+
+	if err := k8s.ApplyYAML(ctx, "resources/core/deployment/tier1/nova-rbac/user-role.yaml"); err != nil {
+		return fmt.Errorf("failed to create user role: %w", err)
+	}
+
+	if err := k8s.ApplyYAML(ctx, "resources/core/deployment/tier1/nova-rbac/user-rolebinding.yaml"); err != nil {
+		return fmt.Errorf("failed to create user role binding: %w", err)
+	}
+
+	if err := k8s.ApplyYAML(ctx, "resources/core/deployment/tier1/nova-rbac/user-secret.yaml"); err != nil {
+		return fmt.Errorf("failed to create user token secret: %w", err)
+	}
+
+	// Wait for the developer token to be populated
+	ui.Info("Waiting for service account tokens...")
+	if err := k8s.WaitForSecret(ctx, novaNamespace, developerServiceAccount+"-token", 30); err != nil {
+		return fmt.Errorf("failed waiting for developer token: %w", err)
+	}
+
+	if err := k8s.WaitForSecret(ctx, novaNamespace, userServiceAccount+"-token", 30); err != nil {
+		return fmt.Errorf("failed waiting for user token: %w", err)
+	}
+
+	// Create kubectl contexts
+	ui.Info("Creating kubectl contexts...")
+
+	// Create developer context (if it doesn't exist)
+	if !k8s.ContextExists(ctx, developerContextName) {
+		if err := k8s.CreateKubectlContext(ctx, developerContextName, novaNamespace, developerServiceAccount); err != nil {
+			return fmt.Errorf("failed to create developer kubectl context: %w", err)
+		}
+		ui.Info("Created kubectl context '%s'", developerContextName)
+	} else {
+		ui.Info("Developer context already exists - skipping")
+	}
+
+	ui.Success("Nova namespace and RBAC configured")
 	return nil
 }

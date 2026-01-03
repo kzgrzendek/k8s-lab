@@ -6,3 +6,17 @@ driver:
 
 toolkit:
   enabled: false
+
+# Override default affinity to use the new control-plane node role label
+# instead of deprecated master label
+operator:
+  affinity:
+    nodeAffinity:
+      preferredDuringSchedulingIgnoredDuringExecution:
+        - weight: 1
+          preference:
+            matchExpressions:
+              - key: node-role.kubernetes.io/control-plane
+                operator: In
+                values:
+                  - ""
