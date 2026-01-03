@@ -121,6 +121,9 @@ grafana:
     server:
       domain: "grafana.{{.Domain}}"
       root_url: "https://grafana.{{.Domain}}"
+    auth:
+      disable_login_form: true
+      oauth_auto_login: true
     auth.generic_oauth:
       enabled: true
       name: "Keycloak"

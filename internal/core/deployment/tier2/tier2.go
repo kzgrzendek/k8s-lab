@@ -316,10 +316,13 @@ spec:
 // Returns the generated admin password.
 func deployKeycloakInstance(ctx context.Context, cfg *config.Config) (string, error) {
 	var adminPwd string
+
+	adminUserExists := false
 	if k8s.SecretExists(ctx, keycloakNamespace, "keycloak-admin-secret") {
 		data, err := k8s.GetSecretData(ctx, keycloakNamespace, "keycloak-admin-secret")
 		if err == nil && data["password"] != "" {
 			adminPwd = data["password"]
+			adminUserExists = true
 		}
 	}
 
@@ -330,15 +333,12 @@ func deployKeycloakInstance(ctx context.Context, cfg *config.Config) (string, er
 			return "", err
 		}
 	}
-	// Static Hubble secret from nova.yaml realm import
-	const hubbleSecret = "74ZnkKBH4DrfB6ywE4Pdwtk0JFJ8DHLA"
 
 	data := map[string]interface{}{
 		"KeycloakAdminUser":     "cluster-admin",
 		"KeycloakAdminPassword": adminPwd,
 		"Domain":                cfg.DNS.Domain,
 		"AuthDomain":            cfg.DNS.AuthDomain,
-		"HubbleClientSecret":    hubbleSecret,
 	}
 
 	// Create bootstrap admin secret (temporary admin for initial setup)
@@ -361,14 +361,6 @@ func deployKeycloakInstance(ctx context.Context, cfg *config.Config) (string, er
 		return "", fmt.Errorf("failed to create keycloak-admin-secret: %w", err)
 	}
 
-	// Create OIDC secret for Hubble in kube-system
-	if err := k8s.CreateSecret(ctx, "kube-system", "oidc", map[string]string{
-		"client-id":     "hubble",
-		"client-secret": hubbleSecret,
-	}); err != nil {
-		return "", fmt.Errorf("failed to create hubble oidc secret: %w", err)
-	}
-
 	if err := shared.ApplyTemplate(ctx, "resources/core/deployment/tier2/keycloak/certificates/keycloak-tls.yaml", data); err != nil {
 		return "", err
 	}
@@ -382,14 +374,18 @@ func deployKeycloakInstance(ctx context.Context, cfg *config.Config) (string, er
 		return "", err
 	}
 
-	ui.Info("Creating cluster-admin user via Job...")
-	if err := k8s.ApplyYAML(ctx, "resources/core/deployment/tier2/keycloak/jobs/create-admin-user.yaml"); err != nil {
-		return "", fmt.Errorf("failed to create admin user job: %w", err)
-	}
+	if !adminUserExists {
+		ui.Info("Creating cluster-admin user via Job...")
+		if err := k8s.ApplyYAML(ctx, "resources/core/deployment/tier2/keycloak/jobs/create-admin-user.yaml"); err != nil {
+			return "", fmt.Errorf("failed to create admin user job: %w", err)
+		}
 
-	// Wait for the job to complete
-	if err := k8s.WaitForCondition(ctx, keycloakNamespace, "job/keycloak-create-admin", "Complete", 120); err != nil {
-		return "", fmt.Errorf("failed to create admin user: %w", err)
+		// Wait for the job to complete
+		if err := k8s.WaitForCondition(ctx, keycloakNamespace, "job/keycloak-create-admin", "Complete", 120); err != nil {
+			return "", fmt.Errorf("failed to create admin user: %w", err)
+		}
+	} else {
+		ui.Info("Cluster admin user already exists (secret found), skipping user creation job.")
 	}
 
 	ui.Info("Importing Nova Realm...")
@@ -417,6 +413,14 @@ func deployHubble(ctx context.Context, cfg *config.Config) error {
 	client := helm.NewClient("kube-system")
 	if exists, err := client.ReleaseExists(ctx, "cilium", "kube-system"); err != nil || !exists {
 		return fmt.Errorf("cilium not found: %w", err)
+	}
+
+	// Create OIDC secret for Hubble in kube-system
+	if err := k8s.CreateSecret(ctx, "kube-system", "oidc", map[string]string{
+		"client-id":     "hubble",
+		"client-secret": "74ZnkKBH4DrfB6ywE4Pdwtk0JFJ8DHLA",
+	}); err != nil {
+		return fmt.Errorf("failed to create oidc secret: %w", err)
 	}
 
 	// Upgrade Cilium
