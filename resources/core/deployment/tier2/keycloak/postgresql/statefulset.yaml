@@ -24,9 +24,15 @@ spec:
               protocol: TCP
           env:
             - name: POSTGRES_USER
-              value: "{{.PostgresUser}}"
+              valueFrom:
+                secretKeyRef:
+                  name: keycloak-db-secret
+                  key: username
             - name: POSTGRES_PASSWORD
-              value: "{{.PostgresPassword}}"
+              valueFrom:
+                secretKeyRef:
+                  name: keycloak-db-secret
+                  key: password
             - name: POSTGRES_DB
               value: keycloak
           volumeMounts:

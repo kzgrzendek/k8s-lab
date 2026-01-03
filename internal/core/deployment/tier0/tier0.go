@@ -7,7 +7,7 @@ import (
 
 	"github.com/kzgrzendek/nova/internal/cli/ui"
 	"github.com/kzgrzendek/nova/internal/core/config"
-	"github.com/kzgrzendek/nova/internal/tools/kubectl"
+	k8s "github.com/kzgrzendek/nova/internal/tools/kubectl"
 	"github.com/kzgrzendek/nova/internal/tools/minikube"
 )
 
@@ -28,6 +28,15 @@ func DeployTier0(ctx context.Context, cfg *config.Config) error {
 		return fmt.Errorf("failed to start cluster: %w", err)
 	}
 	ui.Success("Minikube cluster started")
+
+	// Rename minikube context to nova-admin for consistency
+	if k8s.ContextExists(ctx, "minikube") {
+		if err := k8s.RenameContext(ctx, "minikube", "nova-admin"); err != nil {
+			ui.Warn("Failed to rename context 'minikube' to 'nova-admin': %v", err)
+		} else {
+			ui.Info("Renamed kubectl context 'minikube' to 'nova-admin'")
+		}
+	}
 
 	// Step 2: Mount BPF filesystem on all nodes
 	ui.Step("Mounting BPF filesystem on nodes...")

@@ -85,8 +85,3 @@ func initConfig() {
 		ui.Info("Using config file: %s", viper.ConfigFileUsed())
 	}
 }
-
-// isVerbose returns whether verbose mode is enabled.
-func isVerbose() bool {
-	return viper.GetBool("verbose")
-}

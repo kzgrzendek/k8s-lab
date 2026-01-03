@@ -11,9 +11,9 @@ spec:
 
   oidc:
     provider:
-      issuer: https://keycloak.{{.Domain}}/realms/nova
-      authorizationEndpoint: https://keycloak.{{.Domain}}/realms/nova/protocol/openid-connect/auth
-      tokenEndpoint: https://keycloak.{{.Domain}}/realms/nova/protocol/openid-connect/token
+      issuer: https://{{.AuthDomain}}/realms/nova
+      authorizationEndpoint: https://{{.AuthDomain}}/realms/nova/protocol/openid-connect/auth
+      tokenEndpoint: https://{{.AuthDomain}}/realms/nova/protocol/openid-connect/token
 
       backendRefs:
       - group: gateway.envoyproxy.io
@@ -23,7 +23,7 @@ spec:
 
     clientID: hubble
     clientSecret:
-      name: hubble-oidc
+      name: oidc
 
     redirectURL: https://hubble.{{.Domain}}/oauth2/callback
     logoutPath: /oauth2/sign_out
@@ -40,9 +40,9 @@ spec:
   jwt:
     providers:
     - name: keycloak
-      issuer: https://keycloak.{{.Domain}}/realms/nova
+      issuer: https://{{.AuthDomain}}/realms/nova
       remoteJWKS:
-        uri: https://keycloak.{{.Domain}}/realms/nova/protocol/openid-connect/certs
+        uri: https://{{.AuthDomain}}/realms/nova/protocol/openid-connect/certs
 
         backendRefs:
         - group: gateway.envoyproxy.io

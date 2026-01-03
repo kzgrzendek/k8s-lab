@@ -13,4 +13,4 @@ spec:
     - group: ""
       kind: Secret
       name: nova-ca-secret
-    hostname: keycloak.{{.Domain}}
+    hostname: {{.AuthDomain}}

@@ -108,7 +108,7 @@ func configureResolvconfLegacy(domains []string, port int) error {
 	}
 
 	// Create nova.conf content
-	content := fmt.Sprintf("# NOVA DNS configuration\n# Managed by nova CLI - DO NOT EDIT MANUALLY\n\n")
+	content := "# NOVA DNS configuration\n# Managed by nova CLI - DO NOT EDIT MANUALLY\n\n"
 	content += fmt.Sprintf("# DNS server for NOVA domains (Bind9 on localhost:%d)\n", port)
 	content += fmt.Sprintf("nameserver 127.0.0.1#%d\n\n", port)
 	content += "# Search domains\n"

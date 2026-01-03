@@ -107,10 +107,30 @@ defaultDatasources:
 grafana:
   enabled: true
 
+  envValueFrom:
+    GF_AUTH_GENERIC_OAUTH_CLIENT_ID:
+      secretKeyRef:
+        name: oidc
+        key: client-id
+    GF_AUTH_GENERIC_OAUTH_CLIENT_SECRET:
+      secretKeyRef:
+        name: oidc
+        key: client-secret
+
   grafana.ini:
     server:
-      root_url: "https://%(domain)s/"
-      # domain is set dynamically via tier2.go
+      domain: "grafana.{{.Domain}}"
+      root_url: "https://grafana.{{.Domain}}"
+    auth.generic_oauth:
+      enabled: true
+      name: "Keycloak"
+      allow_sign_up: true
+      scopes: "openid email profile offline_access roles"
+      auth_url: "https://{{.AuthDomain}}/realms/nova/protocol/openid-connect/auth"
+      token_url: "https://{{.AuthDomain}}/realms/nova/protocol/openid-connect/token"
+      api_url: "https://{{.AuthDomain}}/realms/nova/protocol/openid-connect/userinfo"
+      role_attribute_path: "contains(roles[*], 'admin') && 'Admin' || contains(roles[*], 'editor') && 'Editor' || 'Viewer'"
+      tls_skip_verify_insecure: true
 
     security:
       disable_initial_admin_creation: false

@@ -479,9 +479,7 @@ func TestActionConfiguration(t *testing.T) {
 
 			// Verify action configuration can be initialized
 			actionConfig := &action.Configuration{}
-			if actionConfig == nil {
-				t.Error("Failed to create action configuration")
-			}
+			// No need to check if actionConfig is nil as it's allocated above.
 
 			// Test that we can create basic actions with the config
 			listAction := action.NewList(actionConfig)
@@ -659,39 +657,39 @@ func TestRegistryClientInitialization(t *testing.T) {
 // TestOCIChartLoadingRequirements tests the requirements for loading OCI charts.
 func TestOCIChartLoadingRequirements(t *testing.T) {
 	testCases := []struct {
-		name             string
-		hasActionConfig  bool
+		name              string
+		hasActionConfig   bool
 		hasRegistryClient bool
-		hasSettings      bool
-		expectError      bool
+		hasSettings       bool
+		expectError       bool
 	}{
 		{
-			name:             "All requirements met",
-			hasActionConfig:  true,
+			name:              "All requirements met",
+			hasActionConfig:   true,
 			hasRegistryClient: true,
-			hasSettings:      true,
-			expectError:      false,
+			hasSettings:       true,
+			expectError:       false,
 		},
 		{
-			name:             "Missing registry client",
-			hasActionConfig:  true,
+			name:              "Missing registry client",
+			hasActionConfig:   true,
 			hasRegistryClient: false,
-			hasSettings:      true,
-			expectError:      true,
+			hasSettings:       true,
+			expectError:       true,
 		},
 		{
-			name:             "Missing action config",
-			hasActionConfig:  false,
+			name:              "Missing action config",
+			hasActionConfig:   false,
 			hasRegistryClient: false,
-			hasSettings:      true,
-			expectError:      true,
+			hasSettings:       true,
+			expectError:       true,
 		},
 		{
-			name:             "Missing settings",
-			hasActionConfig:  true,
+			name:              "Missing settings",
+			hasActionConfig:   true,
 			hasRegistryClient: true,
-			hasSettings:      false,
-			expectError:      true,
+			hasSettings:       false,
+			expectError:       true,
 		},
 	}
 

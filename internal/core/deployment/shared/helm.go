@@ -38,6 +38,8 @@ type HelmDeploymentOptions struct {
 	CreateNamespace bool
 	// ReuseValues indicates whether to reuse the existing release values
 	ReuseValues bool
+	// TemplateData is the data to use for rendering the values file as a template (optional)
+	TemplateData interface{}
 }
 
 // DeployHelmChart deploys a Helm chart with common error handling and progress tracking.
@@ -60,9 +62,36 @@ func DeployHelmChart(ctx context.Context, opts HelmDeploymentOptions) error {
 	// Load values from file if specified
 	var values map[string]interface{}
 	if opts.ValuesPath != "" {
-		loadedValues, err := helm.LoadValues(opts.ValuesPath)
-		if err != nil {
-			return fmt.Errorf("failed to load values from %s: %w", opts.ValuesPath, err)
+		var loadedValues map[string]interface{}
+		var err error
+
+		if opts.TemplateData != nil {
+			// Read template file
+			templateContent, err := os.ReadFile(opts.ValuesPath)
+			if err != nil {
+				return fmt.Errorf("failed to read values template file: %w", err)
+			}
+
+			// Parse and execute template
+			tmpl, err := template.New("values").Parse(string(templateContent))
+			if err != nil {
+				return fmt.Errorf("failed to parse values template: %w", err)
+			}
+
+			var buf bytes.Buffer
+			if err := tmpl.Execute(&buf, opts.TemplateData); err != nil {
+				return fmt.Errorf("failed to execute values template: %w", err)
+			}
+
+			// Parse YAML from buffer
+			if err := helm.UnmarshalValues(buf.Bytes(), &loadedValues); err != nil {
+				return fmt.Errorf("failed to parse templated values from %s: %w", opts.ValuesPath, err)
+			}
+		} else {
+			loadedValues, err = helm.LoadValues(opts.ValuesPath)
+			if err != nil {
+				return fmt.Errorf("failed to load values from %s: %w", opts.ValuesPath, err)
+			}
 		}
 		values = loadedValues
 	}

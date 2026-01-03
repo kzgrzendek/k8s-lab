@@ -448,19 +448,19 @@ func TestNodeStatusCheck(t *testing.T) {
 // TestKubeconfigPath tests the kubeconfig path resolution.
 func TestKubeconfigPath(t *testing.T) {
 	testCases := []struct {
-		name         string
+		name          string
 		kubeconfigEnv string
-		expectEmpty  bool
+		expectEmpty   bool
 	}{
 		{
-			name:         "KUBECONFIG env set",
+			name:          "KUBECONFIG env set",
 			kubeconfigEnv: "/custom/path/config",
-			expectEmpty:  false,
+			expectEmpty:   false,
 		},
 		{
-			name:         "Default path",
+			name:          "Default path",
 			kubeconfigEnv: "",
-			expectEmpty:  false, // Will use home dir
+			expectEmpty:   false, // Will use home dir
 		},
 	}
 

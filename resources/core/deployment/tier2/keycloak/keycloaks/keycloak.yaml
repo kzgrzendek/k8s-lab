@@ -30,7 +30,7 @@ spec:
   ingress:
     enabled: false
   hostname:
-    hostname: keycloak.{{.Domain}}
+    hostname: {{.AuthDomain}}
     strict: false
   proxy:
     headers: xforwarded

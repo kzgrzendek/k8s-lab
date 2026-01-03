@@ -199,12 +199,16 @@ func collectMinikubeLogs(ctx context.Context, outputDir string) error {
 
 	// Minikube status
 	if status, err := exec.Output(ctx, "minikube", "status"); err == nil {
-		os.WriteFile(filepath.Join(logsDir, "status.txt"), []byte(status), 0644)
+		if err := os.WriteFile(filepath.Join(logsDir, "status.txt"), []byte(status), 0644); err != nil {
+			ui.Warn("Failed to write minikube status: %v", err)
+		}
 	}
 
 	// Minikube logs
 	if logs, err := exec.Output(ctx, "minikube", "logs", "--length=1000"); err == nil {
-		os.WriteFile(filepath.Join(logsDir, "minikube.log"), []byte(logs), 0644)
+		if err := os.WriteFile(filepath.Join(logsDir, "minikube.log"), []byte(logs), 0644); err != nil {
+			ui.Warn("Failed to write minikube logs: %v", err)
+		}
 	}
 
 	return nil
@@ -219,22 +223,30 @@ func collectK8sClusterLogs(ctx context.Context, outputDir string) error {
 
 	// Get all nodes
 	if nodes, err := exec.Output(ctx, "kubectl", "get", "nodes", "-o", "wide"); err == nil {
-		os.WriteFile(filepath.Join(clusterDir, "nodes.txt"), []byte(nodes), 0644)
+		if err := os.WriteFile(filepath.Join(clusterDir, "nodes.txt"), []byte(nodes), 0644); err != nil {
+			ui.Warn("Failed to write nodes info: %v", err)
+		}
 	}
 
 	// Get all namespaces
 	if namespaces, err := exec.Output(ctx, "kubectl", "get", "namespaces"); err == nil {
-		os.WriteFile(filepath.Join(clusterDir, "namespaces.txt"), []byte(namespaces), 0644)
+		if err := os.WriteFile(filepath.Join(clusterDir, "namespaces.txt"), []byte(namespaces), 0644); err != nil {
+			ui.Warn("Failed to write namespaces info: %v", err)
+		}
 	}
 
 	// Get all resources across all namespaces
 	if resources, err := exec.Output(ctx, "kubectl", "get", "all", "-A"); err == nil {
-		os.WriteFile(filepath.Join(clusterDir, "resources.txt"), []byte(resources), 0644)
+		if err := os.WriteFile(filepath.Join(clusterDir, "resources.txt"), []byte(resources), 0644); err != nil {
+			ui.Warn("Failed to write resources info: %v", err)
+		}
 	}
 
 	// Get events
 	if events, err := exec.Output(ctx, "kubectl", "get", "events", "-A", "--sort-by=.lastTimestamp"); err == nil {
-		os.WriteFile(filepath.Join(clusterDir, "events.txt"), []byte(events), 0644)
+		if err := os.WriteFile(filepath.Join(clusterDir, "events.txt"), []byte(events), 0644); err != nil {
+			ui.Warn("Failed to write events info: %v", err)
+		}
 	}
 
 	return nil
@@ -270,24 +282,33 @@ func collectPodLogs(ctx context.Context, outputDir string) error {
 
 		// Create namespace directory
 		namespaceDir := filepath.Join(podsDir, namespace)
-		os.MkdirAll(namespaceDir, 0755)
+		if err := os.MkdirAll(namespaceDir, 0755); err != nil {
+			ui.Warn("Failed to create namespace directory %s: %v", namespaceDir, err)
+			continue
+		}
 
 		// Get pod logs (previous and current)
 		logFile := filepath.Join(namespaceDir, fmt.Sprintf("%s.log", podName))
 		if logs, err := exec.Output(ctx, "kubectl", "logs", "-n", namespace, podName, "--all-containers=true", "--tail=1000"); err == nil {
-			os.WriteFile(logFile, []byte(logs), 0644)
+			if err := os.WriteFile(logFile, []byte(logs), 0644); err != nil {
+				ui.Warn("Failed to write pod logs %s: %v", logFile, err)
+			}
 		}
 
 		// Try to get previous logs if pod restarted
 		prevLogFile := filepath.Join(namespaceDir, fmt.Sprintf("%s-previous.log", podName))
 		if prevLogs, err := exec.Output(ctx, "kubectl", "logs", "-n", namespace, podName, "--all-containers=true", "--previous", "--tail=1000"); err == nil {
-			os.WriteFile(prevLogFile, []byte(prevLogs), 0644)
+			if err := os.WriteFile(prevLogFile, []byte(prevLogs), 0644); err != nil {
+				ui.Warn("Failed to write previous pod logs %s: %v", prevLogFile, err)
+			}
 		}
 
 		// Get pod description
 		descFile := filepath.Join(namespaceDir, fmt.Sprintf("%s-describe.txt", podName))
 		if desc, err := exec.Output(ctx, "kubectl", "describe", "pod", "-n", namespace, podName); err == nil {
-			os.WriteFile(descFile, []byte(desc), 0644)
+			if err := os.WriteFile(descFile, []byte(desc), 0644); err != nil {
+				ui.Warn("Failed to write pod description %s: %v", descFile, err)
+			}
 		}
 	}
 
@@ -321,7 +342,9 @@ func collectDockerLogs(ctx context.Context, outputDir string, cfg *config.Config
 		}
 
 		logFile := filepath.Join(dockerDir, fmt.Sprintf("%s.log", containerName))
-		os.WriteFile(logFile, []byte(logs), 0644)
+		if err := os.WriteFile(logFile, []byte(logs), 0644); err != nil {
+			ui.Warn("Failed to write docker log %s: %v", logFile, err)
+		}
 	}
 
 	return nil
@@ -337,13 +360,17 @@ func collectConfigFiles(ctx context.Context, outputDir string, cfg *config.Confi
 	// Copy config.yaml (redact sensitive data)
 	configPath := config.DefaultConfigPath()
 	if data, err := os.ReadFile(configPath); err == nil {
-		os.WriteFile(filepath.Join(configDir, "config.yaml"), data, 0644)
+		if err := os.WriteFile(filepath.Join(configDir, "config.yaml"), data, 0644); err != nil {
+			ui.Warn("Failed to copy config.yaml: %v", err)
+		}
 	}
 
 	// Copy kubeconfig
 	kubeconfigPath := filepath.Join(os.Getenv("HOME"), ".kube", "config")
 	if data, err := os.ReadFile(kubeconfigPath); err == nil {
-		os.WriteFile(filepath.Join(configDir, "kubeconfig.yaml"), data, 0644)
+		if err := os.WriteFile(filepath.Join(configDir, "kubeconfig.yaml"), data, 0644); err != nil {
+			ui.Warn("Failed to copy kubeconfig: %v", err)
+		}
 	}
 
 	return nil
@@ -513,7 +540,9 @@ func collectKubeletLogs(ctx context.Context, outputDir string, cfg *config.Confi
 		}
 
 		logFile := filepath.Join(kubeletDir, fmt.Sprintf("%s.log", nodeName))
-		os.WriteFile(logFile, []byte(logs), 0644)
+		if err := os.WriteFile(logFile, []byte(logs), 0644); err != nil {
+			ui.Warn("Failed to write kubelet log for %s: %v", nodeName, err)
+		}
 	}
 
 	return nil

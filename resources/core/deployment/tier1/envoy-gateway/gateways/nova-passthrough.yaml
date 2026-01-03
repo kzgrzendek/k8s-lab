@@ -8,8 +8,8 @@ spec:
 
   listeners:
   - name: keycloak
-    hostname: "keycloak.{{.Domain}}"
-    port: 10443
+    hostname: "{{.AuthDomain}}"
+    port: 443
     protocol: TLS
     tls:
       mode: Passthrough

@@ -1,0 +1,267 @@
+apiVersion: v1
+kind: ConfigMap
+metadata:
+  name: grafana-dashboard-gpu-overview
+  namespace: victoriametrics
+  labels:
+    grafana_dashboard: "1"
+data:
+  gpu-overview.json: |
+    {
+      "id": null,
+      "uid": "gpu-overview",
+      "title": "GPU Overview",
+      "tags": ["gpu", "nvidia"],
+      "timezone": "browser",
+      "schemaVersion": 39,
+      "version": 1,
+      "editable": true,
+      "refresh": "30s",
+      "time": {
+        "from": "now-1h",
+        "to": "now"
+      },
+      "timepicker": {},
+      "templating": {
+        "list": [
+          {
+            "type": "query",
+            "name": "namespace",
+            "label": "Namespace",
+            "hide": 0,
+            "datasource": "VictoriaMetrics",
+            "refresh": 1,
+            "includeAll": true,
+            "multi": true,
+            "options": [],
+            "current": {
+              "selected": true,
+              "text": "All",
+              "value": "$__all"
+            },
+            "query": "label_values(DCGM_FI_DEV_GPU_UTIL{job=\"nvidia-dcgm-exporter\"}, namespace)",
+            "regex": "",
+            "sort": 1,
+            "skipUrlSync": false
+          }
+        ]
+      },
+      "annotations": {
+        "list": [
+          {
+            "builtIn": 1,
+            "datasource": "-- Grafana --",
+            "enable": true,
+            "hide": true,
+            "iconColor": "rgba(0, 211, 255, 1)",
+            "name": "Annotations & Alerts",
+            "type": "dashboard"
+          }
+        ]
+      },
+      "panels": [
+        {
+          "id": 1,
+          "type": "timeseries",
+          "title": "GPU Utilization by Namespace (%)",
+          "datasource": "VictoriaMetrics",
+          "gridPos": { "h": 8, "w": 12, "x": 0, "y": 0 },
+          "fieldConfig": {
+            "defaults": {
+              "unit": "percent",
+              "decimals": 0
+            },
+            "overrides": []
+          },
+          "options": {
+            "legend": {
+              "displayMode": "table",
+              "placement": "bottom"
+            },
+            "tooltip": {
+              "mode": "multi",
+              "sort": "none"
+            }
+          },
+          "targets": [
+            {
+              "refId": "A",
+              "expr": "avg(DCGM_FI_DEV_GPU_UTIL{job=\"nvidia-dcgm-exporter\", namespace=~\"$namespace\"}) by (namespace)",
+              "legendFormat": "{{namespace}}",
+              "interval": ""
+            }
+          ]
+        },
+        {
+          "id": 2,
+          "type": "timeseries",
+          "title": "GPU Memory Usage by Namespace (MiB)",
+          "datasource": "VictoriaMetrics",
+          "gridPos": { "h": 8, "w": 12, "x": 12, "y": 0 },
+          "fieldConfig": {
+            "defaults": {
+              "unit": "MiB",
+              "decimals": 0
+            },
+            "overrides": []
+          },
+          "options": {
+            "legend": {
+              "displayMode": "table",
+              "placement": "bottom"
+            },
+            "tooltip": {
+              "mode": "multi",
+              "sort": "none"
+            }
+          },
+          "targets": [
+            {
+              "refId": "A",
+              "expr": "sum(DCGM_FI_DEV_FB_USED{job=\"nvidia-dcgm-exporter\", namespace=~\"$namespace\"}) by (namespace)",
+              "legendFormat": "{{namespace}}",
+              "interval": ""
+            }
+          ]
+        },
+        {
+          "id": 3,
+          "type": "timeseries",
+          "title": "GPU Utilization per GPU (%)",
+          "datasource": "VictoriaMetrics",
+          "gridPos": { "h": 8, "w": 12, "x": 0, "y": 8 },
+          "fieldConfig": {
+            "defaults": {
+              "unit": "percent",
+              "decimals": 0
+            },
+            "overrides": []
+          },
+          "options": {
+            "legend": {
+              "displayMode": "table",
+              "placement": "bottom"
+            },
+            "tooltip": {
+              "mode": "multi",
+              "sort": "none"
+            }
+          },
+          "targets": [
+            {
+              "refId": "A",
+              "expr": "avg(DCGM_FI_DEV_GPU_UTIL{job=\"nvidia-dcgm-exporter\", namespace=~\"$namespace\"}) by (instance, gpu)",
+              "legendFormat": "{{instance}} gpu {{gpu}}",
+              "interval": ""
+            }
+          ]
+        },
+        {
+          "id": 4,
+          "type": "timeseries",
+          "title": "GPU Memory Usage per GPU (MiB)",
+          "datasource": "VictoriaMetrics",
+          "gridPos": { "h": 8, "w": 12, "x": 12, "y": 8 },
+          "fieldConfig": {
+            "defaults": {
+              "unit": "MiB",
+              "decimals": 0
+            },
+            "overrides": []
+          },
+          "options": {
+            "legend": {
+              "displayMode": "table",
+              "placement": "bottom"
+            },
+            "tooltip": {
+              "mode": "multi",
+              "sort": "none"
+            }
+          },
+          "targets": [
+            {
+              "refId": "A",
+              "expr": "sum(DCGM_FI_DEV_FB_USED{job=\"nvidia-dcgm-exporter\", namespace=~\"$namespace\"}) by (instance, gpu)",
+              "legendFormat": "{{instance}} gpu {{gpu}}",
+              "interval": ""
+            }
+          ]
+        },
+        {
+          "id": 5,
+          "type": "table",
+          "title": "GPUs by Model and Namespace",
+          "datasource": "VictoriaMetrics",
+          "gridPos": { "h": 9, "w": 24, "x": 0, "y": 16 },
+          "fieldConfig": {
+            "defaults": {},
+            "overrides": []
+          },
+          "options": {
+            "showHeader": true
+          },
+          "targets": [
+            {
+              "refId": "A",
+              "expr": "avg(DCGM_FI_DEV_GPU_UTIL{job=\"nvidia-dcgm-exporter\", namespace=~\"$namespace\"}) by (modelName, namespace, gpu)",
+              "format": "table",
+              "legendFormat": "",
+              "instant": true
+            }
+          ]
+        },
+        {
+          "id": 6,
+          "type": "table",
+          "title": "GPU Utilization by Pod (%)",
+          "datasource": "VictoriaMetrics",
+          "gridPos": { "h": 9, "w": 24, "x": 0, "y": 25 },
+          "fieldConfig": {
+            "defaults": {
+              "unit": "percent",
+              "decimals": 0
+            },
+            "overrides": []
+          },
+          "options": {
+            "showHeader": true
+          },
+          "targets": [
+            {
+              "refId": "A",
+              "expr": "avg(DCGM_FI_DEV_GPU_UTIL{job=\"nvidia-dcgm-exporter\", namespace=~\"$namespace\"}) by (namespace, pod, gpu)",
+              "format": "table",
+              "legendFormat": "",
+              "instant": true
+            }
+          ]
+        },
+        {
+          "id": 7,
+          "type": "table",
+          "title": "GPU Memory Usage by Pod (MiB)",
+          "datasource": "VictoriaMetrics",
+          "gridPos": { "h": 9, "w": 24, "x": 0, "y": 34 },
+          "fieldConfig": {
+            "defaults": {
+              "unit": "MiB",
+              "decimals": 0
+            },
+            "overrides": []
+          },
+          "options": {
+            "showHeader": true
+          },
+          "targets": [
+            {
+              "refId": "A",
+              "expr": "sum(DCGM_FI_DEV_FB_USED{job=\"nvidia-dcgm-exporter\", namespace=~\"$namespace\"}) by (namespace, pod, gpu)",
+              "format": "table",
+              "legendFormat": "",
+              "instant": true
+            }
+          ]
+        }
+      ]
+    }

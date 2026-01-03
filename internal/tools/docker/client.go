@@ -11,6 +11,7 @@ import (
 	"io"
 	"strings"
 
+	"github.com/containerd/errdefs"
 	"github.com/docker/docker/api/types/container"
 	"github.com/docker/docker/api/types/image"
 	"github.com/docker/docker/api/types/network"
@@ -39,14 +40,14 @@ func (c *Client) Close() error {
 
 // ContainerConfig represents container configuration.
 type ContainerConfig struct {
-	Name              string
-	Image             string
-	Ports             map[string]string // hostPort:containerPort, e.g. "30053:53" or "80:80/tcp"
-	Volumes           map[string]string // host:container
-	Env               []string
-	Capabilities      []string
-	RestartPolicy     string   // "always", "unless-stopped", "on-failure", "no"
-	Network           string   // primary network mode (e.g., "bridge")
+	Name               string
+	Image              string
+	Ports              map[string]string // hostPort:containerPort, e.g. "30053:53" or "80:80/tcp"
+	Volumes            map[string]string // host:container
+	Env                []string
+	Capabilities       []string
+	RestartPolicy      string   // "always", "unless-stopped", "on-failure", "no"
+	Network            string   // primary network mode (e.g., "bridge")
 	AdditionalNetworks []string // additional networks to connect to (e.g., ["minikube"])
 }
 
@@ -146,7 +147,7 @@ func (c *Client) CreateAndStart(ctx context.Context, cfg ContainerConfig) error 
 // ensureImage pulls an image if it doesn't exist locally.
 func (c *Client) ensureImage(ctx context.Context, imageName string) error {
 	// Check if image exists
-	_, _, err := c.cli.ImageInspectWithRaw(ctx, imageName)
+	_, err := c.cli.ImageInspect(ctx, imageName)
 	if err == nil {
 		return nil // Image exists
 	}
@@ -177,7 +178,7 @@ func (c *Client) Stop(ctx context.Context, containerName string) error {
 func (c *Client) Remove(ctx context.Context, containerName string, force bool) error {
 	if err := c.cli.ContainerRemove(ctx, containerName, container.RemoveOptions{Force: force}); err != nil {
 		// Ignore "not found" errors - container is already gone
-		if client.IsErrNotFound(err) {
+		if errdefs.IsNotFound(err) {
 			return nil
 		}
 		return fmt.Errorf("failed to remove container %s: %w", containerName, err)
@@ -189,7 +190,7 @@ func (c *Client) Remove(ctx context.Context, containerName string, force bool) e
 func (c *Client) IsRunning(ctx context.Context, containerName string) (bool, error) {
 	containerJSON, err := c.cli.ContainerInspect(ctx, containerName)
 	if err != nil {
-		if client.IsErrNotFound(err) {
+		if errdefs.IsNotFound(err) {
 			return false, nil
 		}
 		return false, fmt.Errorf("failed to inspect container: %w", err)
@@ -201,7 +202,7 @@ func (c *Client) IsRunning(ctx context.Context, containerName string) (bool, err
 func (c *Client) Exists(ctx context.Context, containerName string) (bool, error) {
 	_, err := c.cli.ContainerInspect(ctx, containerName)
 	if err != nil {
-		if client.IsErrNotFound(err) {
+		if errdefs.IsNotFound(err) {
 			return false, nil
 		}
 		return false, fmt.Errorf("failed to inspect container: %w", err)
@@ -220,7 +221,7 @@ func (c *Client) Logs(ctx context.Context, containerName string) (string, error)
 		Timestamps: true,
 	})
 	if err != nil {
-		if client.IsErrNotFound(err) {
+		if errdefs.IsNotFound(err) {
 			return "", fmt.Errorf("container %s not found", containerName)
 		}
 		return "", fmt.Errorf("failed to get logs: %w", err)

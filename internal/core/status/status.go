@@ -21,6 +21,13 @@ type ComponentStatus struct {
 	Healthy bool
 }
 
+// releaseCheck defines a Helm release to check.
+type releaseCheck struct {
+	name        string
+	namespace   string
+	displayName string // optional, defaults to name
+}
+
 // SystemStatus represents the overall system status.
 type SystemStatus struct {
 	Cluster      *ClusterStatus
@@ -322,53 +329,30 @@ func (c *Checker) checkGPULabeling() bool {
 
 // checkTier1Components checks Tier 1 infrastructure components.
 func (c *Checker) checkTier1Components() []ComponentStatus {
-	components := []ComponentStatus{}
-
-	// Check for Cilium
-	if status := c.checkHelmRelease("cilium", "kube-system"); status != nil {
-		components = append(components, *status)
+	// Define all Helm releases to check
+	type releaseCheck struct {
+		name        string
+		namespace   string
+		displayName string // optional, defaults to name
 	}
 
-	// Check for Local Path Storage
-	if status := c.checkHelmRelease("local-path-storage", "local-path-storage"); status != nil {
-		components = append(components, *status)
+	releases := []releaseCheck{
+		{name: "cilium", namespace: "kube-system"},
+		{name: "local-path-storage", namespace: "local-path-storage"},
+		{name: "falco", namespace: "falco"},
+		{name: "cert-manager", namespace: "cert-manager"},
+		{name: "trust-manager", namespace: "cert-manager"},
+		{name: "eg", namespace: "envoy-gateway-system", displayName: "Envoy Gateway"},
+		{name: "ai-gateway", namespace: "envoy-gateway-system", displayName: "Envoy AI Gateway"},
 	}
 
-	// Check for Falco
-	if status := c.checkHelmRelease("falco", "falco"); status != nil {
-		components = append(components, *status)
-	}
-
-	// Check for GPU Operator (only if GPU enabled)
+	// Add GPU operator if GPU is enabled
 	if c.cfg.HasGPU() {
-		if status := c.checkHelmRelease("gpu-operator", "gpu-operator"); status != nil {
-			components = append(components, *status)
-		}
+		releases = append(releases, releaseCheck{name: "gpu-operator", namespace: "gpu-operator"})
 	}
 
-	// Check for Cert Manager
-	if status := c.checkHelmRelease("cert-manager", "cert-manager"); status != nil {
-		components = append(components, *status)
-	}
-
-	// Check for Trust Manager
-	if status := c.checkHelmRelease("trust-manager", "cert-manager"); status != nil {
-		components = append(components, *status)
-	}
-
-	// Check for Envoy Gateway
-	if status := c.checkHelmRelease("eg", "envoy-gateway-system"); status != nil {
-		status.Name = "Envoy Gateway"
-		components = append(components, *status)
-	}
-
-	// Check for Envoy AI Gateway
-	if status := c.checkHelmRelease("ai-gateway", "envoy-gateway-system"); status != nil {
-		status.Name = "Envoy AI Gateway"
-		components = append(components, *status)
-	}
-
-	return components
+	// Check all releases concurrently
+	return c.checkHelmReleasesConcurrent(releases)
 }
 
 // checkHelmRelease checks if a Helm release is deployed and healthy.
@@ -397,14 +381,59 @@ func (c *Checker) checkHelmRelease(name, namespace string) *ComponentStatus {
 	return status
 }
 
+// checkHelmReleasesConcurrent checks multiple Helm releases concurrently for faster status checks.
+func (c *Checker) checkHelmReleasesConcurrent(releases []releaseCheck) []ComponentStatus {
+	type result struct {
+		status      *ComponentStatus
+		displayName string
+	}
+
+	resultChan := make(chan result, len(releases))
+
+	// Launch concurrent checks
+	for _, rel := range releases {
+		go func(name, namespace, displayName string) {
+			status := c.checkHelmRelease(name, namespace)
+			resultChan <- result{status: status, displayName: displayName}
+		}(rel.name, rel.namespace, rel.displayName)
+	}
+
+	// Collect results
+	components := []ComponentStatus{}
+	for i := 0; i < len(releases); i++ {
+		res := <-resultChan
+		if res.status != nil {
+			// Apply display name if provided
+			if res.displayName != "" {
+				res.status.Name = res.displayName
+			}
+			components = append(components, *res.status)
+		}
+	}
+
+	return components
+}
+
 // checkTier2Components checks Tier 2 platform components.
 func (c *Checker) checkTier2Components() []ComponentStatus {
 	components := []ComponentStatus{}
 
-	// Check for Kyverno
-	if status := c.checkHelmRelease("kyverno", "kyverno"); status != nil {
-		components = append(components, *status)
+	// Define Helm releases to check
+	type releaseCheck struct {
+		name        string
+		namespace   string
+		displayName string
 	}
+
+	releases := []releaseCheck{
+		{name: "kyverno", namespace: "kyverno"},
+		{name: "vls", namespace: "victorialogs", displayName: "VictoriaLogs"},
+		{name: "collector", namespace: "victorialogs", displayName: "VictoriaLogs Collector"},
+		{name: "vmks", namespace: "victoriametrics", displayName: "VictoriaMetrics Stack"},
+	}
+
+	// Check Helm releases concurrently
+	components = append(components, c.checkHelmReleasesConcurrent(releases)...)
 
 	// Check for Keycloak (via CRD status, not Helm)
 	if c.checkKeycloakDeployed() {
@@ -414,24 +443,6 @@ func (c *Checker) checkTier2Components() []ComponentStatus {
 			Healthy: true,
 			Details: "Namespace: keycloak",
 		})
-	}
-
-	// Check for VictoriaLogs
-	if status := c.checkHelmRelease("vls", "victorialogs"); status != nil {
-		status.Name = "VictoriaLogs"
-		components = append(components, *status)
-	}
-
-	// Check for VictoriaLogs Collector
-	if status := c.checkHelmRelease("collector", "victorialogs"); status != nil {
-		status.Name = "VictoriaLogs Collector"
-		components = append(components, *status)
-	}
-
-	// Check for VictoriaMetrics Stack
-	if status := c.checkHelmRelease("vmks", "victoriametrics"); status != nil {
-		status.Name = "VictoriaMetrics Stack"
-		components = append(components, *status)
 	}
 
 	return components

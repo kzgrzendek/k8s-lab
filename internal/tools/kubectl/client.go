@@ -586,6 +586,19 @@ func WaitForCondition(ctx context.Context, namespace, resource, condition string
 	return nil
 }
 
+// RestartDeployment restarts a deployment using kubectl rollout restart.
+func RestartDeployment(ctx context.Context, namespace, name string) error {
+	ephemeralWriter := ui.PipeWriter()
+	defer ephemeralWriter.Done()
+
+	if err := exec.New(ctx, "kubectl", "-n", namespace, "rollout", "restart", "deployment/"+name).
+		RunWithEphemeralOutput(ephemeralWriter); err != nil {
+		ephemeralWriter.KeepOnDone()
+		return fmt.Errorf("failed to restart deployment %s/%s: %w", namespace, name, err)
+	}
+	return nil
+}
+
 // WaitForPodReady waits for a specific pod to be in Running state with all containers ready.
 // timeoutSeconds specifies how long to wait before giving up.
 func WaitForPodReady(ctx context.Context, namespace, name string, timeoutSeconds int) error {
@@ -739,4 +752,14 @@ func getKubeconfigPath() string {
 func ContextExists(ctx context.Context, contextName string) bool {
 	err := exec.Run(ctx, "kubectl", "config", "get-contexts", contextName)
 	return err == nil
+}
+
+// SwitchContext switches the current kubectl context.
+func SwitchContext(ctx context.Context, contextName string) error {
+	return exec.Run(ctx, "kubectl", "config", "use-context", contextName)
+}
+
+// RenameContext renames a kubectl context.
+func RenameContext(ctx context.Context, oldName, newName string) error {
+	return exec.Run(ctx, "kubectl", "config", "rename-context", oldName, newName)
 }

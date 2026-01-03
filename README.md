@@ -221,7 +221,7 @@ dns:
 | Service    | URL                               | Credentials                       |
 |------------|-----------------------------------|-----------------------------------|
 | Dashboard  | `https://dashboard.nova.local`    | -                                 |
-| Keycloak   | `https://keycloak.nova.local`     | `admin` / (shown after deploy)    |
+| Keycloak   | `https://auth.nova.local`     | `admin` / (shown after deploy)    |
 | Hubble UI  | `https://hubble.nova.local`       | -                                 |
 | Grafana    | `https://grafana.nova.local`      | `admin` / `admin`                 |
 | Open WebUI | `https://webui.nova.local`        | Create account                    |
@@ -231,7 +231,7 @@ After deployment, NOVA displays all available URLs and Keycloak credentials:
 ```txt
 Cluster deployed. You can now access the following applications:
   Kubernetes Dashboard: https://dashboard.nova.local
-  Keycloak: https://keycloak.nova.local
+  Keycloak: https://auth.nova.local
   ...
 
 Log in via Keycloak:

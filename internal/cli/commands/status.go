@@ -175,7 +175,7 @@ func displayDeploymentsStatus(deployments *status.DeploymentsStatus, verbose boo
 	if deployments.Tier2Credentials != nil && len(deployments.Tier2Credentials.KeycloakUsers) > 0 {
 		ui.Info("")
 		ui.Header("Keycloak Credentials")
-		ui.Info("URL: https://keycloak.%s", cfg.DNS.Domain)
+		ui.Info("URL: https://%s", cfg.DNS.AuthDomain)
 		ui.Info("")
 		for _, user := range deployments.Tier2Credentials.KeycloakUsers {
 			ui.Info("  %s / %s  (group: %s)", user.Username, user.Password, user.Group)

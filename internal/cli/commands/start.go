@@ -10,6 +10,7 @@ import (
 	"github.com/kzgrzendek/nova/internal/core/deployment/tier2"
 	"github.com/kzgrzendek/nova/internal/host/dns/bind9"
 	"github.com/kzgrzendek/nova/internal/host/gateway/nginx"
+	k8s "github.com/kzgrzendek/nova/internal/tools/kubectl"
 	"github.com/kzgrzendek/nova/internal/tools/minikube"
 	"github.com/spf13/cobra"
 )
@@ -177,6 +178,17 @@ func runStart(cmd *cobra.Command, targetTier int) error {
 		ui.Warn("Failed to save state: %v", err)
 	}
 
+	// Check if developer context exists and switch to it if configured
+	if k8s.ContextExists(cmd.Context(), "nova-developer") {
+		ui.Info("")
+		ui.Info("Switching to developer context...")
+		if err := k8s.SwitchContext(cmd.Context(), "nova-developer"); err != nil {
+			ui.Warn("Failed to switch to nova-developer context: %v", err)
+		} else {
+			ui.Success("Switched to kubectl context 'nova-developer'")
+		}
+	}
+
 	// Display deployment summary
 	displayDeploymentSummary(cfg, targetTier, tier2Result)
 
@@ -200,7 +212,7 @@ func displayDeploymentSummary(cfg *config.Config, targetTier int, tier2Result *t
 
 	// Tier 2 URLs
 	if targetTier >= 2 {
-		ui.Info("  Keycloak: https://keycloak.%s", cfg.DNS.Domain)
+		ui.Info("  Keycloak: https://%s", cfg.DNS.AuthDomain)
 		ui.Info("  Hubble UI: https://hubble.%s", cfg.DNS.Domain)
 		ui.Info("  Grafana: https://grafana.%s", cfg.DNS.Domain)
 	}
@@ -217,9 +229,11 @@ func displayDeploymentSummary(cfg *config.Config, targetTier int, tier2Result *t
 		ui.Info("")
 
 		// Find credentials by username
-		var adminPassword, userPassword, developerPassword string
+		var clusterAdminPassword, adminPassword, userPassword, developerPassword string
 		for _, user := range tier2Result.KeycloakUsers {
 			switch user.Username {
+			case "cluster-admin":
+				clusterAdminPassword = user.Password
 			case "admin":
 				adminPassword = user.Password
 			case "user":
@@ -227,6 +241,13 @@ func displayDeploymentSummary(cfg *config.Config, targetTier int, tier2Result *t
 			case "developer":
 				developerPassword = user.Password
 			}
+		}
+
+		if clusterAdminPassword != "" {
+			ui.Info("Cluster administrator (master realm):")
+			ui.Info("  Username: cluster-admin")
+			ui.Info("  Password: %s", clusterAdminPassword)
+			ui.Info("")
 		}
 
 		if adminPassword != "" {
@@ -257,9 +278,6 @@ func displayDeploymentSummary(cfg *config.Config, targetTier int, tier2Result *t
 	ui.Info("A restricted kubectl context 'nova-developer' has been created.")
 	ui.Info("It provides full access to the 'developer' namespace only.")
 	ui.Info("")
-	ui.Info("To switch to the developer context:")
-	ui.Info("  kubectl config use-context nova-developer")
-	ui.Info("")
 	ui.Info("To switch back to admin context:")
-	ui.Info("  kubectl config use-context minikube")
+	ui.Info("  kubectl config use-context nova-admin")
 }

@@ -264,11 +264,16 @@ func LoadValues(valuesPath string) (map[string]interface{}, error) {
 
 	// Parse YAML
 	var values map[string]interface{}
-	if err := yaml.Unmarshal(data, &values); err != nil {
+	if err := UnmarshalValues(data, &values); err != nil {
 		return nil, fmt.Errorf("failed to parse values file %s: %w", valuesPath, err)
 	}
 
 	return values, nil
+}
+
+// UnmarshalValues parses YAML bytes into a values map.
+func UnmarshalValues(data []byte, v *map[string]interface{}) error {
+	return yaml.Unmarshal(data, v)
 }
 
 // MergeValues merges multiple value maps together.
@@ -298,4 +303,3 @@ func MergeValues(base map[string]interface{}, overrides ...map[string]interface{
 
 	return result
 }
-

@@ -9,7 +9,7 @@ spec:
       namespace: envoy-gateway-system
       sectionName: keycloak
   hostnames:
-    - "keycloak.{{.Domain}}"
+    - "{{.AuthDomain}}"
   rules:
     - backendRefs:
         - name: keycloak-service

@@ -1,39 +1,63 @@
-/* NOVA Theme - Custom login styles */
+/* NOVA Theme - Custom background with dimmed overlay and black login card */
 
-/* Background image */
+/* Background image with dimming overlay */
 .kcLoginClass {
   background-image: url("../assets/nova-background.jpg") !important;
   background-size: cover !important;
   background-position: center !important;
   background-repeat: no-repeat !important;
   min-height: 100vh !important;
+  position: relative !important;
 }
 
-/* Header styling */
-#kc-header {
-  background-color: rgba(0, 0, 0, 0.7) !important;
-  padding: 20px !important;
+/* Dimming overlay */
+.kcLoginClass::before {
+  content: "" !important;
+  position: absolute !important;
+  top: 0 !important;
+  left: 0 !important;
+  right: 0 !important;
+  bottom: 0 !important;
+  background-color: rgba(0, 0, 0, 0.4) !important;
+  z-index: 0 !important;
 }
 
-#kc-header-wrapper {
-  color: #fff !important;
+/* Ensure content is above the overlay */
+.kcLoginClass>* {
+  position: relative !important;
+  z-index: 1 !important;
 }
 
-/* Login card styling */
-.kcFormCardClass,
-#kc-form {
-  background-color: rgba(255, 255, 255, 0.95) !important;
-  border-radius: 8px !important;
-  box-shadow: 0 4px 20px rgba(0, 0, 0, 0.3) !important;
+/* Black login card */
+#kc-form-wrapper,
+.card-pf {
+  background-color: #000000 !important;
+  border: 1px solid rgba(255, 255, 255, 0.1) !important;
+  box-shadow: 0 4px 6px rgba(0, 0, 0, 0.3) !important;
 }
 
-/* Button styling */
-.kcButtonPrimaryClass {
-  background-color: #1976d2 !important;
-  border-color: #1976d2 !important;
+/* Adjust text colors for black background */
+#kc-form-wrapper label,
+#kc-form-wrapper .pf-c-form__label,
+.card-pf label,
+.card-pf h1,
+.card-pf h2,
+.card-pf p {
+  color: #ffffff !important;
 }
 
-.kcButtonPrimaryClass:hover {
-  background-color: #1565c0 !important;
-  border-color: #1565c0 !important;
+/* Style input fields for better contrast */
+#kc-form-wrapper input[type="text"],
+#kc-form-wrapper input[type="password"],
+#kc-form-wrapper input[type="email"] {
+  background-color: #1a1a1a !important;
+  border: 1px solid rgba(255, 255, 255, 0.2) !important;
+  color: #ffffff !important;
+}
+
+#kc-form-wrapper input[type="text"]:focus,
+#kc-form-wrapper input[type="password"]:focus,
+#kc-form-wrapper input[type="email"]:focus {
+  border-color: rgba(255, 255, 255, 0.4) !important;
+  outline: none !important;
 }

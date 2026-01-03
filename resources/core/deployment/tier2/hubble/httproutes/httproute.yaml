@@ -11,7 +11,7 @@ spec:
       kind: Gateway
       name: nova-https
       namespace: envoy-gateway-system
-      sectionName: lab-wildcard
+      sectionName: nova-wildcard
   rules:
     - matches:
         - path:

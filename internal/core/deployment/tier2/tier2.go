@@ -44,17 +44,16 @@ var deploymentResult *DeployResult
 func DeployTier2(ctx context.Context, cfg *config.Config) (*DeployResult, error) {
 	ui.Header("Tier 2: Platform Services")
 
-	// Initialize result to track credentials
+	// Initialize result
 	deploymentResult = &DeployResult{
 		KeycloakUsers: []KeycloakUser{},
 	}
 
-	// Add Tier 2 Helm repositories
+	// Add Helm repos
 	if err := addTier2HelmRepos(ctx); err != nil {
 		return nil, fmt.Errorf("failed to add Tier 2 Helm repositories: %w", err)
 	}
 
-	// Define deployment steps
 	steps := []string{
 		"Kyverno Policy Engine",
 		"Keycloak Operator",
@@ -66,76 +65,97 @@ func DeployTier2(ctx context.Context, cfg *config.Config) (*DeployResult, error)
 		"VictoriaLogs Collector",
 		"VictoriaMetrics Stack",
 	}
-
 	progress := ui.NewStepProgress(steps)
 	currentStep := 0
 
-	// Step 1: Deploy Kyverno
-	if err := deployKyverno(ctx, cfg, progress, currentStep); err != nil {
+	// Helper wrapper for step execution
+	runStep := func(name string, fn func() error) error {
+		progress.StartStep(currentStep)
+		if err := fn(); err != nil {
+			progress.FailStep(currentStep, err)
+			return err
+		}
+		progress.CompleteStep(currentStep)
+		currentStep++
+		return nil
+	}
+
+	// 1. Kyverno
+	if err := runStep("Kyverno", func() error {
+		return deployKyverno(ctx)
+	}); err != nil {
 		return nil, err
 	}
-	currentStep++
 
-	// Step 2: Deploy Keycloak Operator
-	if err := deployKeycloakOperator(ctx, cfg, progress, currentStep); err != nil {
+	// 2. Keycloak Operator
+	if err := runStep("Keycloak Operator", func() error {
+		return deployKeycloakOperator(ctx)
+	}); err != nil {
 		return nil, err
 	}
-	currentStep++
 
-	// Step 3: Deploy Keycloak PostgreSQL
-	if err := deployKeycloakPostgreSQL(ctx, cfg, progress, currentStep); err != nil {
+	// 3. Keycloak PostgreSQL
+	if err := runStep("Keycloak PostgreSQL", func() error {
+		return deployKeycloakPostgreSQL(ctx)
+	}); err != nil {
 		return nil, err
 	}
-	currentStep++
 
-	// Step 4: Deploy Keycloak Theme
-	if err := deployKeycloakTheme(ctx, cfg, progress, currentStep); err != nil {
+	// 4. Keycloak Theme
+	if err := runStep("Keycloak Theme", func() error {
+		return deployKeycloakTheme(ctx)
+	}); err != nil {
 		return nil, err
 	}
-	currentStep++
 
-	// Step 5: Deploy Keycloak Instance
-	keycloakAdminPassword, err := deployKeycloakInstance(ctx, cfg, progress, currentStep)
-	if err != nil {
+	// 5. Keycloak Instance
+	if err := runStep("Keycloak Instance", func() error {
+		pwd, err := deployKeycloakInstance(ctx, cfg)
+		if err != nil {
+			return err
+		}
+		deploymentResult.KeycloakUsers = []KeycloakUser{
+			{Username: "admin", Password: pwd, Group: "ADMIN"},
+			{Username: "developer", Password: "developer", Group: "DEVELOPER"},
+			{Username: "user", Password: "user", Group: "USER"},
+		}
+		return nil
+	}); err != nil {
 		return nil, err
 	}
-	// Store all Keycloak users with their credentials
-	// admin has a random generated password, developer and user have static passwords
-	deploymentResult.KeycloakUsers = []KeycloakUser{
-		{Username: "admin", Password: keycloakAdminPassword, Group: "ADMIN"},
-		{Username: "developer", Password: "developer", Group: "DEVELOPER"},
-		{Username: "user", Password: "user", Group: "USER"},
-	}
-	currentStep++
 
-	// Step 5: Deploy Hubble
-	if err := deployHubble(ctx, cfg, progress, currentStep); err != nil {
+	// 6. Hubble
+	if err := runStep("Hubble", func() error {
+		return deployHubble(ctx, cfg)
+	}); err != nil {
 		return nil, err
 	}
-	currentStep++
 
-	// Step 6: Deploy VictoriaLogs Server
-	if err := deployVictoriaLogsServer(ctx, cfg, progress, currentStep); err != nil {
+	// 7. VictoriaLogs Server
+	if err := runStep("VictoriaLogs Server", func() error {
+		return deployVictoriaLogsServer(ctx)
+	}); err != nil {
 		return nil, err
 	}
-	currentStep++
 
-	// Step 7: Deploy VictoriaLogs Collector
-	if err := deployVictoriaLogsCollector(ctx, cfg, progress, currentStep); err != nil {
+	// 8. VictoriaLogs Collector
+	if err := runStep("VictoriaLogs Collector", func() error {
+		return deployVictoriaLogsCollector(ctx)
+	}); err != nil {
 		return nil, err
 	}
-	currentStep++
 
-	// Step 8: Deploy VictoriaMetrics Stack
-	if err := deployVictoriaMetricsStack(ctx, cfg, progress, currentStep); err != nil {
+	// 9. VictoriaMetrics Stack
+	if err := runStep("VictoriaMetrics Stack", func() error {
+		return deployVictoriaMetricsStack(ctx, cfg)
+	}); err != nil {
 		return nil, err
 	}
 
 	progress.Complete()
-
 	ui.Header("Tier 2 Deployment Complete")
 	ui.Success("Platform services are running")
-	ui.Info("Keycloak: https://keycloak.%s", cfg.DNS.Domain)
+	ui.Info("Keycloak: https://%s", cfg.DNS.AuthDomain)
 	ui.Info("Hubble: https://hubble.%s", cfg.DNS.Domain)
 	ui.Info("Grafana: https://grafana.%s", cfg.DNS.Domain)
 
@@ -143,8 +163,8 @@ func DeployTier2(ctx context.Context, cfg *config.Config) (*DeployResult, error)
 }
 
 // deployKyverno deploys Kyverno policy engine.
-func deployKyverno(ctx context.Context, cfg *config.Config, progress *ui.StepProgress, step int) error {
-	return deployWithProgress(ctx, progress, step, shared.HelmDeploymentOptions{
+func deployKyverno(ctx context.Context) error {
+	return deployWithProgress(ctx, shared.HelmDeploymentOptions{
 		ReleaseName:     "kyverno",
 		ChartRef:        "kyverno/kyverno",
 		Namespace:       kyvernoNamespace,
@@ -156,278 +176,198 @@ func deployKyverno(ctx context.Context, cfg *config.Config, progress *ui.StepPro
 }
 
 // deployKeycloakOperator deploys Keycloak operator CRDs and controller.
-func deployKeycloakOperator(ctx context.Context, cfg *config.Config, progress *ui.StepProgress, step int) error {
-	progress.StartStep(step)
-
-	// Create namespace
-	if err := k8s.CreateNamespace(ctx, keycloakNamespace); err != nil {
-		progress.FailStep(step, err)
-		return fmt.Errorf("failed to create keycloak namespace: %w", err)
+func deployKeycloakOperator(ctx context.Context) error {
+	// Ensure namespace exists and is labeled
+	if err := shared.EnsureNamespace(ctx, keycloakNamespace, map[string]string{
+		"service-type":                   "keycloak",
+		"trust-manager/inject-ca-secret": "enabled",
+	}); err != nil {
+		return err
 	}
 
-	// Label namespace
-	if err := k8s.LabelNamespace(ctx, keycloakNamespace, "service-type", "keycloak"); err != nil {
-		progress.FailStep(step, err)
-		return fmt.Errorf("failed to label keycloak namespace: %w", err)
+	// Apply CRDs and Operator
+	manifests := []string{
+		constants.ManifestKeycloakCRD,
+		constants.ManifestKeycloakRealmImportCRD,
+		constants.ManifestKeycloakOperator,
 	}
 
-	if err := k8s.LabelNamespace(ctx, keycloakNamespace, "trust-manager/inject-ca-secret", "enabled"); err != nil {
-		progress.FailStep(step, err)
-		return fmt.Errorf("failed to label keycloak namespace for CA injection: %w", err)
+	for _, url := range manifests {
+		ui.Info("Applying %s...", url)
+		if err := k8s.ApplyURLWithNamespace(ctx, url, keycloakNamespace); err != nil {
+			return fmt.Errorf("failed to apply %s: %w", url, err)
+		}
 	}
 
-	// Apply Keycloak CRDs and Operator (all with -n keycloak as per script)
-	ui.Info("Installing Keycloak CRDs...")
-	if err := k8s.ApplyURLWithNamespace(ctx, constants.ManifestKeycloakCRD, keycloakNamespace); err != nil {
-		progress.FailStep(step, err)
-		return fmt.Errorf("failed to apply Keycloak CRD: %w", err)
-	}
-
-	if err := k8s.ApplyURLWithNamespace(ctx, constants.ManifestKeycloakRealmImportCRD, keycloakNamespace); err != nil {
-		progress.FailStep(step, err)
-		return fmt.Errorf("failed to apply KeycloakRealmImport CRD: %w", err)
-	}
-
-	ui.Info("Installing Keycloak Operator...")
-	if err := k8s.ApplyURLWithNamespace(ctx, constants.ManifestKeycloakOperator, keycloakNamespace); err != nil {
-		progress.FailStep(step, err)
-		return fmt.Errorf("failed to apply Keycloak Operator: %w", err)
-	}
-
-	// Wait for operator to be ready
-	ui.Info("Waiting for Keycloak Operator...")
+	ui.Info("Waiting for Keycloak Operator to be ready...")
 	if err := k8s.WaitForDeploymentReady(ctx, keycloakNamespace, "keycloak-operator", 300); err != nil {
-		progress.FailStep(step, err)
-		return fmt.Errorf("keycloak operator failed to become ready: %w", err)
+		return fmt.Errorf("keycloak operator not ready: %w", err)
 	}
 
-	progress.CompleteStep(step)
 	return nil
 }
 
 // deployKeycloakPostgreSQL deploys PostgreSQL database for Keycloak.
-func deployKeycloakPostgreSQL(ctx context.Context, cfg *config.Config, progress *ui.StepProgress, step int) error {
-	progress.StartStep(step)
-
-	// Generate PostgreSQL credentials
-	postgresPassword, err := crypto.GenerateRandomPassword(32)
-	if err != nil {
-		progress.FailStep(step, err)
-		return fmt.Errorf("failed to generate postgres password: %w", err)
+func deployKeycloakPostgreSQL(ctx context.Context) error {
+	var pwd string
+	if k8s.SecretExists(ctx, keycloakNamespace, "keycloak-db-secret") {
+		data, err := k8s.GetSecretData(ctx, keycloakNamespace, "keycloak-db-secret")
+		if err == nil && data["password"] != "" {
+			pwd = data["password"]
+		}
 	}
 
-	dbData := map[string]interface{}{
-		"PostgresUser":     "admin",
-		"PostgresPassword": postgresPassword,
+	if pwd == "" {
+		var err error
+		pwd, err = crypto.GenerateRandomPassword(32)
+		if err != nil {
+			return err
+		}
 	}
 
-	// Create Keycloak DB secret
-	if err := shared.ApplyTemplate(ctx, "resources/core/deployment/tier2/keycloak/secrets/keycloak-db-secret.yaml", dbData); err != nil {
-		progress.FailStep(step, err)
+	// Create/Update database secret
+	if err := k8s.CreateSecret(ctx, keycloakNamespace, "keycloak-db-secret", map[string]string{
+		"username": "admin",
+		"password": pwd,
+	}); err != nil {
 		return fmt.Errorf("failed to create keycloak db secret: %w", err)
 	}
 
-	// Deploy PostgreSQL StatefulSet
-	if err := shared.ApplyTemplate(ctx, "resources/core/deployment/tier2/keycloak/postgresql/statefulset.yaml", dbData); err != nil {
-		progress.FailStep(step, err)
-		return fmt.Errorf("failed to deploy postgresql statefulset: %w", err)
+	resources := []string{
+		"resources/core/deployment/tier2/keycloak/postgresql/statefulset.yaml",
+		"resources/core/deployment/tier2/keycloak/postgresql/service.yaml",
 	}
 
-	// Deploy PostgreSQL Service
-	if err := shared.ApplyTemplate(ctx, "resources/core/deployment/tier2/keycloak/postgresql/service.yaml", nil); err != nil {
-		progress.FailStep(step, err)
-		return fmt.Errorf("failed to deploy postgresql service: %w", err)
+	for _, res := range resources {
+		if err := shared.ApplyTemplate(ctx, res, nil); err != nil {
+			return fmt.Errorf("failed to apply %s: %w", res, err)
+		}
 	}
 
-	// Wait for PostgreSQL to be ready
 	if err := k8s.WaitForDeploymentReady(ctx, keycloakNamespace, "postgresql-db", 300); err != nil {
-		progress.FailStep(step, err)
-		return fmt.Errorf("postgresql failed to become ready: %w", err)
+		return fmt.Errorf("postgresql not ready: %w", err)
 	}
 
-	progress.CompleteStep(step)
 	return nil
 }
 
-// Theme JAR path relative to project root
-const keycloakThemeJARPath = "resources/core/deployment/tier2/keycloak/theme/dist_keycloak/keycloak-theme-for-kc-all-other-versions.jar"
-
-// deployKeycloakTheme installs the NOVA Keycloak theme by copying the JAR to a PVC.
-// The theme is persisted so it survives nova stop/start cycles.
-func deployKeycloakTheme(ctx context.Context, cfg *config.Config, progress *ui.StepProgress, step int) error {
-	progress.StartStep(step)
-
+// deployKeycloakTheme installs the NOVA Keycloak theme.
+func deployKeycloakTheme(ctx context.Context) error {
 	const pvcName = "keycloak-theme-pvc"
 	const helperPodName = "theme-copy-helper"
+	const jarPath = "resources/core/deployment/tier2/keycloak/theme/dist_keycloak/keycloak-theme-for-kc-all-other-versions.jar"
 
-	// Check if PVC already exists with the theme (skip if already installed)
-	if k8s.PVCExists(ctx, keycloakNamespace, pvcName) {
-		ui.Info("Keycloak theme PVC already exists - skipping installation")
-		progress.CompleteStep(step)
-		return nil
-	}
-
-	// Create PVC for theme storage
-	ui.Info("Creating theme PVC...")
+	// Always ensure the theme is deployed to pick up changes
+	ui.Info("Ensuring theme PVC and helper pod...")
 	if err := shared.ApplyTemplate(ctx, "resources/core/deployment/tier2/keycloak/theme-pvc/theme-pvc.yaml", nil); err != nil {
-		progress.FailStep(step, err)
-		return fmt.Errorf("failed to create theme PVC: %w", err)
+		return err
 	}
-
-	// Create helper pod to mount the PVC
-	ui.Info("Creating helper pod for theme copy...")
 	if err := shared.ApplyTemplate(ctx, "resources/core/deployment/tier2/keycloak/theme-pvc/theme-copy-pod.yaml", nil); err != nil {
-		progress.FailStep(step, err)
-		return fmt.Errorf("failed to create theme copy helper pod: %w", err)
-	}
-
-	// Wait for helper pod to be ready
-	ui.Info("Waiting for helper pod...")
-	if err := k8s.WaitForPodReady(ctx, keycloakNamespace, helperPodName, 120); err != nil {
-		// Clean up the pod on failure
-		_ = k8s.DeletePod(ctx, keycloakNamespace, helperPodName)
-		progress.FailStep(step, err)
-		return fmt.Errorf("helper pod failed to become ready: %w", err)
-	}
-
-	// Copy the theme JAR to the PVC via the helper pod
-	ui.Info("Copying theme JAR to PVC...")
-	if err := k8s.CopyToPod(ctx, keycloakThemeJARPath, keycloakNamespace, helperPodName, "/theme/nova-theme.jar"); err != nil {
-		// Clean up the pod on failure
-		_ = k8s.DeletePod(ctx, keycloakNamespace, helperPodName)
-		progress.FailStep(step, err)
-		return fmt.Errorf("failed to copy theme JAR: %w", err)
-	}
-
-	// Delete the helper pod (we don't need it anymore)
-	ui.Info("Cleaning up helper pod...")
-	if err := k8s.DeletePod(ctx, keycloakNamespace, helperPodName); err != nil {
-		ui.Warn("Failed to delete helper pod: %v", err)
-		// Continue anyway, not a critical error
-	}
-
-	progress.CompleteStep(step)
-	return nil
-}
-
-// deployKeycloakInstance deploys Keycloak IAM instance and realm configuration.
-// Returns the generated admin password.
-func deployKeycloakInstance(ctx context.Context, cfg *config.Config, progress *ui.StepProgress, step int) (string, error) {
-	progress.StartStep(step)
-
-	// Generate Keycloak admin credentials
-	keycloakAdminPassword, err := crypto.GenerateRandomPassword(32)
-	if err != nil {
-		progress.FailStep(step, err)
-		return "", fmt.Errorf("failed to generate keycloak admin password: %w", err)
-	}
-
-	// Generate Hubble OIDC client secret
-	hubbleClientSecret, err := crypto.GenerateRandomPassword(32)
-	if err != nil {
-		progress.FailStep(step, err)
-		return "", fmt.Errorf("failed to generate hubble client secret: %w", err)
-	}
-
-	adminData := map[string]interface{}{
-		"KeycloakAdminUser":     "admin",
-		"KeycloakAdminPassword": keycloakAdminPassword,
-	}
-
-	domainData := map[string]interface{}{
-		"Domain": cfg.DNS.Domain,
-	}
-
-	// Create secrets
-	ui.Info("Creating Keycloak secrets...")
-	if err := shared.ApplyTemplate(ctx, "resources/core/deployment/tier2/keycloak/secrets/keycloak-admin-secret.yaml", adminData); err != nil {
-		progress.FailStep(step, err)
-		return "", fmt.Errorf("failed to create keycloak admin secret: %w", err)
-	}
-
-	// Create certificates
-	ui.Info("Creating Keycloak certificates...")
-	if err := shared.ApplyTemplate(ctx, "resources/core/deployment/tier2/keycloak/certificates/keycloak-tls.yaml", domainData); err != nil {
-		progress.FailStep(step, err)
-		return "", fmt.Errorf("failed to create keycloak certificate: %w", err)
-	}
-
-	// Deploy Keycloak instance
-	ui.Info("Deploying Keycloak instance...")
-	if err := shared.ApplyTemplate(ctx, "resources/core/deployment/tier2/keycloak/keycloaks/keycloak.yaml", domainData); err != nil {
-		progress.FailStep(step, err)
-		return "", fmt.Errorf("failed to deploy keycloak instance: %w", err)
-	}
-
-	// Wait for Keycloak CRD to be Ready (like the script does)
-	ui.Info("Waiting for Keycloak to be ready...")
-	if err := k8s.WaitForCondition(ctx, keycloakNamespace, "keycloaks.k8s.keycloak.org/keycloak", "Ready", 600); err != nil {
-		progress.FailStep(step, err)
-		return "", fmt.Errorf("keycloak failed to become ready: %w", err)
-	}
-
-	// Import Keycloak realm
-	ui.Info("Importing Keycloak realm...")
-	if err := shared.ApplyTemplate(ctx, "resources/core/deployment/tier2/keycloak/keycloakrealmimports/nova.yaml", domainData); err != nil {
-		progress.FailStep(step, err)
-		return "", fmt.Errorf("failed to import keycloak realm: %w", err)
-	}
-
-	// Wait for realm import to be Done
-	ui.Info("Waiting for realm import to complete...")
-	if err := k8s.WaitForCondition(ctx, keycloakNamespace, "keycloakrealmimports/nova-import", "Done", 300); err != nil {
-		progress.FailStep(step, err)
-		return "", fmt.Errorf("keycloak realm import failed: %w", err)
-	}
-
-	// Create Keycloak TLS route
-	ui.Info("Creating Keycloak TLS route...")
-	if err := shared.ApplyTemplate(ctx, "resources/core/deployment/tier2/keycloak/tlsroutes/keycloak.yaml", domainData); err != nil {
-		progress.FailStep(step, err)
-		return "", fmt.Errorf("failed to create keycloak tls route: %w", err)
-	}
-
-	// Create Hubble OIDC secret (for later Hubble deployment)
-	hubbleData := map[string]interface{}{
-		"HubbleClientSecret": hubbleClientSecret,
-	}
-	if err := shared.ApplyTemplate(ctx, "resources/core/deployment/tier2/hubble/secrets/hubble-oidc.yaml", hubbleData); err != nil {
-		progress.FailStep(step, err)
-		return "", fmt.Errorf("failed to create hubble oidc secret: %w", err)
-	}
-
-	progress.CompleteStep(step)
-
-	return keycloakAdminPassword, nil
-}
-
-// deployHubble enables Hubble UI and metrics on the existing Cilium installation.
-func deployHubble(ctx context.Context, cfg *config.Config, progress *ui.StepProgress, step int) error {
-	progress.StartStep(step)
-
-	// Label kube-system namespace (as per script)
-	if err := k8s.LabelNamespace(ctx, "kube-system", "service-type", "nova"); err != nil {
-		progress.FailStep(step, err)
-		return fmt.Errorf("failed to label kube-system namespace: %w", err)
-	}
-
-	// Hubble is deployed by upgrading Cilium with additional values
-	client := helm.NewClient("kube-system")
-
-	// Check if Cilium is installed
-	installed, err := client.ReleaseExists(ctx, "cilium", "kube-system")
-	if err != nil {
-		progress.FailStep(step, err)
-		return fmt.Errorf("failed to check cilium installation: %w", err)
-	}
-
-	if !installed {
-		err := fmt.Errorf("cilium must be installed before enabling hubble")
-		progress.FailStep(step, err)
 		return err
 	}
 
-	// Upgrade Cilium with Hubble values
+	ui.Info("Waiting for helper pod...")
+	if err := k8s.WaitForPodReady(ctx, keycloakNamespace, helperPodName, 120); err != nil {
+		_ = k8s.DeletePod(ctx, keycloakNamespace, helperPodName)
+		return err
+	}
+
+	ui.Info("Copying theme JAR...")
+	if err := k8s.CopyToPod(ctx, jarPath, keycloakNamespace, helperPodName, "/theme/nova-theme.jar"); err != nil {
+		_ = k8s.DeletePod(ctx, keycloakNamespace, helperPodName)
+		return err
+	}
+
+	_ = k8s.DeletePod(ctx, keycloakNamespace, helperPodName)
+	return nil
+}
+
+// deployKeycloakInstance deploys Keycloak IAM instance.
+// Returns the generated admin password.
+func deployKeycloakInstance(ctx context.Context, cfg *config.Config) (string, error) {
+	var adminPwd string
+	if k8s.SecretExists(ctx, keycloakNamespace, "keycloak-admin-secret") {
+		data, err := k8s.GetSecretData(ctx, keycloakNamespace, "keycloak-admin-secret")
+		if err == nil && data["password"] != "" {
+			adminPwd = data["password"]
+		}
+	}
+
+	if adminPwd == "" {
+		var err error
+		adminPwd, err = crypto.GenerateRandomPassword(10)
+		if err != nil {
+			return "", err
+		}
+	}
+	// Static Hubble secret from nova.yaml realm import
+	const hubbleSecret = "74ZnkKBH4DrfB6ywE4Pdwtk0JFJ8DHLA"
+
+	data := map[string]interface{}{
+		"KeycloakAdminUser":     "cluster-admin",
+		"KeycloakAdminPassword": adminPwd,
+		"Domain":                cfg.DNS.Domain,
+		"AuthDomain":            cfg.DNS.AuthDomain,
+		"HubbleClientSecret":    hubbleSecret,
+	}
+
+	// Create cluster-admin secret for master realm
+	if err := k8s.CreateSecret(ctx, keycloakNamespace, "keycloak-admin-secret", map[string]string{
+		"username": "cluster-admin",
+		"password": adminPwd,
+	}); err != nil {
+		return "", fmt.Errorf("failed to create keycloak-admin-secret: %w", err)
+	}
+
+	// Create OIDC secret for Hubble in kube-system
+	if err := k8s.CreateSecret(ctx, "kube-system", "oidc", map[string]string{
+		"client-id":     "hubble",
+		"client-secret": hubbleSecret,
+	}); err != nil {
+		return "", fmt.Errorf("failed to create hubble oidc secret: %w", err)
+	}
+
+	if err := shared.ApplyTemplate(ctx, "resources/core/deployment/tier2/keycloak/certificates/keycloak-tls.yaml", data); err != nil {
+		return "", err
+	}
+
+	ui.Info("Deploying Keycloak instance...")
+	if err := shared.ApplyTemplate(ctx, "resources/core/deployment/tier2/keycloak/keycloaks/keycloak.yaml", data); err != nil {
+		return "", err
+	}
+
+	if err := k8s.WaitForCondition(ctx, keycloakNamespace, "keycloaks.k8s.keycloak.org/keycloak", "Ready", 600); err != nil {
+		return "", err
+	}
+
+	ui.Info("Importing Realm...")
+	if err := shared.ApplyTemplate(ctx, "resources/core/deployment/tier2/keycloak/keycloakrealmimports/nova.yaml", data); err != nil {
+		return "", err
+	}
+	if err := k8s.WaitForCondition(ctx, keycloakNamespace, "keycloakrealmimports/nova-import", "Done", 300); err != nil {
+		return "", err
+	}
+
+	if err := shared.ApplyTemplate(ctx, "resources/core/deployment/tier2/keycloak/tlsroutes/keycloak.yaml", data); err != nil {
+		return "", err
+	}
+
+	return adminPwd, nil
+}
+
+// deployHubble enables Hubble UI.
+func deployHubble(ctx context.Context, cfg *config.Config) error {
+	if err := k8s.LabelNamespace(ctx, "kube-system", "service-type", "nova"); err != nil {
+		return err
+	}
+
+	// Verify Cilium presence
+	client := helm.NewClient("kube-system")
+	if exists, err := client.ReleaseExists(ctx, "cilium", "kube-system"); err != nil || !exists {
+		return fmt.Errorf("cilium not found: %w", err)
+	}
+
+	// Upgrade Cilium
 	if err := shared.DeployHelmChart(ctx, shared.HelmDeploymentOptions{
 		ReleaseName:    "cilium",
 		ChartRef:       "cilium/cilium",
@@ -435,61 +375,53 @@ func deployHubble(ctx context.Context, cfg *config.Config, progress *ui.StepProg
 		ValuesPath:     "resources/core/deployment/tier2/hubble/values.yaml",
 		Wait:           true,
 		TimeoutSeconds: 300,
-		ReuseValues:    true, // Keep existing Cilium values
+		ReuseValues:    true,
 	}); err != nil {
-		progress.FailStep(step, err)
 		return err
 	}
 
-	// Deploy Hubble additional resources
-	domainData := map[string]interface{}{
-		"Domain": cfg.DNS.Domain,
+	// Apply Hubble resources
+	data := map[string]interface{}{
+		"Domain":     cfg.DNS.Domain,
+		"AuthDomain": cfg.DNS.AuthDomain,
+	}
+	resources := []string{
+		"resources/core/deployment/tier2/hubble/backends/keycloak.yaml",
+		"resources/core/deployment/tier2/hubble/backendtlspolicies/keycloak.yaml",
+		"resources/core/deployment/tier2/hubble/securitypolicies/hubble-oidc-auth.yaml",
+		"resources/core/deployment/tier2/hubble/httproutes/httproute.yaml",
 	}
 
-	// Create Keycloak backend for Hubble OIDC
-	if err := shared.ApplyTemplate(ctx, "resources/core/deployment/tier2/hubble/backends/keycloak.yaml", domainData); err != nil {
-		progress.FailStep(step, err)
-		return fmt.Errorf("failed to create hubble keycloak backend: %w", err)
+	for _, res := range resources {
+		if err := shared.ApplyTemplate(ctx, res, data); err != nil {
+			return err
+		}
 	}
 
-	// Create BackendTLSPolicy for Keycloak
-	if err := shared.ApplyTemplate(ctx, "resources/core/deployment/tier2/hubble/backendtlspolicies/keycloak.yaml", domainData); err != nil {
-		progress.FailStep(step, err)
-		return fmt.Errorf("failed to create hubble backend tls policy: %w", err)
-	}
-
-	// Create SecurityPolicy for OIDC auth
-	if err := shared.ApplyTemplate(ctx, "resources/core/deployment/tier2/hubble/securitypolicies/hubble-oidc-auth.yaml", domainData); err != nil {
-		progress.FailStep(step, err)
-		return fmt.Errorf("failed to create hubble security policy: %w", err)
-	}
-
-	// Create Hubble HTTP route
-	if err := shared.ApplyTemplate(ctx, "resources/core/deployment/tier2/hubble/httproutes/httproute.yaml", domainData); err != nil {
-		progress.FailStep(step, err)
-		return fmt.Errorf("failed to create hubble http route: %w", err)
-	}
-
-	progress.CompleteStep(step)
 	return nil
 }
 
-// deployVictoriaLogsServer deploys VictoriaLogs log aggregation server.
-func deployVictoriaLogsServer(ctx context.Context, cfg *config.Config, progress *ui.StepProgress, step int) error {
-	return deployWithProgress(ctx, progress, step, shared.HelmDeploymentOptions{
-		ReleaseName:     "vls",
-		ChartRef:        "vm/victoria-logs-single",
-		Namespace:       victorialogsNamespace,
-		ValuesPath:      "resources/core/deployment/tier2/victorialogs/vlogs-values.yaml",
-		Wait:            true,
-		TimeoutSeconds:  300,
-		CreateNamespace: true,
+// deployVictoriaLogsServer deploys VLS.
+func deployVictoriaLogsServer(ctx context.Context) error {
+	if err := shared.EnsureNamespace(ctx, victorialogsNamespace, map[string]string{
+		"service-type": "nova",
+	}); err != nil {
+		return err
+	}
+
+	return deployWithProgress(ctx, shared.HelmDeploymentOptions{
+		ReleaseName:    "vls",
+		ChartRef:       "vm/victoria-logs-single",
+		Namespace:      victorialogsNamespace,
+		ValuesPath:     "resources/core/deployment/tier2/victorialogs/vlogs-values.yaml",
+		Wait:           true,
+		TimeoutSeconds: 300,
 	}, nil)
 }
 
-// deployVictoriaLogsCollector deploys VictoriaLogs collector for log collection.
-func deployVictoriaLogsCollector(ctx context.Context, cfg *config.Config, progress *ui.StepProgress, step int) error {
-	return deployWithProgress(ctx, progress, step, shared.HelmDeploymentOptions{
+// deployVictoriaLogsCollector deploys VLC.
+func deployVictoriaLogsCollector(ctx context.Context) error {
+	return deployWithProgress(ctx, shared.HelmDeploymentOptions{
 		ReleaseName:    "collector",
 		ChartRef:       "vm/victoria-logs-collector",
 		Namespace:      victorialogsNamespace,
@@ -499,75 +431,83 @@ func deployVictoriaLogsCollector(ctx context.Context, cfg *config.Config, progre
 	}, nil)
 }
 
-// deployVictoriaMetricsStack deploys VictoriaMetrics with Grafana.
-// Grafana uses Keycloak OIDC for authentication, so no local password is needed.
-func deployVictoriaMetricsStack(ctx context.Context, cfg *config.Config, progress *ui.StepProgress, step int) error {
-	progress.StartStep(step)
-
-	// Create namespace
-	if err := k8s.CreateNamespace(ctx, victoriametricsNamespace); err != nil {
-		progress.FailStep(step, err)
-		return fmt.Errorf("failed to create namespace: %w", err)
-	}
-
-	// Label namespace (as per script)
-	if err := k8s.LabelNamespace(ctx, victoriametricsNamespace, "service-type", "nova"); err != nil {
-		progress.FailStep(step, err)
-		return fmt.Errorf("failed to label victoriametrics namespace: %w", err)
-	}
-
-	if err := k8s.LabelNamespace(ctx, victoriametricsNamespace, "trust-manager/inject-ca-secret", "enabled"); err != nil {
-		progress.FailStep(step, err)
-		return fmt.Errorf("failed to label victoriametrics namespace for CA injection: %w", err)
-	}
-
-	// Deploy VictoriaMetrics stack with dynamic values
-	// Structure matches the Helm values hierarchy for proper merging
-	dynamicValues := map[string]interface{}{
-		"grafana": map[string]interface{}{
-			"grafana.ini": map[string]interface{}{
-				"server": map[string]interface{}{
-					"domain": fmt.Sprintf("grafana.%s", cfg.DNS.Domain),
-				},
-			},
-		},
-	}
-
-	if err := shared.DeployHelmChart(ctx, shared.HelmDeploymentOptions{
-		ReleaseName:    "vmks",
-		ChartRef:       "vm/victoria-metrics-k8s-stack",
-		Namespace:      victoriametricsNamespace,
-		ValuesPath:     "resources/core/deployment/tier2/victoriametrics/values.yaml",
-		Values:         dynamicValues,
-		Wait:           true,
-		TimeoutSeconds: 600,
+// deployVictoriaMetricsStack deploys VM Stack with OIDC.
+func deployVictoriaMetricsStack(ctx context.Context, cfg *config.Config) error {
+	if err := shared.EnsureNamespace(ctx, victoriametricsNamespace, map[string]string{
+		"service-type":                   "nova",
+		"trust-manager/inject-ca-secret": "enabled",
 	}); err != nil {
-		progress.FailStep(step, err)
 		return err
 	}
 
-	// Create Grafana HTTPRoute
-	domainData := map[string]interface{}{
-		"Domain": cfg.DNS.Domain,
-	}
-	if err := shared.ApplyTemplate(ctx, "resources/core/deployment/tier2/victoriametrics/httproutes/grafana.yaml", domainData); err != nil {
-		progress.FailStep(step, err)
-		return fmt.Errorf("failed to create grafana http route: %w", err)
+	// Create OIDC secret for Grafana
+	if err := k8s.CreateSecret(ctx, victoriametricsNamespace, "oidc", map[string]string{
+		"client-id":     "grafana",
+		"client-secret": "OLANqOyLmQ7deODliaxm42CHttBu6jnl",
+	}); err != nil {
+		return fmt.Errorf("failed to create oidc secret: %w", err)
 	}
 
-	progress.CompleteStep(step)
+	// Create/Update Grafana admin secret
+	var grafanaAdminPwd string
+	if k8s.SecretExists(ctx, victoriametricsNamespace, "grafana-admin") {
+		data, err := k8s.GetSecretData(ctx, victoriametricsNamespace, "grafana-admin")
+		if err == nil && data["admin-password"] != "" {
+			grafanaAdminPwd = data["admin-password"]
+		}
+	}
+
+	if grafanaAdminPwd == "" {
+		var err error
+		grafanaAdminPwd, err = crypto.GenerateRandomPassword(32)
+		if err != nil {
+			return err
+		}
+	}
+
+	if err := k8s.CreateSecret(ctx, victoriametricsNamespace, "grafana-admin", map[string]string{
+		"admin-user":     "admin",
+		"admin-password": grafanaAdminPwd,
+	}); err != nil {
+		return fmt.Errorf("failed to create grafana-admin secret: %w", err)
+	}
+
+	// Deploy GPU dashboard ConfigMap before Grafana starts
+	if err := k8s.ApplyYAML(ctx, "resources/core/deployment/tier2/victoriametrics/dashboards/gpu-overview.yaml"); err != nil {
+		return fmt.Errorf("failed to deploy GPU dashboard: %w", err)
+	}
+
+	if err := shared.DeployHelmChart(ctx, shared.HelmDeploymentOptions{
+		ReleaseName: "vmks",
+		ChartRef:    "vm/victoria-metrics-k8s-stack",
+		Namespace:   victoriametricsNamespace,
+		ValuesPath:  "resources/core/deployment/tier2/victoriametrics/values.yaml",
+		TemplateData: map[string]interface{}{
+			"Domain":     cfg.DNS.Domain,
+			"AuthDomain": cfg.DNS.AuthDomain,
+		},
+		Wait:           true,
+		TimeoutSeconds: 600,
+	}); err != nil {
+		return err
+	}
+
+	data := map[string]interface{}{
+		"Domain":     cfg.DNS.Domain,
+		"AuthDomain": cfg.DNS.AuthDomain,
+	}
+	if err := shared.ApplyTemplate(ctx, "resources/core/deployment/tier2/victoriametrics/httproutes/grafana.yaml", data); err != nil {
+		return err
+	}
 
 	return nil
 }
 
 // deployWithProgress is a helper to deploy a Helm chart with progress tracking.
-func deployWithProgress(ctx context.Context, progress *ui.StepProgress, step int, opts shared.HelmDeploymentOptions, dynamicValuesFn func(context.Context) (map[string]interface{}, error)) error {
-	progress.StartStep(step)
-
+func deployWithProgress(ctx context.Context, opts shared.HelmDeploymentOptions, dynamicValuesFn func(context.Context) (map[string]interface{}, error)) error {
 	if dynamicValuesFn != nil {
 		dynamicValues, err := dynamicValuesFn(ctx)
 		if err != nil {
-			progress.FailStep(step, err)
 			return err
 		}
 		if opts.Values == nil {
@@ -580,11 +520,9 @@ func deployWithProgress(ctx context.Context, progress *ui.StepProgress, step int
 	}
 
 	if err := shared.DeployHelmChart(ctx, opts); err != nil {
-		progress.FailStep(step, err)
 		return err
 	}
 
-	progress.CompleteStep(step)
 	return nil
 }
 
@@ -633,10 +571,11 @@ func GetCredentials(ctx context.Context) *DeployResult {
 	}
 
 	// Build result with all Keycloak users
-	// admin password comes from secret, developer and user have static passwords
+	// cluster-admin is for master realm, others are for nova realm
 	return &DeployResult{
 		KeycloakUsers: []KeycloakUser{
-			{Username: "admin", Password: adminPassword, Group: "ADMIN"},
+			{Username: "cluster-admin", Password: adminPassword, Group: "MASTER_ADMIN"},
+			{Username: "admin", Password: "admin", Group: "ADMIN"},
 			{Username: "developer", Password: "developer", Group: "DEVELOPER"},
 			{Username: "user", Password: "user", Group: "USER"},
 		},
