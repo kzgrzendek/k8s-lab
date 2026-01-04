@@ -25,6 +25,8 @@ func TestDefault(t *testing.T) {
 
 	assert.False(t, cfg.State.Initialized)
 	assert.Equal(t, 0, cfg.State.LastDeployedTier)
+
+	assert.Equal(t, "", cfg.LLM.HfToken)
 }
 
 func TestSaveAndLoad(t *testing.T) {

@@ -34,8 +34,8 @@ func StartCluster(ctx context.Context, cfg *config.Config) error {
 		"--extra-config", "kube-proxy.skip-headers=true",
 	}
 
-	// Add GPU support if configured
-	if cfg.Minikube.GPUs != "" {
+	// Add GPU support only in GPU mode (not in forced CPU mode)
+	if cfg.IsGPUMode() && cfg.Minikube.GPUs != "" {
 		args = append(args, "--gpus", cfg.Minikube.GPUs)
 	}
 

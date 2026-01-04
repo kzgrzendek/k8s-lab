@@ -91,45 +91,124 @@ func DeployTier0(ctx context.Context, cfg *config.Config) error {
 	}
 	ui.Success("Control-plane nodes tainted")
 
-	// Step 4: Configure GPU operator
-	if cfg.Minikube.GPUs != "" && cfg.Minikube.GPUs != "none" {
-		ui.Step("Configuring GPU operator...")
+	// Step 4: Configure node types and GPU operator
+	ui.Step("Configuring node types and GPU operator...")
 
-		// Disable GPU operands on all nodes
-		if err := k8s.LabelAllNodes(ctx, "nvidia.com/gpu.deploy.operands=false"); err != nil {
-			ui.Warn("Failed to disable GPU operands cluster-wide: %v", err)
+	// Get list of worker nodes
+	var workerNodes []string
+	var masterNode string
+	for _, node := range allNodes {
+		isControlPlane, err := k8s.IsNodeControlPlane(ctx, node)
+		if err != nil {
+			continue
+		}
+		if isControlPlane {
+			masterNode = node
 		} else {
-			ui.Info("Disabled GPU operands cluster-wide")
+			workerNodes = append(workerNodes, node)
 		}
+	}
 
-		// Find a worker node (prefer non-control-plane)
-		var targetNode string
-		for _, node := range allNodes {
-			isControlPlane, err := k8s.IsNodeControlPlane(ctx, node)
-			if err != nil {
-				continue
+	if cfg.IsGPUMode() {
+		// GPU MODE
+		if len(workerNodes) > 0 {
+			// Multi-node GPU cluster: elect one GPU worker, rest are CPU
+			ui.Info("GPU mode: multi-node cluster")
+
+			// Disable GPU operands on all nodes first
+			if err := k8s.LabelAllNodes(ctx, "nvidia.com/gpu.deploy.operands=false"); err != nil {
+				ui.Warn("Failed to disable GPU operands cluster-wide: %v", err)
 			}
-			if !isControlPlane {
-				targetNode = node
-				break
-			}
-		}
 
-		// If no worker node found, use first node
-		if targetNode == "" && len(allNodes) > 0 {
-			targetNode = allNodes[0]
-		}
-
-		// Enable GPU operands on target node
-		if targetNode != "" {
-			if err := k8s.LabelNode(ctx, targetNode, "nvidia.com/gpu.deploy.operands", true); err != nil {
-				ui.Warn("Failed to enable GPU operands on %s: %v", targetNode, err)
+			// Elect first worker as GPU node
+			gpuNode := workerNodes[0]
+			if err := k8s.LabelNode(ctx, gpuNode, "nova.local/node-type=gpu-nvidia", false); err != nil {
+				ui.Warn("Failed to label %s as GPU node: %v", gpuNode, err)
 			} else {
-				ui.Info("Enabled GPU operands on node: %s", targetNode)
+				ui.Info("Labeled %s as GPU node", gpuNode)
+			}
+
+			// Enable GPU operands on GPU node
+			if err := k8s.LabelNode(ctx, gpuNode, "nvidia.com/gpu.deploy.operands=true", false); err != nil {
+				ui.Warn("Failed to enable GPU operands on %s: %v", gpuNode, err)
+			}
+
+			// Label remaining workers as CPU
+			for i := 1; i < len(workerNodes); i++ {
+				if err := k8s.LabelNode(ctx, workerNodes[i], "nova.local/node-type=cpu", false); err != nil {
+					ui.Warn("Failed to label %s as CPU node: %v", workerNodes[i], err)
+				} else {
+					ui.Info("Labeled %s as CPU node", workerNodes[i])
+				}
+			}
+		} else {
+			// Single-node GPU cluster: use master as GPU, remove taint
+			ui.Info("GPU mode: single-node cluster")
+
+			if masterNode != "" {
+				// Label master as GPU
+				if err := k8s.LabelNode(ctx, masterNode, "nova.local/node-type=gpu-nvidia", false); err != nil {
+					ui.Warn("Failed to label %s as GPU node: %v", masterNode, err)
+				} else {
+					ui.Info("Labeled %s as GPU node", masterNode)
+				}
+
+				// Enable GPU operands on master
+				if err := k8s.LabelNode(ctx, masterNode, "nvidia.com/gpu.deploy.operands=true", false); err != nil {
+					ui.Warn("Failed to enable GPU operands on %s: %v", masterNode, err)
+				}
+
+				// Remove taint from master to allow workloads
+				if err := k8s.RemoveTaint(ctx, masterNode, "node-role.kubernetes.io/control-plane"); err != nil {
+					ui.Warn("Failed to remove control-plane taint from %s: %v", masterNode, err)
+				} else {
+					ui.Info("Removed control-plane taint from %s", masterNode)
+				}
+				if err := k8s.RemoveTaint(ctx, masterNode, "node-role.kubernetes.io/master"); err != nil {
+					// This might fail on newer K8s versions, which is expected
+					ui.Debug("Master taint removal from %s (expected on newer K8s)", masterNode)
+				}
 			}
 		}
+		ui.Success("GPU mode configured")
+	} else {
+		// CPU MODE
+		if len(workerNodes) > 0 {
+			// Multi-node CPU cluster: label all workers as CPU
+			ui.Info("CPU mode: multi-node cluster")
 
-		ui.Success("GPU operator configured")
+			for _, worker := range workerNodes {
+				if err := k8s.LabelNode(ctx, worker, "nova.local/node-type=cpu", false); err != nil {
+					ui.Warn("Failed to label %s as CPU node: %v", worker, err)
+				} else {
+					ui.Info("Labeled %s as CPU node", worker)
+				}
+			}
+		} else {
+			// Single-node CPU cluster: label master as CPU, remove taint
+			ui.Info("CPU mode: single-node cluster")
+
+			if masterNode != "" {
+				// Label master as CPU
+				if err := k8s.LabelNode(ctx, masterNode, "nova.local/node-type=cpu", false); err != nil {
+					ui.Warn("Failed to label %s as CPU node: %v", masterNode, err)
+				} else {
+					ui.Info("Labeled %s as CPU node", masterNode)
+				}
+
+				// Remove taint from master to allow workloads
+				if err := k8s.RemoveTaint(ctx, masterNode, "node-role.kubernetes.io/control-plane"); err != nil {
+					ui.Warn("Failed to remove control-plane taint from %s: %v", masterNode, err)
+				} else {
+					ui.Info("Removed control-plane taint from %s", masterNode)
+				}
+				if err := k8s.RemoveTaint(ctx, masterNode, "node-role.kubernetes.io/master"); err != nil {
+					// This might fail on newer K8s versions, which is expected
+					ui.Debug("Master taint removal from %s (expected on newer K8s)", masterNode)
+				}
+			}
+		}
+		ui.Success("CPU mode configured")
 	}
 
 	ui.Header("Tier 0 Deployment Complete")

@@ -44,20 +44,16 @@ type HelmDeploymentOptions struct {
 
 // DeployHelmChart deploys a Helm chart with common error handling and progress tracking.
 // This function encapsulates the common pattern of:
-//  1. Creating namespace (if needed)
-//  2. Loading values from YAML file
-//  3. Merging with additional values
-//  4. Creating Helm client
-//  5. Installing/upgrading the chart
+//  1. Loading values from YAML file
+//  2. Merging with additional values
+//  3. Creating Helm client
+//  4. Installing/upgrading the chart (with optional namespace creation via Helm)
 //
 // Returns an error if any step fails.
+// Note: Namespace creation is handled by the Helm SDK if CreateNamespace is true.
 func DeployHelmChart(ctx context.Context, opts HelmDeploymentOptions) error {
-	// Create namespace if requested
-	if opts.CreateNamespace {
-		if err := k8s.CreateNamespace(ctx, opts.Namespace); err != nil {
-			return fmt.Errorf("failed to create namespace %s: %w", opts.Namespace, err)
-		}
-	}
+	// Note: We don't create the namespace here anymore - let the Helm SDK handle it
+	// This avoids redundant namespace creation and potential race conditions
 
 	// Load values from file if specified
 	var values map[string]interface{}
@@ -123,6 +119,7 @@ func DeployHelmChart(ctx context.Context, opts HelmDeploymentOptions) error {
 		opts.Wait,
 		opts.TimeoutSeconds,
 		opts.ReuseValues,
+		opts.CreateNamespace,
 	); err != nil {
 		return fmt.Errorf("failed to install %s: %w", opts.ReleaseName, err)
 	}

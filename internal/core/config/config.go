@@ -9,21 +9,15 @@ import (
 	"sigs.k8s.io/yaml"
 )
 
-// Config represents the NOVA configuration.
-type Config struct {
-	Minikube MinikubeConfig `json:"minikube" yaml:"minikube"`
-	DNS      DNSConfig      `json:"dns" yaml:"dns"`
-	State    StateConfig    `json:"state" yaml:"state"`
-}
-
 // MinikubeConfig holds Minikube cluster settings.
 type MinikubeConfig struct {
 	CPUs              int    `json:"cpus" yaml:"cpus"`
 	Memory            int    `json:"memory" yaml:"memory"`
-	Nodes             int    `json:"nodes" yaml:"nodes"`
+	Nodes             int    `json:"nodes" yaml:"nodes"`           // Total nodes (1 master + N workers)
 	KubernetesVersion string `json:"kubernetesVersion" yaml:"kubernetesVersion"`
 	Driver            string `json:"driver" yaml:"driver"`
-	GPUs              string `json:"gpus" yaml:"gpus"`
+	GPUs              string `json:"gpus" yaml:"gpus"`            // GPU passthrough mode ("all", "none", "disabled")
+	CPUModeForced     bool   `json:"cpuModeForced" yaml:"cpuModeForced"` // Force CPU mode even if GPU available
 }
 
 // DNSConfig holds DNS settings.
@@ -37,6 +31,19 @@ type DNSConfig struct {
 type StateConfig struct {
 	Initialized      bool `json:"initialized" yaml:"initialized"`
 	LastDeployedTier int  `json:"lastDeployedTier" yaml:"lastDeployedTier"`
+}
+
+// LLMConfig holds LLM-related settings.
+type LLMConfig struct {
+	HfToken string `json:"hfToken" yaml:"hfToken"` // Optional Hugging Face token for model downloads
+}
+
+// Config represents the NOVA configuration.
+type Config struct {
+	Minikube MinikubeConfig `json:"minikube" yaml:"minikube"`
+	DNS      DNSConfig      `json:"dns" yaml:"dns"`
+	State    StateConfig    `json:"state" yaml:"state"`
+	LLM      LLMConfig      `json:"llm" yaml:"llm"`
 }
 
 // ConfigDir returns the NOVA configuration directory.
@@ -63,6 +70,7 @@ func Default() *Config {
 			KubernetesVersion: "v1.33.5",
 			Driver:            "docker",
 			GPUs:              "all",
+			CPUModeForced:     false, // Auto-detect GPU by default
 		},
 		DNS: DNSConfig{
 			Domain:     "nova.local",
@@ -72,6 +80,9 @@ func Default() *Config {
 		State: StateConfig{
 			Initialized:      false,
 			LastDeployedTier: 0,
+		},
+		LLM: LLMConfig{
+			HfToken: "", // Empty by default
 		},
 	}
 }
@@ -156,4 +167,20 @@ func (c *Config) Validate() error {
 // HasGPU returns true if GPU support is enabled.
 func (c *Config) HasGPU() bool {
 	return c.Minikube.GPUs != "" && c.Minikube.GPUs != "none" && c.Minikube.GPUs != "disabled"
+}
+
+// IsGPUMode returns true if GPU mode should be used for deployments.
+// GPU mode is enabled only when:
+// - Host has GPU configured (GPUs != "" && != "none" && != "disabled")
+// - AND CPU mode is NOT forced
+func (c *Config) IsGPUMode() bool {
+	return c.HasGPU() && !c.Minikube.CPUModeForced
+}
+
+// WorkerNodes returns the number of worker nodes (total nodes - 1 master).
+func (c *Config) WorkerNodes() int {
+	if c.Minikube.Nodes <= 1 {
+		return 0
+	}
+	return c.Minikube.Nodes - 1
 }

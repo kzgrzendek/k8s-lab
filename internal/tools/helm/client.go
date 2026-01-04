@@ -107,14 +107,17 @@ func (c *Client) InstallOrUpgradeRelease(ctx context.Context, releaseName, chart
 // InstallOrUpgradeReleaseWithTimeout installs or upgrades a Helm release with a custom timeout.
 // timeout is in seconds. Default Helm timeout is 300s (5 minutes).
 func (c *Client) InstallOrUpgradeReleaseWithTimeout(ctx context.Context, releaseName, chartRef, namespace string, values map[string]interface{}, wait bool, timeoutSeconds int) error {
-	return c.InstallOrUpgradeReleaseWithOptions(ctx, releaseName, chartRef, namespace, values, wait, timeoutSeconds, false)
+	return c.InstallOrUpgradeReleaseWithOptions(ctx, releaseName, chartRef, namespace, values, wait, timeoutSeconds, false, false)
 }
 
 // InstallOrUpgradeReleaseWithOptions installs or upgrades a Helm release with additional options.
 // Handles both OCI (oci://) and traditional repository charts transparently.
-func (c *Client) InstallOrUpgradeReleaseWithOptions(ctx context.Context, releaseName, chartRef, namespace string, values map[string]interface{}, wait bool, timeoutSeconds int, reuseValues bool) error {
-	// Initialize Helm CLI settings fresh for this operation
-	settings := cli.New()
+func (c *Client) InstallOrUpgradeReleaseWithOptions(ctx context.Context, releaseName, chartRef, namespace string, values map[string]interface{}, wait bool, timeoutSeconds int, reuseValues bool, createNamespace bool) error {
+	// Use client's settings (which may have namespace set) but override if namespace param is provided
+	settings := c.settings
+	if namespace != "" {
+		settings.SetNamespace(namespace)
+	}
 
 	// Create registry client for OCI chart support
 	// ClientOptEnableCache is CRUCIAL for proper OCI mediatype handling
@@ -138,7 +141,7 @@ func (c *Client) InstallOrUpgradeReleaseWithOptions(ctx context.Context, release
 	if err != nil {
 		// Release doesn't exist, install it
 		if strings.Contains(err.Error(), "not found") {
-			return c.installRelease(ctx, settings, actionConfig, releaseName, chartRef, namespace, values, wait, timeoutSeconds)
+			return c.installRelease(ctx, settings, actionConfig, releaseName, chartRef, namespace, values, wait, timeoutSeconds, createNamespace)
 		}
 		return fmt.Errorf("failed to check release status: %w", err)
 	}
@@ -149,14 +152,16 @@ func (c *Client) InstallOrUpgradeReleaseWithOptions(ctx context.Context, release
 
 // installRelease installs a new Helm release.
 // Helm v4 handles OCI charts natively without explicit registry client configuration.
-func (c *Client) installRelease(ctx context.Context, settings *cli.EnvSettings, actionConfig *action.Configuration, releaseName, chartRef, namespace string, values map[string]interface{}, wait bool, timeoutSeconds int) error {
+func (c *Client) installRelease(ctx context.Context, settings *cli.EnvSettings, actionConfig *action.Configuration, releaseName, chartRef, namespace string, values map[string]interface{}, wait bool, timeoutSeconds int, createNamespace bool) error {
 	client := action.NewInstall(actionConfig)
 	client.ReleaseName = releaseName
 	client.Namespace = namespace
-	client.CreateNamespace = true
+	client.CreateNamespace = createNamespace
 	if wait {
 		client.WaitStrategy = kube.StatusWatcherStrategy
 	}
+
+
 	client.Timeout = time.Duration(timeoutSeconds) * time.Second
 
 	// Locate chart (polymorphic: handles OCI and HTTP transparently)

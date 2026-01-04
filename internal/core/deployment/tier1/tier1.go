@@ -194,40 +194,37 @@ func deployCilium(ctx context.Context, cfg *config.Config) error {
 		return fmt.Errorf("failed to label kube-system namespace for routing: %w", err)
 	}
 
-	// Function to generate dynamic values for Cilium
-	dynamicValuesFn := func(ctx context.Context) (map[string]interface{}, error) {
-		// Get minikube IP for Cilium configuration
-		ui.Info("Getting Minikube control plane IP...")
-		minikubeIP, err := minikube.GetIP(ctx)
-		if err != nil {
-			return nil, fmt.Errorf("failed to get minikube IP: %w", err)
-		}
-
-		// Get API server port from kubectl
-		ui.Info("Getting API server port...")
-		apiPort, err := minikube.GetAPIServerPort(ctx)
-		if err != nil {
-			return nil, fmt.Errorf("failed to get API server port: %w", err)
-		}
-
-		// Create dynamic overrides for runtime configuration
-		// Note: We MUST set k8sServiceHost and k8sServicePort for Cilium to work properly in Minikube
-		ui.Info("Installing Cilium CNI with API server %s:%s (may take a few minutes)...", minikubeIP, apiPort)
-		return map[string]interface{}{
-			"k8sServiceHost": minikubeIP,
-			"k8sServicePort": apiPort,
-		}, nil
+	// Get minikube IP for Cilium configuration
+	ui.Info("Getting Minikube control plane IP...")
+	minikubeIP, err := minikube.GetIP(ctx)
+	if err != nil {
+		return fmt.Errorf("failed to get minikube IP: %w", err)
 	}
 
-	return shared.DeployWithProgress(ctx, shared.HelmDeploymentOptions{
+	// Get API server port from kubectl
+	ui.Info("Getting API server port...")
+	apiPort, err := minikube.GetAPIServerPort(ctx)
+	if err != nil {
+		return fmt.Errorf("failed to get API server port: %w", err)
+	}
+
+	// Create dynamic overrides for runtime configuration
+	// Note: We MUST set k8sServiceHost and k8sServicePort for Cilium to work properly in Minikube
+	ui.Info("Installing Cilium CNI with API server %s:%s (may take a few minutes)...", minikubeIP, apiPort)
+
+	return shared.DeployHelmChart(ctx, shared.HelmDeploymentOptions{
 		ReleaseName:     "cilium",
 		ChartRef:        "cilium/cilium",
 		Namespace:       "kube-system",
 		ValuesPath:      "resources/core/deployment/tier1/cilium/values.yaml",
+		Values: map[string]interface{}{
+			"k8sServiceHost": minikubeIP,
+			"k8sServicePort": apiPort,
+		},
 		Wait:            true,
 		TimeoutSeconds:  600,
 		CreateNamespace: true,
-	}, dynamicValuesFn)
+	})
 }
 
 func deployLocalPathStorage(ctx context.Context, cfg *config.Config) error {
@@ -254,7 +251,7 @@ func deployLocalPathStorage(ctx context.Context, cfg *config.Config) error {
 
 // deployFalco deploys Falco security auditor.
 func deployFalco(ctx context.Context) error {
-	return shared.DeployWithProgress(ctx, shared.HelmDeploymentOptions{
+	return shared.DeployHelmChart(ctx, shared.HelmDeploymentOptions{
 		ReleaseName:     "falco",
 		ChartRef:        "falcosecurity/falco",
 		Namespace:       "falco",
@@ -263,7 +260,7 @@ func deployFalco(ctx context.Context) error {
 		TimeoutSeconds:  600,
 		InfoMessage:     "Installing Falco Security (may take a few minutes)...",
 		CreateNamespace: true,
-	}, nil)
+	})
 }
 
 func deployGPUOperator(ctx context.Context, cfg *config.Config) error {
@@ -282,7 +279,7 @@ func deployGPUOperator(ctx context.Context, cfg *config.Config) error {
 		return nil
 	}
 
-	return shared.DeployWithProgress(ctx, shared.HelmDeploymentOptions{
+	return shared.DeployHelmChart(ctx, shared.HelmDeploymentOptions{
 		ReleaseName:     "gpu-operator",
 		ChartRef:        "nvidia/gpu-operator",
 		Namespace:       "nvidia-gpu-operator",
@@ -292,7 +289,7 @@ func deployGPUOperator(ctx context.Context, cfg *config.Config) error {
 		InfoMessage:     "Installing NVIDIA GPU Operator (may take several minutes)...",
 		SuccessMessage:  "NVIDIA GPU Operator deployed (using host drivers)",
 		CreateNamespace: true,
-	}, nil)
+	})
 }
 
 func deployCertManager(ctx context.Context, cfg *config.Config) error {

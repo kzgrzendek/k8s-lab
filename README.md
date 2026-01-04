@@ -75,6 +75,9 @@ nova start
 nova start --tier=1  # Infrastructure only
 nova start --tier=2  # Infrastructure + Platform
 
+# Optional: Provide Hugging Face token for faster model downloads (tier 3)
+nova start --hf-token=YOUR_HF_TOKEN
+
 # Check cluster status
 nova kubectl get nodes
 nova kubectl get pods -A

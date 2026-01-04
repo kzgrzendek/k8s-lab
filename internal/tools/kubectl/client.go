@@ -105,6 +105,46 @@ func TaintNode(ctx context.Context, nodeName, key, value, effect string) error {
 	return nil
 }
 
+// RemoveTaint removes a taint from a Kubernetes node by its key.
+func RemoveTaint(ctx context.Context, nodeName, key string) error {
+	clientset, err := getClient()
+	if err != nil {
+		return err
+	}
+
+	// Get the node
+	node, err := clientset.CoreV1().Nodes().Get(ctx, nodeName, metav1.GetOptions{})
+	if err != nil {
+		return fmt.Errorf("failed to get node %s: %w", nodeName, err)
+	}
+
+	// Find and remove the taint
+	var newTaints []corev1.Taint
+	found := false
+	for _, taint := range node.Spec.Taints {
+		if taint.Key != key {
+			newTaints = append(newTaints, taint)
+		} else {
+			found = true
+		}
+	}
+
+	// If taint wasn't found, no need to update
+	if !found {
+		return nil
+	}
+
+	node.Spec.Taints = newTaints
+
+	// Update the node
+	_, err = clientset.CoreV1().Nodes().Update(ctx, node, metav1.UpdateOptions{})
+	if err != nil {
+		return fmt.Errorf("failed to remove taint from node %s: %w", nodeName, err)
+	}
+
+	return nil
+}
+
 // LabelNode adds or removes a label on a Kubernetes node.
 // For adding: label should be "key=value"
 // For removing: set remove=true and label should be just "key"

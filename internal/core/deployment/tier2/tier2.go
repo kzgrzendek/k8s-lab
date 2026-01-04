@@ -171,7 +171,7 @@ func DeployTier2(ctx context.Context, cfg *config.Config) (*DeployResult, error)
 
 // deployKyverno deploys Kyverno policy engine.
 func deployKyverno(ctx context.Context) error {
-	return shared.DeployWithProgress(ctx, shared.HelmDeploymentOptions{
+	return shared.DeployHelmChart(ctx, shared.HelmDeploymentOptions{
 		ReleaseName:     "kyverno",
 		ChartRef:        "kyverno/kyverno",
 		Namespace:       kyvernoNamespace,
@@ -179,7 +179,7 @@ func deployKyverno(ctx context.Context) error {
 		Wait:            true,
 		TimeoutSeconds:  300,
 		CreateNamespace: true,
-	}, nil)
+	})
 }
 
 // deployKeycloakOperator deploys Keycloak operator CRDs and controller.
@@ -465,26 +465,26 @@ func deployVictoriaLogsServer(ctx context.Context) error {
 		return err
 	}
 
-	return shared.DeployWithProgress(ctx, shared.HelmDeploymentOptions{
+	return shared.DeployHelmChart(ctx, shared.HelmDeploymentOptions{
 		ReleaseName:    "vls",
 		ChartRef:       "vm/victoria-logs-single",
 		Namespace:      victorialogsNamespace,
 		ValuesPath:     "resources/core/deployment/tier2/victorialogs/vlogs-values.yaml",
 		Wait:           true,
 		TimeoutSeconds: 300,
-	}, nil)
+	})
 }
 
 // deployVictoriaLogsCollector deploys VLC.
 func deployVictoriaLogsCollector(ctx context.Context) error {
-	return shared.DeployWithProgress(ctx, shared.HelmDeploymentOptions{
+	return shared.DeployHelmChart(ctx, shared.HelmDeploymentOptions{
 		ReleaseName:    "collector",
 		ChartRef:       "vm/victoria-logs-collector",
 		Namespace:      victorialogsNamespace,
 		ValuesPath:     "resources/core/deployment/tier2/victorialogs/collector-values.yaml",
 		Wait:           true,
 		TimeoutSeconds: 300,
-	}, nil)
+	})
 }
 
 // deployVictoriaMetricsStack deploys VM Stack with OIDC.

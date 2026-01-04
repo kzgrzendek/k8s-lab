@@ -14,6 +14,9 @@ const (
 	HelmRepoVictoriaMetrics = "https://victoriametrics.github.io/helm-charts/"
 	HelmRepoEnvoyGateway    = "oci://docker.io/envoyproxy/gateway-helm"
 	HelmRepoEnvoyAIGateway  = "oci://docker.io/envoyproxy/ai-gateway-helm"
+	HelmRepoAPHPHelix       = "https://aphp.github.io/HELIX"
+	HelmRepoLLMD            = "https://llm-d-incubation.github.io/llm-d-modelservice"
+	HelmRepoOpenWebUI       = "https://helm.openwebui.com/"
 )
 
 // --- Kubernetes Manifest URLs ---
@@ -78,6 +81,11 @@ const (
 	NamespaceKeycloak        = "keycloak"
 	NamespaceVictoriaLogs    = "victorialogs"
 	NamespaceVictoriaMetrics = "victoriametrics"
+
+	// Tier 3 namespaces
+	NamespaceLLMD      = "llmd"
+	NamespaceOpenWebUI = "openwebui"
+	NamespaceHelix     = "helix"
 )
 
 // --- Storage Classes ---
