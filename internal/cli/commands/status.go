@@ -180,7 +180,7 @@ func displayDeploymentsStatus(deployments *status.DeploymentsStatus, verbose boo
 
 	// Display Tier 2 credentials if available
 	if deployments.Tier2Credentials != nil && len(deployments.Tier2Credentials.KeycloakUsers) > 0 {
-		displayKeycloakCredentials(deployments.Tier2Credentials, cfg)
+		DisplayKeycloakCredentials(deployments.Tier2Credentials, cfg)
 	}
 }
 

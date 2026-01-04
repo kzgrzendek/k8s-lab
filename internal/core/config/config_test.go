@@ -20,7 +20,7 @@ func TestDefault(t *testing.T) {
 	assert.Equal(t, "all", cfg.Minikube.GPUs)
 
 	assert.Equal(t, "nova.local", cfg.DNS.Domain)
-	assert.Equal(t, "auth.nova.local", cfg.DNS.AuthDomain)
+	assert.Equal(t, "auth.local", cfg.DNS.AuthDomain)
 	assert.Equal(t, 30053, cfg.DNS.Bind9Port)
 
 	assert.False(t, cfg.State.Initialized)

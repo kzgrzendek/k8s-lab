@@ -203,56 +203,30 @@ func (c *Checker) getNodeStatuses() ([]NodeStatus, error) {
 func (c *Checker) GetHostServicesStatus() *HostServicesStatus {
 	status := &HostServicesStatus{}
 
-	// Check both services concurrently
-	type serviceResult struct {
-		isBind9 bool
-		running bool
+	// Check Bind9
+	bind9Running := bind9.IsRunning(c.ctx)
+	status.Bind9 = ComponentStatus{
+		Name:    "Bind9 DNS",
+		Healthy: bind9Running,
+		Details: fmt.Sprintf("Port: %d", c.cfg.DNS.Bind9Port),
+	}
+	if bind9Running {
+		status.Bind9.Status = "running"
+	} else {
+		status.Bind9.Status = "stopped"
 	}
 
-	resultChan := make(chan serviceResult, 2)
-
-	// Check Bind9 concurrently
-	go func() {
-		resultChan <- serviceResult{
-			isBind9: true,
-			running: bind9.IsRunning(c.ctx),
-		}
-	}()
-
-	// Check NGINX concurrently
-	go func() {
-		resultChan <- serviceResult{
-			isBind9: false,
-			running: nginx.IsRunning(c.ctx),
-		}
-	}()
-
-	// Collect results
-	for i := 0; i < 2; i++ {
-		result := <-resultChan
-		if result.isBind9 {
-			status.Bind9 = ComponentStatus{
-				Name:    "Bind9 DNS",
-				Healthy: result.running,
-				Details: fmt.Sprintf("Port: %d", c.cfg.DNS.Bind9Port),
-			}
-			if result.running {
-				status.Bind9.Status = "running"
-			} else {
-				status.Bind9.Status = "stopped"
-			}
-		} else {
-			status.NGINX = ComponentStatus{
-				Name:    "NGINX Gateway",
-				Healthy: result.running,
-				Details: "HTTP:80, HTTPS:443",
-			}
-			if result.running {
-				status.NGINX.Status = "running"
-			} else {
-				status.NGINX.Status = "stopped"
-			}
-		}
+	// Check NGINX
+	nginxRunning := nginx.IsRunning(c.ctx)
+	status.NGINX = ComponentStatus{
+		Name:    "NGINX Gateway",
+		Healthy: nginxRunning,
+		Details: "HTTP:80, HTTPS:443",
+	}
+	if nginxRunning {
+		status.NGINX.Status = "running"
+	} else {
+		status.NGINX.Status = "stopped"
 	}
 
 	return status

@@ -6,7 +6,6 @@ import (
 	"os"
 	"path/filepath"
 
-	"github.com/spf13/viper"
 	"sigs.k8s.io/yaml"
 )
 
@@ -126,26 +125,6 @@ func (c *Config) Save() error {
 	return nil
 }
 
-// Get returns a config value from Viper by key.
-func Get(key string) interface{} {
-	return viper.Get(key)
-}
-
-// GetString returns a string config value from Viper.
-func GetString(key string) string {
-	return viper.GetString(key)
-}
-
-// GetInt returns an int config value from Viper.
-func GetInt(key string) int {
-	return viper.GetInt(key)
-}
-
-// GetBool returns a bool config value from Viper.
-func GetBool(key string) bool {
-	return viper.GetBool(key)
-}
-
 // Validate checks if the configuration is valid.
 func (c *Config) Validate() error {
 	// Validate node count
@@ -172,16 +151,6 @@ func (c *Config) Validate() error {
 	}
 
 	return nil
-}
-
-// IsSingleNode returns true if configured for single-node deployment.
-func (c *Config) IsSingleNode() bool {
-	return c.Minikube.Nodes == 1
-}
-
-// IsMultiNode returns true if configured for multi-node deployment.
-func (c *Config) IsMultiNode() bool {
-	return c.Minikube.Nodes > 1
 }
 
 // HasGPU returns true if GPU support is enabled.

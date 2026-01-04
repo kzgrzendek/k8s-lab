@@ -128,7 +128,6 @@ problems.
 | `nova status [-v]`           | Show status of all components. `-v` for verbose output         |
 | `nova export-logs [-o DIR]`  | Export all logs to timestamped zip archive                     |
 | `nova kubectl ...`           | Run kubectl against NOVA cluster                               |
-| `nova helm ...`              | Run helm commands against NOVA cluster                         |
 | `nova version`               | Show version information                                       |
 
 ## Architecture
@@ -221,7 +220,7 @@ dns:
 | Service    | URL                               | Credentials                       |
 |------------|-----------------------------------|-----------------------------------|
 | Dashboard  | `https://dashboard.nova.local`    | -                                 |
-| Keycloak   | `https://auth.nova.local`     | `admin` / (shown after deploy)    |
+| Keycloak   | `https://auth.nova.local`         | `admin` / (shown after deploy)    |
 | Hubble UI  | `https://hubble.nova.local`       | -                                 |
 | Grafana    | `https://grafana.nova.local`      | `admin` / `admin`                 |
 | Open WebUI | `https://webui.nova.local`        | Create account                    |
@@ -324,6 +323,31 @@ mage install
 # Clean build artifacts
 mage clean
 ```
+
+### Testing
+
+```bash
+# Run all tests
+go test ./...
+
+# Run with coverage
+go test ./... -cover
+
+# Run specific package
+go test ./internal/core/config/...
+
+# Generate coverage report
+mage testCoverage
+# Opens coverage/coverage.html
+```
+
+### Code Quality Standards
+
+- All new features must include tests
+- Use table-driven tests for multiple test cases
+- Mock external dependencies (filesystem, network, kubectl)
+- Follow DRY, KISS, YAGNI principles
+- Minimum 60% coverage for new code
 
 ### Project Structure
 

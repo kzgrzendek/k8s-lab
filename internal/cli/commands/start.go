@@ -179,13 +179,13 @@ func runStart(cmd *cobra.Command, targetTier int) error {
 	}
 
 	// Check if developer context exists and switch to it (if tier >= 1)
-	if targetTier >= 1 && k8s.ContextExists(cmd.Context(), "developer") {
+	if targetTier >= 1 && k8s.ContextExists(cmd.Context(), "cluster-admin") {
 		ui.Info("")
-		ui.Info("Switching to developer context...")
-		if err := k8s.SwitchContext(cmd.Context(), "developer"); err != nil {
-			ui.Warn("Failed to switch to developer context: %v", err)
+		ui.Info("Switching to cluster-admin context...")
+		if err := k8s.SwitchContext(cmd.Context(), "cluster-admin"); err != nil {
+			ui.Warn("Failed to switch to cluster-admin context: %v", err)
 		} else {
-			ui.Success("Switched to kubectl context 'developer'")
+			ui.Success("Switched to kubectl context 'cluster-admin'")
 		}
 	}
 
@@ -224,7 +224,7 @@ func displayDeploymentSummary(cfg *config.Config, targetTier int, tier2Result *t
 
 	// Display Keycloak credentials if Tier 2 was deployed
 	if tier2Result != nil && len(tier2Result.KeycloakUsers) > 0 {
-		displayKeycloakCredentials(tier2Result, cfg)
+		DisplayKeycloakCredentials(tier2Result, cfg)
 	}
 
 	// Show developer context info

@@ -42,13 +42,6 @@ func (l *Logger) SetLevel(level LogLevel) {
 	l.level = level
 }
 
-// SetOutput changes the output writer.
-func (l *Logger) SetOutput(w io.Writer) {
-	l.mu.Lock()
-	defer l.mu.Unlock()
-	l.output = w
-}
-
 // Debugf logs a debug message.
 func (l *Logger) Debugf(format string, args ...interface{}) {
 	if l.level <= LevelDebug {

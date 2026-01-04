@@ -171,7 +171,7 @@ func DeployTier2(ctx context.Context, cfg *config.Config) (*DeployResult, error)
 
 // deployKyverno deploys Kyverno policy engine.
 func deployKyverno(ctx context.Context) error {
-	return deployWithProgress(ctx, shared.HelmDeploymentOptions{
+	return shared.DeployWithProgress(ctx, shared.HelmDeploymentOptions{
 		ReleaseName:     "kyverno",
 		ChartRef:        "kyverno/kyverno",
 		Namespace:       kyvernoNamespace,
@@ -465,7 +465,7 @@ func deployVictoriaLogsServer(ctx context.Context) error {
 		return err
 	}
 
-	return deployWithProgress(ctx, shared.HelmDeploymentOptions{
+	return shared.DeployWithProgress(ctx, shared.HelmDeploymentOptions{
 		ReleaseName:    "vls",
 		ChartRef:       "vm/victoria-logs-single",
 		Namespace:      victorialogsNamespace,
@@ -477,7 +477,7 @@ func deployVictoriaLogsServer(ctx context.Context) error {
 
 // deployVictoriaLogsCollector deploys VLC.
 func deployVictoriaLogsCollector(ctx context.Context) error {
-	return deployWithProgress(ctx, shared.HelmDeploymentOptions{
+	return shared.DeployWithProgress(ctx, shared.HelmDeploymentOptions{
 		ReleaseName:    "collector",
 		ChartRef:       "vm/victoria-logs-collector",
 		Namespace:      victorialogsNamespace,
@@ -553,29 +553,6 @@ func deployVictoriaMetricsStack(ctx context.Context, cfg *config.Config) error {
 		"AuthDomain": cfg.DNS.AuthDomain,
 	}
 	if err := shared.ApplyTemplate(ctx, "resources/core/deployment/tier2/victoriametrics/httproutes/grafana.yaml", data); err != nil {
-		return err
-	}
-
-	return nil
-}
-
-// deployWithProgress is a helper to deploy a Helm chart with progress tracking.
-func deployWithProgress(ctx context.Context, opts shared.HelmDeploymentOptions, dynamicValuesFn func(context.Context) (map[string]interface{}, error)) error {
-	if dynamicValuesFn != nil {
-		dynamicValues, err := dynamicValuesFn(ctx)
-		if err != nil {
-			return err
-		}
-		if opts.Values == nil {
-			opts.Values = dynamicValues
-		} else {
-			for k, v := range dynamicValues {
-				opts.Values[k] = v
-			}
-		}
-	}
-
-	if err := shared.DeployHelmChart(ctx, opts); err != nil {
 		return err
 	}
 

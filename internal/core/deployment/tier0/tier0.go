@@ -46,7 +46,7 @@ func DeployTier0(ctx context.Context, cfg *config.Config) error {
 	}
 
 	clusterMode := "multi-node"
-	if cfg.IsSingleNode() {
+	if cfg.Minikube.Nodes == 1 {
 		clusterMode = "single-node"
 	}
 	ui.Info("Cluster mode: %s (%d node%s)", clusterMode, cfg.Minikube.Nodes, plural(cfg.Minikube.Nodes))

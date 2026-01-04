@@ -12,7 +12,6 @@ const (
 	resolvconfBaseDir = "/etc/resolvconf"
 	resolvconfDir     = "/etc/resolvconf/resolv.conf.d"
 	novaConfFile      = "nova.conf"
-	bind9LocalPort    = 30053
 
 	// systemd-resolved drop-in directory
 	systemdResolvedDir  = "/etc/systemd/resolved.conf.d"

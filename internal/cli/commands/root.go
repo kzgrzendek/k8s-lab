@@ -63,7 +63,6 @@ func init() {
 	rootCmd.AddCommand(newExportLogsCmd())
 	rootCmd.AddCommand(newVersionCmd())
 	rootCmd.AddCommand(newKubectlCmd())
-	rootCmd.AddCommand(newHelmCmd())
 }
 
 // initConfig reads in config file and ENV variables if set.

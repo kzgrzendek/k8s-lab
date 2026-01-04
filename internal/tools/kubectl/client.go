@@ -128,20 +128,8 @@ func LabelNode(ctx context.Context, nodeName, label string, remove bool) error {
 		// Remove the label
 		delete(node.Labels, label)
 	} else {
-		// Parse label (key=value format)
-		// For compatibility with old code, also support just key
-		key := label
-		value := ""
-
-		// Try to split by '='
-		for i, c := range label {
-			if c == '=' {
-				key = label[:i]
-				value = label[i+1:]
-				break
-			}
-		}
-
+		// Parse and apply label
+		key, value := parseLabel(label)
 		node.Labels[key] = value
 	}
 
@@ -152,6 +140,17 @@ func LabelNode(ctx context.Context, nodeName, label string, remove bool) error {
 	}
 
 	return nil
+}
+
+// parseLabel splits a label string into key and value.
+// Supports "key=value" format or just "key" (value becomes empty string).
+func parseLabel(label string) (key, value string) {
+	for i, c := range label {
+		if c == '=' {
+			return label[:i], label[i+1:]
+		}
+	}
+	return label, ""
 }
 
 // LabelAllNodes applies a label to all nodes in the cluster.
@@ -168,15 +167,7 @@ func LabelAllNodes(ctx context.Context, label string) error {
 	}
 
 	// Parse label key and value
-	key := label
-	value := ""
-	for i, c := range label {
-		if c == '=' {
-			key = label[:i]
-			value = label[i+1:]
-			break
-		}
-	}
+	key, value := parseLabel(label)
 
 	// Apply label to each node
 	for _, node := range nodes.Items {

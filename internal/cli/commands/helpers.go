@@ -6,8 +6,9 @@ import (
 	"github.com/kzgrzendek/nova/internal/core/deployment/tier2"
 )
 
-// displayKeycloakCredentials shows all Keycloak user credentials organized by realm and role.
-func displayKeycloakCredentials(credentials *tier2.DeployResult, cfg *config.Config) {
+// DisplayKeycloakCredentials shows all Keycloak user credentials organized by realm and role.
+// Used by start and status commands.
+func DisplayKeycloakCredentials(credentials *tier2.DeployResult, cfg *config.Config) {
 	ui.Info("")
 	ui.Header("Credentials")
 	ui.Info("URL: https://%s", cfg.DNS.AuthDomain)

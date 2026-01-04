@@ -159,31 +159,6 @@ func checkPrerequisites(ctx context.Context) error {
 	return nil
 }
 
-// deployWithProgress is a helper for common Helm deployments within a tier.
-// The dynamicValuesFn parameter is optional and can be used to generate runtime values.
-func deployWithProgress(ctx context.Context, opts shared.HelmDeploymentOptions, dynamicValuesFn func(context.Context) (map[string]interface{}, error)) error {
-	if dynamicValuesFn != nil {
-		dynamicValues, err := dynamicValuesFn(ctx)
-		if err != nil {
-			return err
-		}
-		if opts.Values == nil {
-			opts.Values = dynamicValues
-		} else {
-			// Merge dynamic values with existing values
-			for k, v := range dynamicValues {
-				opts.Values[k] = v
-			}
-		}
-	}
-
-	if err := shared.DeployHelmChart(ctx, opts); err != nil {
-		return err
-	}
-
-	return nil
-}
-
 func addHelmRepos(ctx context.Context) error {
 	repos := map[string]string{
 		"cilium":        constants.HelmRepoCilium,
@@ -244,7 +219,7 @@ func deployCilium(ctx context.Context, cfg *config.Config) error {
 		}, nil
 	}
 
-	return deployWithProgress(ctx, shared.HelmDeploymentOptions{
+	return shared.DeployWithProgress(ctx, shared.HelmDeploymentOptions{
 		ReleaseName:     "cilium",
 		ChartRef:        "cilium/cilium",
 		Namespace:       "kube-system",
@@ -279,7 +254,7 @@ func deployLocalPathStorage(ctx context.Context, cfg *config.Config) error {
 
 // deployFalco deploys Falco security auditor.
 func deployFalco(ctx context.Context) error {
-	return deployWithProgress(ctx, shared.HelmDeploymentOptions{
+	return shared.DeployWithProgress(ctx, shared.HelmDeploymentOptions{
 		ReleaseName:     "falco",
 		ChartRef:        "falcosecurity/falco",
 		Namespace:       "falco",
@@ -307,7 +282,7 @@ func deployGPUOperator(ctx context.Context, cfg *config.Config) error {
 		return nil
 	}
 
-	return deployWithProgress(ctx, shared.HelmDeploymentOptions{
+	return shared.DeployWithProgress(ctx, shared.HelmDeploymentOptions{
 		ReleaseName:     "gpu-operator",
 		ChartRef:        "nvidia/gpu-operator",
 		Namespace:       "nvidia-gpu-operator",
