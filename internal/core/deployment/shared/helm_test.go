@@ -19,7 +19,7 @@ func TestHelmDeploymentOptions_Validation(t *testing.T) {
 				ChartRef:        "repo/chart",
 				Namespace:       "test-namespace",
 				ValuesPath:      "path/to/values.yaml",
-				Values:          map[string]interface{}{"key": "value"},
+				Values:          map[string]any{"key": "value"},
 				Wait:            true,
 				TimeoutSeconds:  600,
 				InfoMessage:     "Installing test",

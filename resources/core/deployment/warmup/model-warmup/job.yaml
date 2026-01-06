@@ -1,0 +1,66 @@
+apiVersion: batch/v1
+kind: Job
+metadata:
+  name: model-warmup-{{.ModelSlug}}
+  namespace: llmd
+  labels:
+    app: model-warmup
+    model: {{.ModelSlug}}
+spec:
+  ttlSecondsAfterFinished: 600
+  backoffLimit: 2
+  template:
+    metadata:
+      labels:
+        app: model-warmup
+        model: {{.ModelSlug}}
+    spec:
+      restartPolicy: OnFailure
+      nodeSelector:
+        nova.local/llmd-node: "true"
+      containers:
+      - name: warmup
+        image: ghcr.io/huggingface/huggingface-cli:latest
+        command: ["/bin/bash", "-c"]
+        args:
+          - |
+            set -e
+            echo "[INFO] Model warmup starting for: {{.Model}}"
+
+            # Check if model already exists
+            if [ -d "/models/model" ] && [ "$(ls -A /models/model)" ]; then
+              echo "[INFO] Model already cached, skipping download"
+              exit 0
+            fi
+
+            echo "[INFO] Downloading model (this may take 10-20 minutes)..."
+            huggingface-cli download "{{.Model}}" \
+              --local-dir /models/model \
+              --local-dir-use-symlinks False \
+              {{if .HfToken}}--token "${HF_TOKEN}"{{end}} \
+              --quiet
+
+            SIZE=$(du -sh /models/model 2>/dev/null | cut -f1 || echo "unknown")
+            echo "[SUCCESS] Model ready (${SIZE})"
+{{if .HfToken}}
+        env:
+        - name: HF_TOKEN
+          valueFrom:
+            secretKeyRef:
+              name: huggingface-token
+              key: token
+{{end}}
+        volumeMounts:
+        - name: models
+          mountPath: /models
+        resources:
+          requests:
+            memory: "2Gi"
+            cpu: "1000m"
+          limits:
+            memory: "4Gi"
+            cpu: "2000m"
+      volumes:
+      - name: models
+        persistentVolumeClaim:
+          claimName: llm-model-{{.ModelSlug}}

@@ -1,0 +1,30 @@
+options {
+    directory "/var/cache/bind";
+    listen-on { any; };
+    forwarders {
+        1.1.1.1;
+        1.0.0.1;
+    };
+    allow-query { any; };
+};
+
+zone "{{ .Domain }}" {
+    type master;
+    file "/etc/bind/zones/db.{{ .Domain }}";
+};
+
+zone "{{ .AuthDomain }}" {
+    type master;
+    file "/etc/bind/zones/db.{{ .AuthDomain }}";
+};
+
+logging {
+    channel query_log {
+        stderr;
+        severity info;
+        print-time yes;
+        print-category yes;
+        print-severity yes;
+    };
+    category queries { query_log; };
+};

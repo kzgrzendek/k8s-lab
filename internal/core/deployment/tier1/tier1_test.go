@@ -22,7 +22,6 @@ func TestCheckPrerequisites(t *testing.T) {
 // TestHelmRepoConfiguration tests Helm repository configuration.
 func TestHelmRepoConfiguration(t *testing.T) {
 	repos := map[string]string{
-		"cilium":        "https://helm.cilium.io/",
 		"nvidia":        "https://helm.ngc.nvidia.com/nvidia",
 		"falcosecurity": "https://falcosecurity.github.io/charts",
 		"jetstack":      "https://charts.jetstack.io",
@@ -44,8 +43,8 @@ func TestHelmRepoConfiguration(t *testing.T) {
 		}
 	}
 
-	// Verify expected repositories are present
-	expectedRepos := []string{"cilium", "nvidia", "falcosecurity", "jetstack", "dandydev"}
+	// Verify expected repositories are present (Cilium moved to tier0)
+	expectedRepos := []string{"nvidia", "falcosecurity", "jetstack", "dandydev"}
 	for _, expected := range expectedRepos {
 		if _, exists := repos[expected]; !exists {
 			t.Errorf("Expected repository %s not found in configuration", expected)
@@ -53,57 +52,13 @@ func TestHelmRepoConfiguration(t *testing.T) {
 	}
 }
 
-// TestCiliumConfiguration tests Cilium CNI configuration values.
-func TestCiliumConfiguration(t *testing.T) {
-	values := map[string]interface{}{
-		"ipam": map[string]interface{}{
-			"mode": "kubernetes",
-		},
-		"kubeProxyReplacement": true,
-		"k8sServiceHost":       "192.168.49.2",
-		"k8sServicePort":       "8443",
-	}
-
-	// Verify IPAM mode
-	if ipam, ok := values["ipam"].(map[string]interface{}); ok {
-		if mode, ok := ipam["mode"].(string); ok {
-			if mode != "kubernetes" {
-				t.Errorf("Expected IPAM mode 'kubernetes', got %s", mode)
-			}
-		} else {
-			t.Error("IPAM mode should be a string")
-		}
-	} else {
-		t.Error("IPAM configuration should be present")
-	}
-
-	// Verify kube-proxy replacement is enabled
-	if kubeProxy, ok := values["kubeProxyReplacement"].(bool); ok {
-		if !kubeProxy {
-			t.Error("kubeProxyReplacement should be enabled")
-		}
-	}
-
-	// Verify k8sServiceHost is set (required for Minikube)
-	if host, exists := values["k8sServiceHost"]; !exists {
-		t.Error("k8sServiceHost must be set for Cilium to work with Minikube")
-	} else if host == "" {
-		t.Error("k8sServiceHost should not be empty")
-	}
-
-	// Verify k8sServicePort is set (required for Minikube)
-	if port, exists := values["k8sServicePort"]; !exists {
-		t.Error("k8sServicePort must be set for Cilium to work with Minikube")
-	} else if port == "" {
-		t.Error("k8sServicePort should not be empty")
-	}
-}
+// Note: TestCiliumConfiguration removed - Cilium CNI is now deployed in tier0
 
 // TestFalcoConfiguration tests Falco security configuration values.
 func TestFalcoConfiguration(t *testing.T) {
-	values := map[string]interface{}{
+	values := map[string]any{
 		"tty": true,
-		"driver": map[string]interface{}{
+		"driver": map[string]any{
 			"kind": "modern_ebpf",
 		},
 	}
@@ -114,7 +69,7 @@ func TestFalcoConfiguration(t *testing.T) {
 	}
 
 	// Verify driver configuration
-	if driver, ok := values["driver"].(map[string]interface{}); ok {
+	if driver, ok := values["driver"].(map[string]any); ok {
 		if kind, ok := driver["kind"].(string); ok {
 			if kind != "modern_ebpf" {
 				t.Errorf("Expected driver kind 'modern_ebpf', got %s", kind)
@@ -129,20 +84,20 @@ func TestFalcoConfiguration(t *testing.T) {
 
 // TestGPUOperatorConfiguration tests NVIDIA GPU operator configuration.
 func TestGPUOperatorConfiguration(t *testing.T) {
-	values := map[string]interface{}{
-		"driver": map[string]interface{}{
+	values := map[string]any{
+		"driver": map[string]any{
 			"enabled": false, // Use host drivers
 		},
-		"toolkit": map[string]interface{}{
+		"toolkit": map[string]any{
 			"enabled": true,
 		},
-		"operator": map[string]interface{}{
+		"operator": map[string]any{
 			"defaultRuntime": "docker",
 		},
 	}
 
 	// Verify driver is disabled (using host drivers)
-	if driver, ok := values["driver"].(map[string]interface{}); ok {
+	if driver, ok := values["driver"].(map[string]any); ok {
 		if enabled, ok := driver["enabled"].(bool); ok {
 			if enabled {
 				t.Error("GPU driver should be disabled (using host drivers)")
@@ -151,7 +106,7 @@ func TestGPUOperatorConfiguration(t *testing.T) {
 	}
 
 	// Verify toolkit is enabled
-	if toolkit, ok := values["toolkit"].(map[string]interface{}); ok {
+	if toolkit, ok := values["toolkit"].(map[string]any); ok {
 		if enabled, ok := toolkit["enabled"].(bool); ok {
 			if !enabled {
 				t.Error("GPU toolkit should be enabled")
@@ -160,7 +115,7 @@ func TestGPUOperatorConfiguration(t *testing.T) {
 	}
 
 	// Verify runtime configuration
-	if operator, ok := values["operator"].(map[string]interface{}); ok {
+	if operator, ok := values["operator"].(map[string]any); ok {
 		if runtime, ok := operator["defaultRuntime"].(string); ok {
 			if runtime != "docker" {
 				t.Errorf("Expected runtime 'docker', got %s", runtime)
@@ -218,15 +173,15 @@ func TestGPUModeDetection(t *testing.T) {
 
 // TestCertManagerConfiguration tests Cert Manager CRD configuration.
 func TestCertManagerConfiguration(t *testing.T) {
-	values := map[string]interface{}{
-		"crds": map[string]interface{}{
+	values := map[string]any{
+		"crds": map[string]any{
 			"enabled": true,
 			"keep":    true,
 		},
 	}
 
 	// Verify CRDs are configured
-	if crds, ok := values["crds"].(map[string]interface{}); ok {
+	if crds, ok := values["crds"].(map[string]any); ok {
 		if enabled, ok := crds["enabled"].(bool); ok {
 			if !enabled {
 				t.Error("CRDs should be enabled for Cert Manager")
@@ -245,7 +200,7 @@ func TestCertManagerConfiguration(t *testing.T) {
 
 // TestRedisConfiguration tests Redis backend configuration for Envoy Gateway.
 func TestRedisConfiguration(t *testing.T) {
-	values := map[string]interface{}{
+	values := map[string]any{
 		"replicas": 1,
 	}
 
@@ -259,17 +214,15 @@ func TestRedisConfiguration(t *testing.T) {
 	}
 }
 
-// TestNamespaceConfiguration tests namespace configuration for all components.
+// TestNamespaceConfiguration tests namespace configuration for tier1 components.
 func TestNamespaceConfiguration(t *testing.T) {
 	expectedNamespaces := map[string]string{
-		"Cilium CNI":         "kube-system",
-		"Local Path Storage": "local-path-storage",
-		"Falco":              "falco",
-		"GPU Operator":       "nvidia-gpu-operator",
-		"Cert Manager":       "cert-manager",
-		"Trust Manager":      "cert-manager",
-		"Envoy AI Gateway":   "envoy-ai-gateway-system",
-		"Envoy Gateway":      "envoy-gateway-system",
+		"Falco":            "falco",
+		"GPU Operator":     "nvidia-gpu-operator",
+		"Cert Manager":     "cert-manager",
+		"Trust Manager":    "cert-manager",
+		"Envoy AI Gateway": "envoy-ai-gateway-system",
+		"Envoy Gateway":    "envoy-gateway-system",
 	}
 
 	for component, namespace := range expectedNamespaces {
@@ -286,22 +239,22 @@ func TestNamespaceConfiguration(t *testing.T) {
 
 // TestDeploymentSteps tests the deployment step configuration.
 func TestDeploymentSteps(t *testing.T) {
+	// Tier 1 steps (cluster basics moved to tier0)
 	steps := []string{
 		"Prerequisites Check",
 		"Helm Repositories",
-		"Cilium CNI",
-		"Local Path Storage",
 		"Falco Security",
 		"NVIDIA GPU Operator",
 		"Cert Manager",
 		"Trust Manager",
 		"Envoy AI Gateway",
 		"Envoy Gateway",
+		"Nova Namespace & RBAC",
 	}
 
-	// Verify we have at least the expected number of steps
-	if len(steps) < 10 {
-		t.Errorf("Expected at least 10 deployment steps, got %d", len(steps))
+	// Verify we have the expected number of steps (9 for tier1)
+	if len(steps) != 9 {
+		t.Errorf("Expected 9 deployment steps for tier1, got %d", len(steps))
 	}
 
 	// Verify all steps have non-empty names
@@ -330,9 +283,8 @@ func TestTimeoutConfiguration(t *testing.T) {
 		minTime   int
 		maxTime   int
 	}{
-		{"Cilium", 600, 300, 900},
 		{"Falco", 600, 300, 900},
-		{"GPU Operator", 600, 300, 900},
+		{"GPU Operator", 1200, 600, 1800},
 		{"Cert Manager", 600, 300, 900},
 		{"Trust Manager", 600, 300, 900},
 		{"Envoy AI Gateway", 600, 300, 900},

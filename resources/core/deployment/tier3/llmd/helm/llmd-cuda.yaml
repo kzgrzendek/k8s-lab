@@ -1,13 +1,15 @@
 multinode: false
 
 modelArtifacts:
-  name: "Qwen/Qwen3-0.6B"
-  uri: "hf://Qwen/Qwen3-0.6B"
+  name: "{{.ModelName}}"
+  uri: "hf://{{.ModelName}}"
   size: "8Gi"
+  # Use pre-warmed model from PVC if available, otherwise llmd downloads on startup
+  existingClaim: "{{.ModelPVCName}}"
 
   labels:
     llm-d.ai/inferenceServing: "true"
-    llm-d.ai/model: "qwen3-0-6b"
+    llm-d.ai/model: "{{.ModelSlug}}"
 
 routing:
   servicePort: 8000
@@ -24,18 +26,18 @@ decode:
   replicas: 1
 
   nodeSelector:
-    nova.local/node-type: gpu-nvidia
+    nova.local/llmd-node: "true"
 
   containers:
     - name: vllm
       image: ghcr.io/llm-d/llm-d-cuda:v0.4.0
       modelCommand: vllmServe
       args:
-        - Qwen/Qwen3-0.6B
+        - {{.ModelName}}
         - --port
         - "8200"
         - --served-model-name
-        - Qwen/Qwen3-0.6B
+        - {{.ModelName}}
         - --max-model-len
         - "32768"
 
@@ -43,7 +45,7 @@ decode:
         - name: HF_TOKEN
           valueFrom:
             secretKeyRef:
-              name: hf-token
+              name: huggingface-token
               key: token
               optional: true
 

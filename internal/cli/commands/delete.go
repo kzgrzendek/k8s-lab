@@ -10,6 +10,7 @@ import (
 	"github.com/kzgrzendek/nova/internal/core/config"
 	"github.com/kzgrzendek/nova/internal/host/dns/bind9"
 	"github.com/kzgrzendek/nova/internal/host/gateway/nginx"
+	"github.com/kzgrzendek/nova/internal/host/registry"
 	"github.com/kzgrzendek/nova/internal/setup/system/dns"
 	"github.com/kzgrzendek/nova/internal/tools/minikube"
 	"github.com/spf13/cobra"
@@ -69,6 +70,7 @@ func runDelete(cmd *cobra.Command, purge, yes bool) error {
 		"Minikube Cluster",
 		"NGINX Gateway",
 		"Bind9 DNS Server",
+		"Registry",
 	}
 	if purge {
 		steps = append(steps, "DNS Configuration", "Configuration Directory")
@@ -116,9 +118,27 @@ func runDelete(cmd *cobra.Command, purge, yes bool) error {
 	progress.CompleteStep(currentStep)
 	currentStep++
 
+	// Step 4: Remove Registry
+	progress.StartStep(currentStep)
+	ui.Info("Removing local registry...")
+	registryRunning, err := registry.IsRunning(cmd.Context())
+	if err != nil {
+		ui.Warn("Failed to check registry status: %v", err)
+	}
+	if registryRunning {
+		if err := registry.Delete(cmd.Context()); err != nil {
+			progress.FailStep(currentStep, err)
+			return fmt.Errorf("failed to remove registry: %w", err)
+		}
+	} else {
+		ui.Warn("Registry not running (already deleted or never started)")
+	}
+	progress.CompleteStep(currentStep)
+	currentStep++
+
 	// Purge configuration if requested
 	if purge {
-		// Step 4: Remove DNS configuration
+		// Step 5: Remove DNS configuration
 		progress.StartStep(currentStep)
 		ui.Info("Removing DNS configuration...")
 		ui.Info("You may be prompted for your sudo password to remove DNS configuration")
@@ -129,7 +149,7 @@ func runDelete(cmd *cobra.Command, purge, yes bool) error {
 		progress.CompleteStep(currentStep)
 		currentStep++
 
-		// Step 5: Remove config directory
+		// Step 6: Remove config directory
 		progress.StartStep(currentStep)
 		ui.Info("Removing configuration directory...")
 		if err := os.RemoveAll(config.ConfigDir()); err != nil {

@@ -100,19 +100,20 @@ func (c *Client) UpdateRepositories(ctx context.Context) error {
 }
 
 // InstallOrUpgradeRelease installs or upgrades a Helm release.
-func (c *Client) InstallOrUpgradeRelease(ctx context.Context, releaseName, chartRef, namespace string, values map[string]interface{}, wait bool) error {
-	return c.InstallOrUpgradeReleaseWithTimeout(ctx, releaseName, chartRef, namespace, values, wait, 300)
+func (c *Client) InstallOrUpgradeRelease(ctx context.Context, releaseName, chartRef, namespace string, values map[string]any, wait bool) error {
+	return c.InstallOrUpgradeReleaseWithTimeout(ctx, releaseName, chartRef, namespace, "", values, wait, 300)
 }
 
 // InstallOrUpgradeReleaseWithTimeout installs or upgrades a Helm release with a custom timeout.
 // timeout is in seconds. Default Helm timeout is 300s (5 minutes).
-func (c *Client) InstallOrUpgradeReleaseWithTimeout(ctx context.Context, releaseName, chartRef, namespace string, values map[string]interface{}, wait bool, timeoutSeconds int) error {
-	return c.InstallOrUpgradeReleaseWithOptions(ctx, releaseName, chartRef, namespace, values, wait, timeoutSeconds, false, false)
+func (c *Client) InstallOrUpgradeReleaseWithTimeout(ctx context.Context, releaseName, chartRef, namespace, version string, values map[string]any, wait bool, timeoutSeconds int) error {
+	return c.InstallOrUpgradeReleaseWithOptions(ctx, releaseName, chartRef, namespace, version, values, wait, timeoutSeconds, false, false)
 }
 
 // InstallOrUpgradeReleaseWithOptions installs or upgrades a Helm release with additional options.
 // Handles both OCI (oci://) and traditional repository charts transparently.
-func (c *Client) InstallOrUpgradeReleaseWithOptions(ctx context.Context, releaseName, chartRef, namespace string, values map[string]interface{}, wait bool, timeoutSeconds int, reuseValues bool, createNamespace bool) error {
+// version is optional - only used for non-OCI charts where version isn't embedded in chartRef.
+func (c *Client) InstallOrUpgradeReleaseWithOptions(ctx context.Context, releaseName, chartRef, namespace, version string, values map[string]any, wait bool, timeoutSeconds int, reuseValues bool, createNamespace bool) error {
 	// Use client's settings (which may have namespace set) but override if namespace param is provided
 	settings := c.settings
 	if namespace != "" {
@@ -141,28 +142,34 @@ func (c *Client) InstallOrUpgradeReleaseWithOptions(ctx context.Context, release
 	if err != nil {
 		// Release doesn't exist, install it
 		if strings.Contains(err.Error(), "not found") {
-			return c.installRelease(ctx, settings, actionConfig, releaseName, chartRef, namespace, values, wait, timeoutSeconds, createNamespace)
+			return c.installRelease(settings, actionConfig, releaseName, chartRef, namespace, version, values, wait, timeoutSeconds, createNamespace)
 		}
 		return fmt.Errorf("failed to check release status: %w", err)
 	}
 
 	// Release exists, upgrade it
-	return c.upgradeRelease(ctx, settings, actionConfig, releaseName, chartRef, namespace, values, wait, timeoutSeconds, reuseValues)
+	return c.upgradeRelease(settings, actionConfig, releaseName, chartRef, namespace, version, values, wait, timeoutSeconds, reuseValues)
 }
 
 // installRelease installs a new Helm release.
 // Helm v4 handles OCI charts natively without explicit registry client configuration.
-func (c *Client) installRelease(ctx context.Context, settings *cli.EnvSettings, actionConfig *action.Configuration, releaseName, chartRef, namespace string, values map[string]interface{}, wait bool, timeoutSeconds int, createNamespace bool) error {
+func (c *Client) installRelease(settings *cli.EnvSettings, actionConfig *action.Configuration, releaseName, chartRef, namespace, version string, values map[string]any, wait bool, timeoutSeconds int, createNamespace bool) error {
 	client := action.NewInstall(actionConfig)
 	client.ReleaseName = releaseName
 	client.Namespace = namespace
 	client.CreateNamespace = createNamespace
+	// In Helm v4, WaitStrategy must be explicitly set
 	if wait {
 		client.WaitStrategy = kube.StatusWatcherStrategy
+	} else {
+		client.WaitStrategy = kube.HookOnlyStrategy
 	}
-
-
 	client.Timeout = time.Duration(timeoutSeconds) * time.Second
+
+	// Set version if provided (for non-OCI charts)
+	if version != "" {
+		client.ChartPathOptions.Version = version
+	}
 
 	// Locate chart (polymorphic: handles OCI and HTTP transparently)
 	chartPath, err := client.ChartPathOptions.LocateChart(chartRef, settings)
@@ -186,14 +193,22 @@ func (c *Client) installRelease(ctx context.Context, settings *cli.EnvSettings, 
 
 // upgradeRelease upgrades an existing Helm release.
 // Helm v4 handles OCI charts natively without explicit registry client configuration.
-func (c *Client) upgradeRelease(ctx context.Context, settings *cli.EnvSettings, actionConfig *action.Configuration, releaseName, chartRef, namespace string, values map[string]interface{}, wait bool, timeoutSeconds int, reuseValues bool) error {
+func (c *Client) upgradeRelease(settings *cli.EnvSettings, actionConfig *action.Configuration, releaseName, chartRef, namespace, version string, values map[string]any, wait bool, timeoutSeconds int, reuseValues bool) error {
 	client := action.NewUpgrade(actionConfig)
 	client.Namespace = namespace
+	// In Helm v4, WaitStrategy must be explicitly set
 	if wait {
 		client.WaitStrategy = kube.StatusWatcherStrategy
+	} else {
+		client.WaitStrategy = kube.HookOnlyStrategy
 	}
 	client.Timeout = time.Duration(timeoutSeconds) * time.Second
 	client.ReuseValues = reuseValues
+
+	// Set version if provided (for non-OCI charts)
+	if version != "" {
+		client.ChartPathOptions.Version = version
+	}
 
 	// Locate chart (polymorphic: handles OCI and HTTP transparently)
 	chartPath, err := client.ChartPathOptions.LocateChart(chartRef, settings)
@@ -254,11 +269,11 @@ func (c *Client) ReleaseExists(ctx context.Context, releaseName, namespace strin
 // LoadValues loads Helm values from a YAML file and returns them as a map.
 // If the file doesn't exist, returns an empty map (not an error).
 // This allows for optional values files.
-func LoadValues(valuesPath string) (map[string]interface{}, error) {
+func LoadValues(valuesPath string) (map[string]any, error) {
 	// Check if file exists
 	if _, err := os.Stat(valuesPath); os.IsNotExist(err) {
 		// File doesn't exist, return empty values (not an error)
-		return make(map[string]interface{}), nil
+		return make(map[string]any), nil
 	}
 
 	// Read values file
@@ -268,7 +283,7 @@ func LoadValues(valuesPath string) (map[string]interface{}, error) {
 	}
 
 	// Parse YAML
-	var values map[string]interface{}
+	var values map[string]any
 	if err := UnmarshalValues(data, &values); err != nil {
 		return nil, fmt.Errorf("failed to parse values file %s: %w", valuesPath, err)
 	}
@@ -277,14 +292,14 @@ func LoadValues(valuesPath string) (map[string]interface{}, error) {
 }
 
 // UnmarshalValues parses YAML bytes into a values map.
-func UnmarshalValues(data []byte, v *map[string]interface{}) error {
+func UnmarshalValues(data []byte, v *map[string]any) error {
 	return yaml.Unmarshal(data, v)
 }
 
 // MergeValues merges multiple value maps together.
 // Later maps override earlier ones. Nested maps are merged recursively.
-func MergeValues(base map[string]interface{}, overrides ...map[string]interface{}) map[string]interface{} {
-	result := make(map[string]interface{})
+func MergeValues(base map[string]any, overrides ...map[string]any) map[string]any {
+	result := make(map[string]any)
 
 	// Copy base values
 	for k, v := range base {
@@ -295,8 +310,8 @@ func MergeValues(base map[string]interface{}, overrides ...map[string]interface{
 	for _, override := range overrides {
 		for k, v := range override {
 			// If both values are maps, merge recursively
-			if existingMap, existingOk := result[k].(map[string]interface{}); existingOk {
-				if overrideMap, overrideOk := v.(map[string]interface{}); overrideOk {
+			if existingMap, existingOk := result[k].(map[string]any); existingOk {
+				if overrideMap, overrideOk := v.(map[string]any); overrideOk {
 					result[k] = MergeValues(existingMap, overrideMap)
 					continue
 				}

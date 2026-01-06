@@ -15,18 +15,14 @@ import (
 	"github.com/kzgrzendek/nova/internal/tools/exec"
 	"github.com/kzgrzendek/nova/internal/tools/helm"
 	k8s "github.com/kzgrzendek/nova/internal/tools/kubectl"
-	"github.com/kzgrzendek/nova/internal/tools/minikube"
 )
 
-// DeployTier1 deploys tier 1: Infrastructure layer (Cilium, Falco, GPU Operator, Cert-Manager, Envoy Gateway).
+// DeployTier1 deploys tier 1: Infrastructure layer (Security, GPU, Certificates, Gateways).
 func DeployTier1(ctx context.Context, cfg *config.Config) error {
 	// Define deployment steps
 	steps := []string{
 		"Prerequisites Check",
 		"Helm Repositories",
-		"Cilium CNI",
-		"CoreDNS Configuration",
-		"Local Path Storage",
 		"Falco Security",
 		"NVIDIA GPU Operator",
 		"Cert Manager",
@@ -36,108 +32,80 @@ func DeployTier1(ctx context.Context, cfg *config.Config) error {
 		"Nova Namespace & RBAC",
 	}
 
-	// Create progress tracker
-	progress := ui.NewStepProgress(steps)
-	currentStep := 0
-
-	// Helper wrapper for step execution
-	runStep := func(name string, fn func() error) error {
-		progress.StartStep(currentStep)
-		if err := fn(); err != nil {
-			progress.FailStep(currentStep, err)
-			return err
-		}
-		progress.CompleteStep(currentStep)
-		currentStep++
-		return nil
-	}
+	// Create step runner with progress tracking
+	runner := shared.NewStepRunner(steps)
 
 	// Step 1: Check prerequisites
-	if err := runStep("Prerequisites Check", func() error {
+	if err := runner.RunStep("Prerequisites Check", func() error {
 		return checkPrerequisites(ctx)
 	}); err != nil {
 		return fmt.Errorf("prerequisite check failed: %w", err)
 	}
 
 	// Step 2: Add Helm repositories
-	if err := runStep("Helm Repositories", func() error {
-		return addHelmRepos(ctx)
+	if err := runner.RunStep("Helm Repositories", func() error {
+		repos := map[string]string{
+			"nvidia":        constants.HelmRepoNvidia,
+			"falcosecurity": constants.HelmRepoFalco,
+			"jetstack":      constants.HelmRepoJetstack,
+			"dandydev":      constants.HelmRepoDandyDev,
+		}
+		return shared.AddHelmRepositories(ctx, repos)
 	}); err != nil {
 		return fmt.Errorf("failed to add Helm repositories: %w", err)
 	}
 
-	// Step 3: Cilium CNI
-	if err := runStep("Cilium CNI", func() error {
-		return deployCilium(ctx, cfg)
-	}); err != nil {
-		return err
-	}
-
-	// Step 4: CoreDNS Configuration
-	if err := runStep("CoreDNS Configuration", func() error {
-		return deployCoreDNS(ctx, cfg)
-	}); err != nil {
-		return err
-	}
-
-	// Step 4: Local Path Storage
-	if err := runStep("Local Path Storage", func() error {
-		return deployLocalPathStorage(ctx, cfg)
-	}); err != nil {
-		return err
-	}
-
-	// Step 5: Falco Security
-	if err := runStep("Falco Security", func() error {
-		return deployFalco(ctx)
+	// Step 3: Falco Security
+	if err := runner.RunStep("Falco Security", func() error {
+		return deployFalco(ctx, cfg)
 	}); err != nil {
 		return err
 	}
 
 	// Step 6: NVIDIA GPU Operator
-	if err := runStep("NVIDIA GPU Operator", func() error {
+	if err := runner.RunStep("NVIDIA GPU Operator", func() error {
 		return deployGPUOperator(ctx, cfg)
 	}); err != nil {
 		return err
 	}
 
 	// Step 7: Cert Manager
-	if err := runStep("Cert Manager", func() error {
+	if err := runner.RunStep("Cert Manager", func() error {
 		return deployCertManager(ctx, cfg)
 	}); err != nil {
 		return err
 	}
 
 	// Step 8: Trust Manager
-	if err := runStep("Trust Manager", func() error {
-		return deployTrustManager(ctx)
+	if err := runner.RunStep("Trust Manager", func() error {
+		return deployTrustManager(ctx, cfg)
 	}); err != nil {
 		return err
 	}
 
 	// Step 9: Envoy AI Gateway
-	if err := runStep("Envoy AI Gateway", func() error {
-		return deployEnvoyAIGateway(ctx)
+	if err := runner.RunStep("Envoy AI Gateway", func() error {
+		return deployEnvoyAIGateway(ctx, cfg)
 	}); err != nil {
 		return err
 	}
 
 	// Step 10: Envoy Gateway
-	if err := runStep("Envoy Gateway", func() error {
+	if err := runner.RunStep("Envoy Gateway", func() error {
 		return deployEnvoyGateway(ctx, cfg)
 	}); err != nil {
 		return err
 	}
 
 	// Step 11: Nova Namespace & RBAC
-	if err := runStep("Nova Namespace & RBAC", func() error {
+	if err := runner.RunStep("Nova Namespace & RBAC", func() error {
 		return setupNovaNamespace(ctx)
 	}); err != nil {
 		return err
 	}
 
 	// Mark all steps complete
-	progress.Complete()
+	runner.Complete()
 
 	ui.Header("Tier 1 Deployment Complete")
 	ui.Success("All infrastructure components deployed successfully")
@@ -159,101 +127,12 @@ func checkPrerequisites(ctx context.Context) error {
 	return nil
 }
 
-func addHelmRepos(ctx context.Context) error {
-	repos := map[string]string{
-		"cilium":        constants.HelmRepoCilium,
-		"nvidia":        constants.HelmRepoNvidia,
-		"falcosecurity": constants.HelmRepoFalco,
-		"jetstack":      constants.HelmRepoJetstack,
-		"dandydev":      constants.HelmRepoDandyDev,
-	}
-
-	// Create Helm client
-	helmClient := helm.NewClient("")
-
-	ui.Info("Adding %d Helm repositories...", len(repos))
-	for name, url := range repos {
-		ui.Debug("- Adding %s repository", name)
-		if err := helmClient.AddRepository(ctx, name, url); err != nil {
-			return fmt.Errorf("failed to add %s repository (%s): %w", name, url, err)
-		}
-	}
-
-	// Update repos
-	ui.Info("Updating repository indexes...")
-	if err := helmClient.UpdateRepositories(ctx); err != nil {
-		return fmt.Errorf("failed to update Helm repository indexes: %w", err)
-	}
-
-	return nil
-}
-
-func deployCilium(ctx context.Context, cfg *config.Config) error {
-	// Label namespace
-	if err := k8s.LabelNamespace(ctx, "kube-system", "service-type", "nova"); err != nil {
-		return fmt.Errorf("failed to label kube-system namespace for routing: %w", err)
-	}
-
-	// Get minikube IP for Cilium configuration
-	ui.Info("Getting Minikube control plane IP...")
-	minikubeIP, err := minikube.GetIP(ctx)
-	if err != nil {
-		return fmt.Errorf("failed to get minikube IP: %w", err)
-	}
-
-	// Get API server port from kubectl
-	ui.Info("Getting API server port...")
-	apiPort, err := minikube.GetAPIServerPort(ctx)
-	if err != nil {
-		return fmt.Errorf("failed to get API server port: %w", err)
-	}
-
-	// Create dynamic overrides for runtime configuration
-	// Note: We MUST set k8sServiceHost and k8sServicePort for Cilium to work properly in Minikube
-	ui.Info("Installing Cilium CNI with API server %s:%s (may take a few minutes)...", minikubeIP, apiPort)
-
-	return shared.DeployHelmChart(ctx, shared.HelmDeploymentOptions{
-		ReleaseName:     "cilium",
-		ChartRef:        "cilium/cilium",
-		Namespace:       "kube-system",
-		ValuesPath:      "resources/core/deployment/tier1/cilium/values.yaml",
-		Values: map[string]interface{}{
-			"k8sServiceHost": minikubeIP,
-			"k8sServicePort": apiPort,
-		},
-		Wait:            true,
-		TimeoutSeconds:  600,
-		CreateNamespace: true,
-	})
-}
-
-func deployLocalPathStorage(ctx context.Context, cfg *config.Config) error {
-	// Apply local-path-provisioner (includes namespace creation)
-	ui.Info("Installing Local Path Provisioner...")
-	if err := k8s.ApplyURL(ctx, constants.ManifestLocalPathProvisioner); err != nil {
-		return fmt.Errorf("failed to deploy local-path-provisioner: %w", err)
-	}
-
-	// Apply additional standard storage class
-	ui.Info("Applying standard storage class...")
-	if err := k8s.ApplyYAML(ctx, "resources/core/deployment/tier1/local-path-provisioner/storageclasses/standard.yaml"); err != nil {
-		return fmt.Errorf("failed to apply standard storage class: %w", err)
-	}
-
-	// Patch configmap for custom storage directory
-	ui.Info("Patching storage directory configuration...")
-	if err := k8s.PatchConfigMap(ctx, constants.NamespaceLocalPathStorage, "local-path-config", "resources/core/deployment/tier1/local-path-provisioner/patches/storage-dir.yaml"); err != nil {
-		return fmt.Errorf("failed to patch local-path-config: %w", err)
-	}
-
-	return nil
-}
-
 // deployFalco deploys Falco security auditor.
-func deployFalco(ctx context.Context) error {
+func deployFalco(ctx context.Context, cfg *config.Config) error {
 	return shared.DeployHelmChart(ctx, shared.HelmDeploymentOptions{
 		ReleaseName:     "falco",
-		ChartRef:        "falcosecurity/falco",
+		ChartRef:        cfg.Versions.Tier1.Falco.ChartRef(),
+		Version:         cfg.Versions.Tier1.Falco.GetVersion(),
 		Namespace:       "falco",
 		ValuesPath:      "resources/core/deployment/tier1/falco/values.yaml",
 		Wait:            true,
@@ -281,7 +160,8 @@ func deployGPUOperator(ctx context.Context, cfg *config.Config) error {
 
 	return shared.DeployHelmChart(ctx, shared.HelmDeploymentOptions{
 		ReleaseName:     "gpu-operator",
-		ChartRef:        "nvidia/gpu-operator",
+		ChartRef:        cfg.Versions.Tier1.GPUOperator.ChartRef(),
+		Version:         cfg.Versions.Tier1.GPUOperator.GetVersion(),
 		Namespace:       "nvidia-gpu-operator",
 		ValuesPath:      "resources/core/deployment/tier1/nvidia-gpu-operator/values.yaml",
 		Wait:            true,
@@ -305,7 +185,8 @@ func deployCertManager(ctx context.Context, cfg *config.Config) error {
 	// Deploy Cert Manager
 	if err := shared.DeployHelmChart(ctx, shared.HelmDeploymentOptions{
 		ReleaseName:    "cert-manager",
-		ChartRef:       "jetstack/cert-manager",
+		ChartRef:       cfg.Versions.Tier1.CertManager.ChartRef(),
+		Version:        cfg.Versions.Tier1.CertManager.GetVersion(),
 		Namespace:      "cert-manager",
 		ValuesPath:     "resources/core/deployment/tier1/cert-manager/values.yaml",
 		Wait:           true,
@@ -330,7 +211,7 @@ func deployCertManager(ctx context.Context, cfg *config.Config) error {
 
 	// Apply ClusterIssuers (mkcert CA)
 	ui.Info("Creating ClusterIssuers...")
-	domainData := map[string]interface{}{
+	domainData := map[string]any{
 		"Domain": cfg.DNS.Domain,
 	}
 	if err := shared.ApplyTemplate(ctx, "resources/core/deployment/tier1/cert-manager/clusterissuers/nova-issuer.yaml", domainData); err != nil {
@@ -341,11 +222,12 @@ func deployCertManager(ctx context.Context, cfg *config.Config) error {
 }
 
 // deployTrustManager installs trust-manager and handles CA distribution.
-func deployTrustManager(ctx context.Context) error {
+func deployTrustManager(ctx context.Context, cfg *config.Config) error {
 	// Deploy Trust Manager
 	if err := shared.DeployHelmChart(ctx, shared.HelmDeploymentOptions{
 		ReleaseName:    "trust-manager",
-		ChartRef:       "jetstack/trust-manager",
+		ChartRef:       cfg.Versions.Tier1.TrustManager.ChartRef(),
+		Version:        cfg.Versions.Tier1.TrustManager.GetVersion(),
 		Namespace:      "cert-manager",
 		ValuesPath:     "resources/core/deployment/tier1/trust-manager/values.yaml",
 		Wait:           true,
@@ -401,7 +283,8 @@ func deployTrustManager(ctx context.Context) error {
 	// Upgrade Cilium to mount CA
 	if err := shared.DeployHelmChart(ctx, shared.HelmDeploymentOptions{
 		ReleaseName:    "cilium",
-		ChartRef:       "cilium/cilium",
+		ChartRef:       cfg.Versions.Tier1.Cilium.ChartRef(),
+		Version:        cfg.Versions.Tier1.Cilium.GetVersion(),
 		Namespace:      "kube-system",
 		ValuesPath:     "resources/core/deployment/tier1/trust-manager/cilium-envoy-mount-ca.yaml",
 		Wait:           true,
@@ -414,7 +297,7 @@ func deployTrustManager(ctx context.Context) error {
 	return nil
 }
 
-func deployEnvoyAIGateway(ctx context.Context) error {
+func deployEnvoyAIGateway(ctx context.Context, cfg *config.Config) error {
 	// Create namespace
 	if err := k8s.CreateNamespace(ctx, "envoy-ai-gateway-system"); err != nil {
 		return fmt.Errorf("failed to create envoy-ai-gateway-system namespace: %w", err)
@@ -427,14 +310,15 @@ func deployEnvoyAIGateway(ctx context.Context) error {
 
 	// Install Inference Extension CRDs first
 	ui.Info("Installing Gateway API Inference Extension CRDs...")
-	if err := k8s.ApplyURL(ctx, constants.ManifestGatewayAPIInferenceExtension); err != nil {
+	if err := k8s.ApplyURL(ctx, cfg.GetGatewayAPIInferenceExtensionManifestURL()); err != nil {
 		return fmt.Errorf("failed to install inference extension CRDs: %w", err)
 	}
 
 	// Install AI Gateway CRDs using OCI
 	if err := shared.DeployHelmChart(ctx, shared.HelmDeploymentOptions{
 		ReleaseName:    "aieg-crd",
-		ChartRef:       "oci://docker.io/envoyproxy/ai-gateway-crds-helm:v0.4.0",
+		ChartRef:       cfg.Versions.Tier1.EnvoyAiGatewayCRDs.ChartRef(),
+		Version:        cfg.Versions.Tier1.EnvoyAiGatewayCRDs.GetVersion(),
 		Namespace:      "envoy-ai-gateway-system",
 		Wait:           true,
 		TimeoutSeconds: 600,
@@ -446,7 +330,8 @@ func deployEnvoyAIGateway(ctx context.Context) error {
 	// Install AI Gateway using OCI
 	if err := shared.DeployHelmChart(ctx, shared.HelmDeploymentOptions{
 		ReleaseName:    "aieg",
-		ChartRef:       "oci://docker.io/envoyproxy/ai-gateway-helm:v0.4.0",
+		ChartRef:       cfg.Versions.Tier1.EnvoyAiGateway.ChartRef(),
+		Version:        cfg.Versions.Tier1.EnvoyAiGateway.GetVersion(),
 		Namespace:      "envoy-ai-gateway-system",
 		ValuesPath:     "resources/core/deployment/tier1/envoy-ai-gateway/values.yaml",
 		Wait:           true,
@@ -485,7 +370,8 @@ func deployEnvoyGateway(ctx context.Context, cfg *config.Config) error {
 	// Install Redis for rate limiting
 	if err := shared.DeployHelmChart(ctx, shared.HelmDeploymentOptions{
 		ReleaseName:    "redis-ha",
-		ChartRef:       "dandydev/redis-ha",
+		ChartRef:       cfg.Versions.Tier1.Redis.ChartRef(),
+		Version:        cfg.Versions.Tier1.Redis.GetVersion(),
 		Namespace:      "envoy-gateway-system",
 		ValuesPath:     "resources/core/deployment/tier1/redis/values.yaml",
 		Wait:           true,
@@ -498,7 +384,8 @@ func deployEnvoyGateway(ctx context.Context, cfg *config.Config) error {
 	// Install Envoy Gateway using OCI
 	if err := shared.DeployHelmChart(ctx, shared.HelmDeploymentOptions{
 		ReleaseName:    "envoy-gateway",
-		ChartRef:       "oci://docker.io/envoyproxy/gateway-helm:v1.6.1",
+		ChartRef:       cfg.Versions.Tier1.EnvoyGateway.ChartRef(),
+		Version:        cfg.Versions.Tier1.EnvoyGateway.GetVersion(),
 		Namespace:      "envoy-gateway-system",
 		ValuesPath:     "resources/core/deployment/tier1/envoy-gateway/values.yaml",
 		Wait:           true,
@@ -509,7 +396,7 @@ func deployEnvoyGateway(ctx context.Context, cfg *config.Config) error {
 	}
 
 	// Apply Envoy Gateway configuration manifests
-	domainData := map[string]interface{}{
+	domainData := map[string]any{
 		"Domain":     cfg.DNS.Domain,
 		"AuthDomain": cfg.DNS.AuthDomain,
 	}
@@ -536,23 +423,6 @@ func deployEnvoyGateway(ctx context.Context, cfg *config.Config) error {
 
 	if err := shared.ApplyTemplate(ctx, "resources/core/deployment/tier1/envoy-gateway/gateways/nova-passthrough.yaml", domainData); err != nil {
 		return fmt.Errorf("failed to apply passthrough gateway: %w", err)
-	}
-
-	return nil
-}
-
-func deployCoreDNS(ctx context.Context, cfg *config.Config) error {
-	data := map[string]interface{}{
-		"AuthDomain": cfg.DNS.AuthDomain,
-	}
-
-	if err := shared.ApplyTemplate(ctx, "resources/core/deployment/tier1/coredns/configmaps/config-dns-rewrite.yaml", data); err != nil {
-		return fmt.Errorf("failed to apply coredns rewrite config: %w", err)
-	}
-
-	// Restart CoreDNS to pick up changes immediately
-	if err := k8s.RestartDeployment(ctx, "kube-system", "coredns"); err != nil {
-		return fmt.Errorf("failed to restart coredns: %w", err)
 	}
 
 	return nil

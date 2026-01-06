@@ -9,8 +9,11 @@ import (
 	"github.com/kzgrzendek/nova/internal/core/deployment/tier1"
 	"github.com/kzgrzendek/nova/internal/core/deployment/tier2"
 	"github.com/kzgrzendek/nova/internal/core/deployment/tier3"
+	"github.com/kzgrzendek/nova/internal/core/deployment/warmup"
 	"github.com/kzgrzendek/nova/internal/host/dns/bind9"
 	"github.com/kzgrzendek/nova/internal/host/gateway/nginx"
+	"github.com/kzgrzendek/nova/internal/host/registry"
+	pki "github.com/kzgrzendek/nova/internal/setup/certificates"
 	k8s "github.com/kzgrzendek/nova/internal/tools/kubectl"
 	"github.com/kzgrzendek/nova/internal/tools/minikube"
 	"github.com/spf13/cobra"
@@ -19,8 +22,10 @@ import (
 func newStartCmd() *cobra.Command {
 	var tier int
 	var hfToken string
+	var model string
 	var cpuMode bool
 	var nodes int
+	var k8sVersion string
 
 	cmd := &cobra.Command{
 		Use:   "start",
@@ -47,19 +52,21 @@ func newStartCmd() *cobra.Command {
 Tiers are cumulative: --tier=2 deploys Tier 0, 1, and 2.
 Use --tier=0 to deploy only the Minikube cluster.`,
 		RunE: func(cmd *cobra.Command, args []string) error {
-			return runStart(cmd, tier, hfToken, cpuMode, nodes)
+			return runStart(cmd, tier, hfToken, model, cpuMode, nodes, k8sVersion)
 		},
 	}
 
 	cmd.Flags().IntVar(&tier, "tier", 3, "deploy up to this tier (0, 1, 2, or 3)")
 	cmd.Flags().StringVar(&hfToken, "hf-token", "", "Hugging Face token for faster model downloads (optional)")
+	cmd.Flags().StringVar(&model, "model", "", "Hugging Face model to serve (e.g., google/gemma-3-4b-it, default: use config)")
 	cmd.Flags().BoolVar(&cpuMode, "cpu-mode", false, "force CPU mode (disable GPU even if available)")
 	cmd.Flags().IntVar(&nodes, "nodes", -1, "number of total nodes (1 master + N-1 workers, -1 = use config)")
+	cmd.Flags().StringVar(&k8sVersion, "k8s-version", "", "Kubernetes version for minikube (e.g., v1.33.5, default: use config)")
 
 	return cmd
 }
 
-func runStart(cmd *cobra.Command, targetTier int, hfToken string, cpuMode bool, nodes int) error {
+func runStart(cmd *cobra.Command, targetTier int, hfToken string, model string, cpuMode bool, nodes int, k8sVersion string) error {
 	if targetTier < 0 || targetTier > 3 {
 		return fmt.Errorf("tier must be 0, 1, 2, or 3 (got %d)", targetTier)
 	}
@@ -74,6 +81,9 @@ func runStart(cmd *cobra.Command, targetTier int, hfToken string, cpuMode bool, 
 	if hfToken != "" {
 		cfg.LLM.HfToken = hfToken
 	}
+	if model != "" {
+		cfg.LLM.Model = model
+	}
 	if cpuMode {
 		cfg.Minikube.CPUModeForced = true
 		ui.Info("CPU mode forced via --cpu-mode flag")
@@ -82,9 +92,23 @@ func runStart(cmd *cobra.Command, targetTier int, hfToken string, cpuMode bool, 
 		cfg.Minikube.Nodes = nodes
 		ui.Info("Using %d total nodes (%d master + %d workers)", nodes, 1, nodes-1)
 	}
+	if k8sVersion != "" {
+		cfg.Versions.Kubernetes = k8sVersion
+		cfg.Minikube.KubernetesVersion = k8sVersion
+		ui.Info("Using Kubernetes version %s", k8sVersion)
+	}
 
 	if !cfg.State.Initialized {
 		return fmt.Errorf("nova not initialized, run 'nova setup' first")
+	}
+
+	// Verify mkcert CA is still installed (setup might have been run a while ago)
+	installed, err := pki.IsInstalled()
+	if err != nil {
+		return fmt.Errorf("failed to check mkcert status: %w", err)
+	}
+	if !installed {
+		return fmt.Errorf("mkcert CA not found - run 'nova setup' again to reinstall")
 	}
 
 	ui.Header("Starting NOVA (Tier 0-%d)", targetTier)
@@ -126,12 +150,25 @@ func runStart(cmd *cobra.Command, targetTier int, hfToken string, cpuMode bool, 
 	}
 	currentStep++
 
-	// If tier 3 is requested, start pre-pulling heavy images in background
-	// This allows the ~5-8GB CUDA image to download during tier 1/2 deployment (saves 20-40 min)
-	// NOTE: Must be called AFTER tier 0 (minikube must be running for ssh to work)
-	// The prepull logic will check GPU mode internally and skip if in CPU mode
+	// Start registry (needed for image warmup in warmup module)
 	if targetTier >= 3 {
-		tier3.PrepullHeavyImagesAsync(cmd.Context(), cfg)
+		ui.Info("Starting local registry for image distribution...")
+		if err := registry.Start(cmd.Context(), cfg); err != nil {
+			ui.Warn("Failed to start registry: %v", err)
+			ui.Info("Images will be pulled during tier 3 deployment instead")
+		}
+	}
+
+	// Deploy warmup module (node election + model warmup + image warmup)
+	// This runs between tier0 and tier1, with warmups executing in background
+	var warmupResult *warmup.WarmupResult
+	if targetTier >= 1 {
+		var err error
+		warmupResult, err = warmup.DeployWarmup(cmd.Context(), cfg)
+		if err != nil {
+			ui.Warn("Warmup module failed: %v", err)
+			ui.Info("Deployment will continue, but warmups may not be complete")
+		}
 	}
 
 	// Deploy higher tiers
@@ -159,6 +196,24 @@ func runStart(cmd *cobra.Command, targetTier int, hfToken string, cpuMode bool, 
 	}
 
 	if targetTier >= 3 {
+		// Wait for image warmup to complete before deploying tier 3
+		// Images are already on all minikube nodes - no loading step needed!
+		if warmupResult != nil && warmupResult.WaitForImageWarmup != nil {
+			ui.Info("")
+			ui.Info("⏳ Waiting for image warmup to complete...")
+			result, warmupErr := warmupResult.WaitForImageWarmup()
+			if warmupErr != nil {
+				ui.Warn("Image warmup check failed: %v", warmupErr)
+			}
+
+			if result != nil && result.Success && result.Image != "" {
+				ui.Success("✓ Image warmed up successfully on all nodes")
+			} else {
+				ui.Warn("Image warmup incomplete - image will be pulled during tier 3 deployment")
+			}
+			ui.Info("")
+		}
+
 		progress.StartStep(currentStep)
 		if err := tier3.DeployTier3(cmd.Context(), cfg); err != nil {
 			progress.FailStep(currentStep, err)
@@ -189,7 +244,7 @@ func runStart(cmd *cobra.Command, targetTier int, hfToken string, cpuMode bool, 
 			ui.Error("Failed to start NGINX: %v", err)
 			hostServicesErr = fmt.Errorf("failed to start NGINX: %w", err)
 		} else {
-			ui.Success("NGINX gateway started (HTTP:80, HTTPS:443)")
+			ui.Success("NGINX gateway started (HTTPS:443)")
 		}
 	}
 
@@ -252,7 +307,7 @@ func displayDeploymentSummary(cfg *config.Config, targetTier int, tier2Result *t
 	// Tier 3 URLs
 	if targetTier >= 3 {
 		ui.Info("  llm-d API: https://llmd.internal.%s/v1", cfg.DNS.Domain)
-		ui.Info("  Open WebUI: https://open-webui.%s", cfg.DNS.Domain)
+		ui.Info("  Open WebUI: https://chat.%s", cfg.DNS.Domain)
 		ui.Info("  HELIX: https://helix.%s", cfg.DNS.Domain)
 	}
 

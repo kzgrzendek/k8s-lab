@@ -7,10 +7,9 @@ spec:
   parentRefs:
   - name: nova-https
     namespace: envoy-gateway-system
-    sectionName: lab-wildcard
- 
+
   hostnames:
-  - "open-webui.{{.Domain}}"
+  - "chat.{{.Domain}}"
  
   rules:
   - matches:

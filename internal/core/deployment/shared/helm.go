@@ -20,12 +20,15 @@ type HelmDeploymentOptions struct {
 	ReleaseName string
 	// ChartRef is the Helm chart reference (e.g., "jetstack/cert-manager" or "oci://...")
 	ChartRef string
+	// Version is the chart version (optional, for non-OCI charts where version isn't in URL)
+	// For OCI charts, version is embedded in ChartRef (e.g., "oci://registry/chart:v1.0.0")
+	Version string
 	// Namespace is the Kubernetes namespace to deploy to
 	Namespace string
 	// ValuesPath is the path to the values.yaml file (optional)
 	ValuesPath string
 	// Values is a map of values to merge with the loaded values (optional)
-	Values map[string]interface{}
+	Values map[string]any
 	// Wait indicates whether to wait for the deployment to complete
 	Wait bool
 	// TimeoutSeconds is the timeout for the deployment
@@ -39,26 +42,16 @@ type HelmDeploymentOptions struct {
 	// ReuseValues indicates whether to reuse the existing release values
 	ReuseValues bool
 	// TemplateData is the data to use for rendering the values file as a template (optional)
-	TemplateData interface{}
+	TemplateData any
 }
 
-// DeployHelmChart deploys a Helm chart with common error handling and progress tracking.
-// This function encapsulates the common pattern of:
-//  1. Loading values from YAML file
-//  2. Merging with additional values
-//  3. Creating Helm client
-//  4. Installing/upgrading the chart (with optional namespace creation via Helm)
-//
-// Returns an error if any step fails.
-// Note: Namespace creation is handled by the Helm SDK if CreateNamespace is true.
+// DeployHelmChart deploys a Helm chart with the specified options.
 func DeployHelmChart(ctx context.Context, opts HelmDeploymentOptions) error {
-	// Note: We don't create the namespace here anymore - let the Helm SDK handle it
-	// This avoids redundant namespace creation and potential race conditions
 
 	// Load values from file if specified
-	var values map[string]interface{}
+	var values map[string]any
 	if opts.ValuesPath != "" {
-		var loadedValues map[string]interface{}
+		var loadedValues map[string]any
 		var err error
 
 		if opts.TemplateData != nil {
@@ -115,6 +108,7 @@ func DeployHelmChart(ctx context.Context, opts HelmDeploymentOptions) error {
 		opts.ReleaseName,
 		opts.ChartRef,
 		opts.Namespace,
+		opts.Version,
 		values,
 		opts.Wait,
 		opts.TimeoutSeconds,
@@ -134,7 +128,7 @@ func DeployHelmChart(ctx context.Context, opts HelmDeploymentOptions) error {
 
 // ApplyTemplate processes a template file with the given data and applies it to the cluster.
 // This is useful for generating Kubernetes manifests with dynamic values (e.g., secrets with passwords).
-func ApplyTemplate(ctx context.Context, templatePath string, data interface{}) error {
+func ApplyTemplate(ctx context.Context, templatePath string, data any) error {
 	// Read template file
 	templateContent, err := os.ReadFile(templatePath)
 	if err != nil {
@@ -165,7 +159,7 @@ func ApplyTemplate(ctx context.Context, templatePath string, data interface{}) e
 // (e.g., trust-manager webhook after Cilium CNI setup).
 // maxRetries specifies the maximum number of retry attempts.
 // initialDelay is the initial delay between retries (doubles each retry with exponential backoff).
-func ApplyTemplateWithRetry(ctx context.Context, templatePath string, data interface{}, maxRetries int, initialDelay time.Duration) error {
+func ApplyTemplateWithRetry(ctx context.Context, templatePath string, data any, maxRetries int, initialDelay time.Duration) error {
 	var lastErr error
 	delay := initialDelay
 
@@ -205,4 +199,35 @@ func ApplyTemplateWithRetry(ctx context.Context, templatePath string, data inter
 	}
 
 	return fmt.Errorf("failed after %d retries: %w", maxRetries, lastErr)
+}
+
+// LoadAndTemplateCustomValues loads a custom values file and renders it as a template.
+// Returns nil if customValuesPath is empty. This consolidates the pattern of loading
+// and templating custom values used across tier deployments.
+func LoadAndTemplateCustomValues(customValuesPath string, templateData any) (map[string]any, error) {
+	if customValuesPath == "" {
+		return nil, nil
+	}
+
+	templateContent, err := os.ReadFile(customValuesPath)
+	if err != nil {
+		return nil, fmt.Errorf("failed to read custom values file: %w", err)
+	}
+
+	tmpl, err := template.New("custom-values").Parse(string(templateContent))
+	if err != nil {
+		return nil, fmt.Errorf("failed to parse custom values template: %w", err)
+	}
+
+	var buf bytes.Buffer
+	if err := tmpl.Execute(&buf, templateData); err != nil {
+		return nil, fmt.Errorf("failed to execute custom values template: %w", err)
+	}
+
+	var customValues map[string]any
+	if err := helm.UnmarshalValues(buf.Bytes(), &customValues); err != nil {
+		return nil, fmt.Errorf("failed to parse custom values: %w", err)
+	}
+
+	return customValues, nil
 }

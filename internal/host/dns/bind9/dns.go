@@ -4,6 +4,7 @@ package bind9
 import (
 	"context"
 	"fmt"
+	"os"
 	"path/filepath"
 	"strconv"
 
@@ -22,54 +23,14 @@ var (
 	dnsPort = strconv.Itoa(constants.Bind9Port)
 )
 
-// Templates for Bind9 configuration files.
-const (
-	namedConfTemplate = `options {
-    directory "/var/cache/bind";
-    listen-on { any; };
-    forwarders {
-        1.1.1.1;
-        1.0.0.1;
-    };
-    allow-query { any; };
-};
-
-zone "{{ .Domain }}" {
-    type master;
-    file "/etc/bind/zones/db.{{ .Domain }}";
-};
-
-zone "{{ .AuthDomain }}" {
-    type master;
-    file "/etc/bind/zones/db.{{ .AuthDomain }}";
-};
-
-logging {
-    channel query_log {
-        stderr;
-        severity info;
-        print-time yes;
-        print-category yes;
-        print-severity yes;
-    };
-    category queries { query_log; };
-};
-`
-
-	zoneFileTemplate = `$TTL    604800
-@       IN      SOA     ns1.{{ .Domain }}. admin.{{ .Domain }}. (
-                              2025101601         ; Serial
-                              604800             ; Refresh
-                              86400              ; Retry
-                              2419200            ; Expire
-                              604800 )           ; Negative Cache TTL
-;
-@       IN      NS      ns1.{{ .Domain }}.
-@       IN      A       127.0.0.1
-*       IN      A       127.0.0.1
-ns1     IN      A       127.0.0.1
-`
-)
+// loadTemplate reads a template file from the resources directory.
+func loadTemplate(filename string) (string, error) {
+	content, err := os.ReadFile(filepath.Join("resources/host/bind9/templates", filename))
+	if err != nil {
+		return "", fmt.Errorf("failed to read template %s: %w", filename, err)
+	}
+	return string(content), nil
+}
 
 // service is the singleton Bind9 service instance.
 var service shared.ContainerService
@@ -81,10 +42,21 @@ func init() {
 		Image:         containerImage,
 		ConfigDir:     "bind9",
 		BuildTemplates: func(cfg *config.Config) []shared.TemplateConfig {
+			// Load templates from files
+			namedConfTmpl, err := loadTemplate("named.conf.tmpl")
+			if err != nil {
+				panic(fmt.Sprintf("failed to load named.conf template: %v", err))
+			}
+
+			zoneFileTmpl, err := loadTemplate("db.zone.tmpl")
+			if err != nil {
+				panic(fmt.Sprintf("failed to load zone template: %v", err))
+			}
+
 			return []shared.TemplateConfig{
 				{
 					Name:       "named.conf",
-					Content:    namedConfTemplate,
+					Content:    namedConfTmpl,
 					OutputFile: "named.conf",
 					Data: struct {
 						Domain     string
@@ -96,13 +68,13 @@ func init() {
 				},
 				{
 					Name:       fmt.Sprintf("db.%s", cfg.DNS.Domain),
-					Content:    zoneFileTemplate,
+					Content:    zoneFileTmpl,
 					OutputFile: fmt.Sprintf("zones/db.%s", cfg.DNS.Domain),
 					Data:       struct{ Domain string }{Domain: cfg.DNS.Domain},
 				},
 				{
 					Name:       fmt.Sprintf("db.%s", cfg.DNS.AuthDomain),
-					Content:    zoneFileTemplate,
+					Content:    zoneFileTmpl,
 					OutputFile: fmt.Sprintf("zones/db.%s", cfg.DNS.AuthDomain),
 					Data:       struct{ Domain string }{Domain: cfg.DNS.AuthDomain},
 				},
@@ -117,6 +89,7 @@ func init() {
 			return docker.ContainerConfig{
 				Name:  containerName,
 				Image: containerImage,
+				User:  fmt.Sprintf("%d:%d", os.Getuid(), os.Getgid()), // Run as current user to avoid permission issues
 				Ports: map[string]string{
 					dnsPort + "/tcp": "53/tcp",
 					dnsPort + "/udp": "53/udp",

@@ -4,9 +4,12 @@ package preflight
 import (
 	"context"
 	"fmt"
+	"strconv"
+	"strings"
 
 	"github.com/kzgrzendek/nova/internal/cli/ui"
 	"github.com/kzgrzendek/nova/internal/core/deployment/shared"
+	"github.com/kzgrzendek/nova/internal/tools/minikube"
 )
 
 // Checker performs preflight checks before NOVA operations.
@@ -69,6 +72,13 @@ func (c *Checker) CheckAll(ctx context.Context) error {
 			return fmt.Errorf("%s not found: %w\nInstall: %s", b.Name, err, b.InstallHint)
 		}
 		ui.Success("%s found", b.Name)
+
+		// Special handling for minikube: check version
+		if b.Name == "minikube" {
+			if err := checkMinikubeVersion(ctx); err != nil {
+				ui.Warn("%s", err.Error())
+			}
+		}
 	}
 
 	return nil
@@ -120,4 +130,63 @@ func (c *Checker) CheckGPU(ctx context.Context, requestedMode string) (*shared.C
 	}
 
 	return cfg, nil
+}
+
+// checkMinikubeVersion checks the installed Minikube version and warns if it's outdated.
+// Minimum recommended version is v1.30.0 for NOVA compatibility.
+func checkMinikubeVersion(ctx context.Context) error {
+	version, err := minikube.GetVersion(ctx)
+	if err != nil {
+		return fmt.Errorf("could not determine minikube version: %w", err)
+	}
+
+	ui.Info("  Minikube version: %s", version)
+
+	// Parse version to check if it's below minimum recommended
+	// Version format: "v1.37.0" or similar
+	const minVersion = "v1.30.0"
+
+	if compareVersions(version, minVersion) < 0 {
+		return fmt.Errorf("minikube version %s is outdated (minimum recommended: %s)\nUpdate minikube: https://minikube.sigs.k8s.io/docs/start/", version, minVersion)
+	}
+
+	return nil
+}
+
+// compareVersions compares two semantic versions in format "v1.2.3".
+// Returns: -1 if v1 < v2, 0 if v1 == v2, 1 if v1 > v2
+func compareVersions(v1, v2 string) int {
+	// Strip 'v' prefix if present
+	v1 = strings.TrimPrefix(v1, "v")
+	v2 = strings.TrimPrefix(v2, "v")
+
+	// Split into parts
+	parts1 := strings.Split(v1, ".")
+	parts2 := strings.Split(v2, ".")
+
+	// Compare each part
+	maxLen := len(parts1)
+	if len(parts2) > maxLen {
+		maxLen = len(parts2)
+	}
+
+	for i := 0; i < maxLen; i++ {
+		var p1, p2 int
+
+		if i < len(parts1) {
+			p1, _ = strconv.Atoi(parts1[i])
+		}
+		if i < len(parts2) {
+			p2, _ = strconv.Atoi(parts2[i])
+		}
+
+		if p1 < p2 {
+			return -1
+		}
+		if p1 > p2 {
+			return 1
+		}
+	}
+
+	return 0
 }

@@ -46,15 +46,15 @@ jupyterhub:
       JHUB_DEFAULT_URL: "/jupyter/hub/spawn/helix"
 
       OIDC_ENABLED: "true"
-      OIDC_AUTHORIZE_URL: "https://{{.AuthDomain}}/realms/k8s-lab/protocol/openid-connect/auth"
+      OIDC_AUTHORIZE_URL: "https://{{.AuthDomain}}/realms/nova/protocol/openid-connect/auth"
       OIDC_CALLBACK_URL: "https://helix.{{.Domain}}/jupyter/hub/oauth_callback"
-      OIDC_TOKEN_URL: "https://{{.AuthDomain}}/realms/k8s-lab/protocol/openid-connect/token"
-      OIDC_USERDATA_URL: "https://{{.AuthDomain}}/realms/k8s-lab/protocol/openid-connect/userinfo"
+      OIDC_TOKEN_URL: "https://{{.AuthDomain}}/realms/nova/protocol/openid-connect/token"
+      OIDC_USERDATA_URL: "https://{{.AuthDomain}}/realms/nova/protocol/openid-connect/userinfo"
       OIDC_REQUESTED_SCOPES: "openid"
       OIDC_USERNAME_CLAIM: "name"
       OIDC_CLAIM_GROUPS_KEY: "groups"
-      OIDC_ALLOWED_GROUPS: "USERS"
-      OIDC_ADMIN_GROUPS: "ADMINS"
+      OIDC_ALLOWED_GROUPS: "USER,DEVELOPER"
+      OIDC_ADMIN_GROUPS: "ADMIN"
       OIDC_CLIENT_ID:
         valueFrom:
           secretKeyRef:

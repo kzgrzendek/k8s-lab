@@ -1,23 +1,24 @@
 apiVersion: aigateway.envoyproxy.io/v1alpha1
 kind: AIGatewayRoute
 metadata:
-  name: llmd-qwen3-route
+  name: llmd-{{.ModelSlug}}-route
   namespace: llmd
 spec:
   parentRefs:
     - group: gateway.networking.k8s.io
       kind: Gateway
-      name: k8s-internal-llmd
+      name: gateway-nova-internal
       namespace: llmd
   rules:
+    # Rule with explicit model header for inference requests
     - matches:
         - headers:
             - type: Exact
               name: x-ai-eg-model
-              value: Qwen/Qwen3-0.6B
+              value: {{.ModelName}}
       modelsOwnedBy: "Self-hosted"
       backendRefs:
         - group: inference.networking.k8s.io
           kind: InferencePool
-          name: llmd-qwen3-pool
+          name: llmd-{{.ModelSlug}}-pool
           namespace: llmd

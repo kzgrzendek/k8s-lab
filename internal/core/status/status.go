@@ -51,7 +51,7 @@ type NodeStatus struct {
 	Name   string
 	Status string // "Ready", "NotReady", etc.
 	Roles  string
-	HasGPU bool   // Whether this node is labeled for GPU workloads
+	HasGPU bool // Whether this node is labeled for GPU workloads
 }
 
 // HostServicesStatus represents host services status.
@@ -221,7 +221,7 @@ func (c *Checker) GetHostServicesStatus() *HostServicesStatus {
 	status.NGINX = ComponentStatus{
 		Name:    "NGINX Gateway",
 		Healthy: nginxRunning,
-		Details: "HTTP:80, HTTPS:443",
+		Details: "HTTPS:443",
 	}
 	if nginxRunning {
 		status.NGINX.Status = "running"

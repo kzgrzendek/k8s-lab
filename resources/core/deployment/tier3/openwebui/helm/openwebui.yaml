@@ -34,7 +34,7 @@ extraEnvVars:
     value: "True"
 
   - name: WEBUI_URL
-    value: "https://open-webui.{{.Domain}}"
+    value: "https://chat.{{.Domain}}"
 
   - name: WEBUI_SECRET_KEY
     valueFrom:
@@ -81,14 +81,14 @@ sso:
     clientId: "open-webui"
     clientExistingSecret: "oidc"
     clientExistingSecretKey: "client-secret"
-    providerUrl: "https://{{.AuthDomain}}/realms/k8s-lab/.well-known/openid-configuration"
+    providerUrl: "https://{{.AuthDomain}}/realms/nova/.well-known/openid-configuration"
     providerName: "Keycloak"
     scopes: "openid email profile"
 
   roleManagement:
     rolesClaim: "groups"
-    allowedRoles: "USERS"
-    adminRoles: "ADMINS"
+    allowedRoles: "USER,DEVELOPER"
+    adminRoles: "ADMIN"
 
   groupManagement:
     groupsClaim: "groups"

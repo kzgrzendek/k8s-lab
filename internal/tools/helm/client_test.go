@@ -380,14 +380,14 @@ func TestChartValidation(t *testing.T) {
 func TestValuesMarshaling(t *testing.T) {
 	testCases := []struct {
 		name          string
-		values        map[string]interface{}
+		values        map[string]any
 		expectedKey   string
-		expectedValue interface{}
+		expectedValue any
 		expectError   bool
 	}{
 		{
 			name: "Simple string values",
-			values: map[string]interface{}{
+			values: map[string]any{
 				"replicaCount": 3,
 				"image.tag":    "1.0.0",
 			},
@@ -397,8 +397,8 @@ func TestValuesMarshaling(t *testing.T) {
 		},
 		{
 			name: "Nested values",
-			values: map[string]interface{}{
-				"service": map[string]interface{}{
+			values: map[string]any{
+				"service": map[string]any{
 					"type": "LoadBalancer",
 					"port": 80,
 				},
@@ -409,7 +409,7 @@ func TestValuesMarshaling(t *testing.T) {
 		},
 		{
 			name:          "Empty values",
-			values:        map[string]interface{}{},
+			values:        map[string]any{},
 			expectedKey:   "",
 			expectedValue: nil,
 			expectError:   false,
@@ -431,7 +431,7 @@ func TestValuesMarshaling(t *testing.T) {
 
 				// For nested values, check if it's a map
 				if tc.expectedValue == nil && tc.expectedKey == "service" {
-					if _, ok := val.(map[string]interface{}); !ok {
+					if _, ok := val.(map[string]any); !ok {
 						t.Error("Expected service value to be a map")
 					}
 				} else if tc.expectedValue != nil && val != tc.expectedValue {

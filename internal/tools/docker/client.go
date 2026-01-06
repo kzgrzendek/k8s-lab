@@ -9,6 +9,7 @@ import (
 	"context"
 	"fmt"
 	"io"
+	"os/exec"
 	"strings"
 
 	"github.com/containerd/errdefs"
@@ -17,20 +18,68 @@ import (
 	"github.com/docker/docker/api/types/network"
 	"github.com/docker/docker/client"
 	"github.com/docker/go-connections/nat"
+	"github.com/kzgrzendek/nova/internal/cli/ui"
+	"github.com/kzgrzendek/nova/internal/core/constants"
 )
 
 // Client wraps the Docker SDK client with NOVA-specific functionality.
 type Client struct {
-	cli *client.Client
+	cli      *client.Client
+	host     string // Docker daemon host (e.g., "tcp://192.168.49.2:2376")
+	certPath string // TLS certificate path for remote daemons
+}
+
+// ClientOption is a function that configures a Client.
+type ClientOption func(*Client) error
+
+// WithHost sets a custom Docker daemon host.
+// This is useful for connecting to minikube's Docker daemon.
+func WithHost(host, certPath string) ClientOption {
+	return func(c *Client) error {
+		c.host = host
+		c.certPath = certPath
+		return nil
+	}
 }
 
 // NewClient creates a new Docker client.
-func NewClient() (*Client, error) {
-	cli, err := client.NewClientWithOpts(client.FromEnv, client.WithAPIVersionNegotiation())
+// By default, it connects to the host's Docker daemon.
+// Use WithHost option to connect to a remote daemon (e.g., minikube).
+func NewClient(opts ...ClientOption) (*Client, error) {
+	c := &Client{}
+
+	// Apply options first to set host/certPath if provided
+	for _, opt := range opts {
+		if err := opt(c); err != nil {
+			return nil, err
+		}
+	}
+
+	// Build client options
+	clientOpts := []client.Opt{client.WithAPIVersionNegotiation()}
+
+	if c.host != "" {
+		// Use custom host
+		clientOpts = append(clientOpts, client.WithHost(c.host))
+		if c.certPath != "" {
+			clientOpts = append(clientOpts, client.WithTLSClientConfig(
+				c.certPath+"/ca.pem",
+				c.certPath+"/cert.pem",
+				c.certPath+"/key.pem",
+			))
+		}
+	} else {
+		// Use default FromEnv
+		clientOpts = append(clientOpts, client.FromEnv)
+	}
+
+	cli, err := client.NewClientWithOpts(clientOpts...)
 	if err != nil {
 		return nil, fmt.Errorf("failed to create docker client: %w", err)
 	}
-	return &Client{cli: cli}, nil
+
+	c.cli = cli
+	return c, nil
 }
 
 // Close closes the Docker client connection.
@@ -42,6 +91,7 @@ func (c *Client) Close() error {
 type ContainerConfig struct {
 	Name               string
 	Image              string
+	User               string            // User and group to run container as (e.g., "1000:1000")
 	Ports              map[string]string // hostPort:containerPort, e.g. "30053:53" or "80:80/tcp"
 	Volumes            map[string]string // host:container
 	Env                []string
@@ -110,6 +160,7 @@ func (c *Client) CreateAndStart(ctx context.Context, cfg ContainerConfig) error 
 	// Create container
 	containerConfig := &container.Config{
 		Image:        cfg.Image,
+		User:         cfg.User,
 		Env:          cfg.Env,
 		ExposedPorts: exposedPorts,
 	}
@@ -235,4 +286,97 @@ func (c *Client) Logs(ctx context.Context, containerName string) (string, error)
 	}
 
 	return buf.String(), nil
+}
+
+// PullOptimized pulls an image using the fastest available method.
+// It will use skopeo if available and enabled, otherwise falls back to docker pull.
+func (c *Client) PullOptimized(ctx context.Context, imageName string, useSkopeo bool, maxConcurrent int) error {
+	// Check if image already exists
+	_, err := c.cli.ImageInspect(ctx, imageName)
+	if err == nil {
+		ui.Debug("Image %s already exists locally", imageName)
+		return nil
+	}
+
+	// Try skopeo if available and enabled
+	if useSkopeo && isSkopeoCopyAvailable() {
+		ui.Debug("Using skopeo for optimized pull (max-concurrent-layers=%d)", constants.SkopeoConcurrentLayers)
+		if err := c.pullWithSkopeo(ctx, imageName); err != nil {
+			ui.Warn("Skopeo pull failed, falling back to docker: %v", err)
+			return c.pullWithDocker(ctx, imageName)
+		}
+		return nil
+	}
+
+	// Fallback to docker pull
+	return c.pullWithDocker(ctx, imageName)
+}
+
+// pullWithSkopeo uses skopeo copy to pull an image directly into the Docker daemon.
+// This is significantly faster for large images due to optimized layer downloads.
+func (c *Client) pullWithSkopeo(ctx context.Context, imageName string) error {
+	// Normalize image name (add docker.io prefix if needed)
+	srcImage := imageName
+	if !strings.Contains(srcImage, "/") {
+		srcImage = "docker.io/library/" + srcImage
+	} else if !strings.HasPrefix(srcImage, "docker.io/") && !strings.HasPrefix(srcImage, "ghcr.io/") && !strings.HasPrefix(srcImage, "quay.io/") {
+		srcImage = "docker.io/" + srcImage
+	}
+
+	// Determine the destination daemon host
+	daemonHost := "unix:///var/run/docker.sock"
+	if c.host != "" {
+		// Use custom host (e.g., minikube's Docker daemon)
+		daemonHost = c.host
+		ui.Debug("Using custom Docker daemon for skopeo: %s", daemonHost)
+	}
+
+	// Build skopeo command
+	args := []string{
+		"copy",
+		"--override-os", "linux",
+		"--override-arch", "amd64",
+		"--dest-daemon-host", daemonHost,
+	}
+
+	// Add TLS cert path if using remote daemon
+	if c.certPath != "" {
+		args = append(args, "--dest-cert-dir", c.certPath)
+	}
+
+	args = append(args,
+		fmt.Sprintf("docker://%s", srcImage),
+		fmt.Sprintf("docker-daemon:%s", imageName),
+	)
+
+	cmd := exec.CommandContext(ctx, "skopeo", args...)
+
+	// Capture output for debugging
+	output, err := cmd.CombinedOutput()
+	if err != nil {
+		return fmt.Errorf("skopeo copy failed: %w\nOutput: %s", err, string(output))
+	}
+
+	return nil
+}
+
+// pullWithDocker uses the standard Docker pull mechanism.
+func (c *Client) pullWithDocker(ctx context.Context, imageName string) error {
+	ui.Debug("Using docker pull for %s", imageName)
+
+	reader, err := c.cli.ImagePull(ctx, imageName, image.PullOptions{})
+	if err != nil {
+		return fmt.Errorf("failed to pull image: %w", err)
+	}
+	defer reader.Close()
+
+	// Read pull output (required for pull to complete)
+	_, err = io.Copy(io.Discard, reader)
+	return err
+}
+
+// isSkopeoCopyAvailable checks if skopeo binary is available in PATH.
+func isSkopeoCopyAvailable() bool {
+	_, err := exec.LookPath("skopeo")
+	return err == nil
 }

@@ -1,0 +1,18 @@
+apiVersion: gateway.networking.k8s.io/v1
+kind: HTTPRoute
+metadata:
+  name: llmd-discovery-route
+  namespace: llmd
+spec:
+  parentRefs:
+  - name: gateway-nova-internal
+    namespace: llmd
+
+  rules:
+  - matches:
+    - path:
+        type: PathPrefix
+        value: /v1
+    backendRefs:
+    - name: llmd-discovery
+      port: 8200

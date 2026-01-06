@@ -33,7 +33,7 @@ type TemplateConfig struct {
 	// OutputFile is the output filename (relative to config dir)
 	OutputFile string
 	// Data is the data to pass to the template
-	Data interface{}
+	Data any
 }
 
 // ContainerServiceConfig holds configuration for a container-based service.
@@ -167,7 +167,7 @@ func WithDockerClient(ctx context.Context, fn func(*docker.Client) error) error 
 
 // GenerateTemplateFile generates a file from a template.
 // This utility eliminates repeated template generation code.
-func GenerateTemplateFile(templateContent, outputPath string, data interface{}) error {
+func GenerateTemplateFile(templateContent, outputPath string, data any) error {
 	// Parse template
 	tmpl, err := template.New(filepath.Base(outputPath)).Parse(templateContent)
 	if err != nil {

@@ -3,6 +3,8 @@ package nginx
 
 import (
 	"context"
+	"fmt"
+	"os"
 	"path/filepath"
 
 	"github.com/kzgrzendek/nova/internal/core/config"
@@ -17,56 +19,14 @@ const (
 	containerImage = constants.ImageNginx
 )
 
-// Templates for NGINX configuration files.
-const (
-	nginxConfTemplate = `user nginx;
-worker_processes auto;
-error_log /var/log/nginx/error.log notice;
-pid /run/nginx.pid;
-
-events {
-    worker_connections 1024;
+// loadTemplate reads a template file from the resources directory.
+func loadTemplate(filename string) (string, error) {
+	content, err := os.ReadFile(filepath.Join("resources/host/nginx/templates", filename))
+	if err != nil {
+		return "", fmt.Errorf("failed to read template %s: %w", filename, err)
+	}
+	return string(content), nil
 }
-
-stream {
-    upstream minikube_ingress {
-        server {{ .MinikubeIP }}:30443;
-    }
-
-    server {
-        listen 443;
-        listen [::]:443;
-        proxy_pass minikube_ingress;
-        ssl_preread on;  # Required to pass SNI for TLS passthrough
-    }
-}
-
-http {
-    include /etc/nginx/mime.types;
-    default_type application/octet-stream;
-
-    log_format main '$remote_addr - $remote_user [$time_local] "$request" '
-                    '$status $body_bytes_sent "$http_referer" '
-                    '"$http_user_agent" "$http_x_forwarded_for"';
-
-    access_log /var/log/nginx/access.log main;
-
-    sendfile on;
-    keepalive_timeout 65;
-
-    include /etc/nginx/conf.d/*.conf;
-}
-`
-
-	defaultConfTemplate = `server {
-    listen 80 default_server;
-    listen [::]:80 default_server;
-    server_name *.{{ .Domain }} *.{{ .AuthDomain }};
-
-    return 307 https://$host$request_uri;
-}
-`
-)
 
 // service is the singleton NGINX service instance.
 var service shared.ContainerService
@@ -86,25 +46,19 @@ func init() {
 				minikubeIP = "localhost"
 			}
 
+			// Load template from file
+			nginxConfTmpl, err := loadTemplate("nginx.conf.tmpl")
+			if err != nil {
+				panic(fmt.Sprintf("failed to load nginx.conf template: %v", err))
+			}
+
 			return []shared.TemplateConfig{
 				{
 					Name:       "nginx.conf",
-					Content:    nginxConfTemplate,
+					Content:    nginxConfTmpl,
 					OutputFile: "nginx.conf",
 					Data: struct{ MinikubeIP string }{
 						MinikubeIP: minikubeIP,
-					},
-				},
-				{
-					Name:       "default.conf",
-					Content:    defaultConfTemplate,
-					OutputFile: "conf.d/default.conf",
-					Data: struct {
-						Domain     string
-						AuthDomain string
-					}{
-						Domain:     cfg.DNS.Domain,
-						AuthDomain: cfg.DNS.AuthDomain,
 					},
 				},
 			}
@@ -117,7 +71,6 @@ func init() {
 				Name:  containerName,
 				Image: containerImage,
 				Ports: map[string]string{
-					"80/tcp":  "80/tcp",  // HTTP
 					"443/tcp": "443/tcp", // HTTPS
 				},
 				Volumes: map[string]string{

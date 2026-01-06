@@ -11,6 +11,7 @@ import (
 	"os"
 	"path/filepath"
 	"strings"
+	"text/template"
 	"time"
 
 	corev1 "k8s.io/api/core/v1"
@@ -21,6 +22,7 @@ import (
 	"k8s.io/client-go/util/homedir"
 
 	"github.com/kzgrzendek/nova/internal/cli/ui"
+	"github.com/kzgrzendek/nova/internal/core/constants"
 	"github.com/kzgrzendek/nova/internal/tools/exec"
 )
 
@@ -468,102 +470,146 @@ func LabelNamespace(ctx context.Context, name, key, value string) error {
 	return nil
 }
 
-// WaitForDeploymentReady waits for a StatefulSet or Deployment to be ready.
-// This function checks for StatefulSet first, then Deployment.
-// timeoutSeconds specifies how long to wait before giving up.
+// WaitForDeploymentReady waits for a Deployment to be ready.
 func WaitForDeploymentReady(ctx context.Context, namespace, name string, timeoutSeconds int) error {
 	clientset, err := getClient()
 	if err != nil {
 		return err
 	}
 
-	timeout := time.Duration(timeoutSeconds) * time.Second
-	deadline := time.Now().Add(timeout)
-	checkInterval := 5 * time.Second
+	if timeoutSeconds > 0 {
+		var cancel context.CancelFunc
+		ctx, cancel = context.WithTimeout(ctx, time.Duration(timeoutSeconds)*time.Second)
+		defer cancel()
+	}
 
-	for time.Now().Before(deadline) {
-		// Check if it's a StatefulSet
-		statefulset, err := clientset.AppsV1().StatefulSets(namespace).Get(ctx, name, metav1.GetOptions{})
-		if err == nil {
-			// Check if StatefulSet is ready
-			if statefulset.Status.ReadyReplicas == *statefulset.Spec.Replicas {
-				return nil
+	ticker := time.NewTicker(time.Duration(constants.DefaultCheckInterval) * time.Second)
+	defer ticker.Stop()
+
+	for {
+		select {
+		case <-ctx.Done():
+			if ctx.Err() == context.DeadlineExceeded {
+				return fmt.Errorf("timeout waiting for deployment %s/%s to be ready after %d seconds", namespace, name, timeoutSeconds)
 			}
-			ui.Debug("Waiting for StatefulSet %s/%s to be ready (%d/%d replicas ready)", namespace, name, statefulset.Status.ReadyReplicas, *statefulset.Spec.Replicas)
-			time.Sleep(checkInterval)
-			continue
-		}
+			return fmt.Errorf("context cancelled while waiting for deployment %s/%s: %w", namespace, name, ctx.Err())
+		case <-ticker.C:
+			deployment, err := clientset.AppsV1().Deployments(namespace).Get(ctx, name, metav1.GetOptions{})
+			if err != nil {
+				return fmt.Errorf("failed to get deployment %s/%s: %w", namespace, name, err)
+			}
 
-		// Check if it's a Deployment
-		deployment, err := clientset.AppsV1().Deployments(namespace).Get(ctx, name, metav1.GetOptions{})
-		if err == nil {
-			// Check if Deployment is ready
 			if deployment.Status.ReadyReplicas == *deployment.Spec.Replicas {
 				return nil
 			}
-			ui.Debug("Waiting for Deployment %s/%s to be ready (%d/%d replicas ready)", namespace, name, deployment.Status.ReadyReplicas, *deployment.Spec.Replicas)
-			time.Sleep(checkInterval)
-			continue
+			ui.Debug("Waiting for deployment %s/%s to be ready (%d/%d replicas ready)", namespace, name, deployment.Status.ReadyReplicas, *deployment.Spec.Replicas)
 		}
+	}
+}
 
-		// Neither StatefulSet nor Deployment found
-		return fmt.Errorf("neither StatefulSet nor Deployment named %s found in namespace %s", name, namespace)
+// WaitForStatefulSetReady waits for a StatefulSet to be ready.
+func WaitForStatefulSetReady(ctx context.Context, namespace, name string, timeoutSeconds int) error {
+	clientset, err := getClient()
+	if err != nil {
+		return err
 	}
 
-	return fmt.Errorf("timeout waiting for %s/%s to be ready after %d seconds", namespace, name, timeoutSeconds)
+	if timeoutSeconds > 0 {
+		var cancel context.CancelFunc
+		ctx, cancel = context.WithTimeout(ctx, time.Duration(timeoutSeconds)*time.Second)
+		defer cancel()
+	}
+
+	ticker := time.NewTicker(time.Duration(constants.DefaultCheckInterval) * time.Second)
+	defer ticker.Stop()
+
+	for {
+		select {
+		case <-ctx.Done():
+			if ctx.Err() == context.DeadlineExceeded {
+				return fmt.Errorf("timeout waiting for statefulset %s/%s to be ready after %d seconds", namespace, name, timeoutSeconds)
+			}
+			return fmt.Errorf("context cancelled while waiting for statefulset %s/%s: %w", namespace, name, ctx.Err())
+		case <-ticker.C:
+			statefulset, err := clientset.AppsV1().StatefulSets(namespace).Get(ctx, name, metav1.GetOptions{})
+			if err != nil {
+				return fmt.Errorf("failed to get statefulset %s/%s: %w", namespace, name, err)
+			}
+
+			if statefulset.Status.ReadyReplicas == *statefulset.Spec.Replicas {
+				return nil
+			}
+			ui.Debug("Waiting for statefulset %s/%s to be ready (%d/%d replicas ready)", namespace, name, statefulset.Status.ReadyReplicas, *statefulset.Spec.Replicas)
+		}
+	}
 }
 
 // WaitForEndpoints waits for a Service's endpoints to have at least one address.
-// timeoutSeconds specifies how long to wait before giving up.
 func WaitForEndpoints(ctx context.Context, namespace, name string, timeoutSeconds int) error {
 	clientset, err := getClient()
 	if err != nil {
 		return err
 	}
 
-	timeout := time.Duration(timeoutSeconds) * time.Second
-	deadline := time.Now().Add(timeout)
-	checkInterval := 2 * time.Second
+	if timeoutSeconds > 0 {
+		var cancel context.CancelFunc
+		ctx, cancel = context.WithTimeout(ctx, time.Duration(timeoutSeconds)*time.Second)
+		defer cancel()
+	}
 
-	for time.Now().Before(deadline) {
-		endpoints, err := clientset.CoreV1().Endpoints(namespace).Get(ctx, name, metav1.GetOptions{})
-		if err == nil {
-			// Check if endpoints have at least one address
-			for _, subset := range endpoints.Subsets {
-				if len(subset.Addresses) > 0 {
-					return nil
+	ticker := time.NewTicker(time.Duration(constants.FastCheckInterval) * time.Second)
+	defer ticker.Stop()
+
+	for {
+		select {
+		case <-ctx.Done():
+			if ctx.Err() == context.DeadlineExceeded {
+				return fmt.Errorf("timeout waiting for endpoints %s/%s after %d seconds", namespace, name, timeoutSeconds)
+			}
+			return fmt.Errorf("context cancelled while waiting for endpoints %s/%s: %w", namespace, name, ctx.Err())
+		case <-ticker.C:
+			endpoints, err := clientset.CoreV1().Endpoints(namespace).Get(ctx, name, metav1.GetOptions{})
+			if err == nil {
+				for _, subset := range endpoints.Subsets {
+					if len(subset.Addresses) > 0 {
+						return nil
+					}
 				}
 			}
 		}
-
-		time.Sleep(checkInterval)
 	}
-
-	return fmt.Errorf("timeout waiting for endpoints %s/%s after %d seconds", namespace, name, timeoutSeconds)
 }
 
 // WaitForSecret waits for a Secret to exist in a namespace.
-// timeoutSeconds specifies how long to wait before giving up.
 func WaitForSecret(ctx context.Context, namespace, name string, timeoutSeconds int) error {
 	clientset, err := getClient()
 	if err != nil {
 		return err
 	}
 
-	timeout := time.Duration(timeoutSeconds) * time.Second
-	deadline := time.Now().Add(timeout)
-	checkInterval := 2 * time.Second
-
-	for time.Now().Before(deadline) {
-		_, err := clientset.CoreV1().Secrets(namespace).Get(ctx, name, metav1.GetOptions{})
-		if err == nil {
-			return nil
-		}
-
-		time.Sleep(checkInterval)
+	if timeoutSeconds > 0 {
+		var cancel context.CancelFunc
+		ctx, cancel = context.WithTimeout(ctx, time.Duration(timeoutSeconds)*time.Second)
+		defer cancel()
 	}
 
-	return fmt.Errorf("timeout waiting for secret %s/%s after %d seconds", namespace, name, timeoutSeconds)
+	ticker := time.NewTicker(time.Duration(constants.FastCheckInterval) * time.Second)
+	defer ticker.Stop()
+
+	for {
+		select {
+		case <-ctx.Done():
+			if ctx.Err() == context.DeadlineExceeded {
+				return fmt.Errorf("timeout waiting for secret %s/%s after %d seconds", namespace, name, timeoutSeconds)
+			}
+			return fmt.Errorf("context cancelled while waiting for secret %s/%s: %w", namespace, name, ctx.Err())
+		case <-ticker.C:
+			_, err := clientset.CoreV1().Secrets(namespace).Get(ctx, name, metav1.GetOptions{})
+			if err == nil {
+				return nil
+			}
+		}
+	}
 }
 
 // GetSecretData retrieves data from a Kubernetes secret.
@@ -820,4 +866,74 @@ func SwitchContext(ctx context.Context, contextName string) error {
 // RenameContext renames a kubectl context.
 func RenameContext(ctx context.Context, oldName, newName string) error {
 	return exec.Run(ctx, "kubectl", "config", "rename-context", oldName, newName)
+}
+
+// ApplyYAMLWithTemplate applies a YAML file with template substitution.
+// The template data is passed as a map and used to render the YAML content.
+func ApplyYAMLWithTemplate(ctx context.Context, path string, data interface{}) error {
+	// Read template file
+	content, err := os.ReadFile(path)
+	if err != nil {
+		return fmt.Errorf("failed to read template file %s: %w", path, err)
+	}
+
+	// Parse and execute template
+	tmpl, err := template.New("kubectl-yaml").Parse(string(content))
+	if err != nil {
+		return fmt.Errorf("failed to parse template %s: %w", path, err)
+	}
+
+	var buf strings.Builder
+	if err := tmpl.Execute(&buf, data); err != nil {
+		return fmt.Errorf("failed to execute template %s: %w", path, err)
+	}
+
+	// Apply rendered YAML
+	return ApplyYAMLContent(ctx, buf.String())
+}
+
+// ResourceExists checks if a Kubernetes resource exists.
+// resourceType should be one of: pod, pvc, deployment, service, job, etc.
+func ResourceExists(ctx context.Context, resourceType, name, namespace string) (bool, error) {
+	args := []string{"get", resourceType, name}
+	if namespace != "" {
+		args = append(args, "-n", namespace)
+	}
+
+	err := exec.Run(ctx, "kubectl", args...)
+	if err != nil {
+		// Check if error is "not found" (resource doesn't exist)
+		if strings.Contains(err.Error(), "NotFound") || strings.Contains(err.Error(), "not found") {
+			return false, nil
+		}
+		return false, fmt.Errorf("failed to check if %s %s exists: %w", resourceType, name, err)
+	}
+
+	return true, nil
+}
+
+// IsJobComplete checks if a Kubernetes Job has completed successfully.
+func IsJobComplete(ctx context.Context, name, namespace string) (bool, error) {
+	clientset, err := getClient()
+	if err != nil {
+		return false, err
+	}
+
+	job, err := clientset.BatchV1().Jobs(namespace).Get(ctx, name, metav1.GetOptions{})
+	if err != nil {
+		return false, fmt.Errorf("failed to get job %s: %w", name, err)
+	}
+
+	// Check if job has succeeded
+	if job.Status.Succeeded > 0 {
+		return true, nil
+	}
+
+	// Check if job has failed
+	if job.Status.Failed > 0 {
+		return false, fmt.Errorf("job %s failed", name)
+	}
+
+	// Job is still running
+	return false, nil
 }

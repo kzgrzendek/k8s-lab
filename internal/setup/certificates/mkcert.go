@@ -101,3 +101,32 @@ func GetCAInfo() (string, error) {
 
 	return fmt.Sprintf("CA Root: %s\n%s", caRoot, string(output)), nil
 }
+
+// GenerateCertificate generates a TLS certificate for the given domains using mkcert.
+// The certificate and key are saved to the specified output directory.
+func GenerateCertificate(certPath, keyPath string, domains ...string) error {
+	if len(domains) == 0 {
+		return fmt.Errorf("at least one domain is required")
+	}
+
+	// Ensure output directory exists
+	certDir := filepath.Dir(certPath)
+	if err := os.MkdirAll(certDir, 0755); err != nil {
+		return fmt.Errorf("failed to create certificate directory: %w", err)
+	}
+
+	// Build mkcert command
+	args := []string{
+		"-cert-file", certPath,
+		"-key-file", keyPath,
+	}
+	args = append(args, domains...)
+
+	cmd := exec.Command("mkcert", args...)
+	output, err := cmd.CombinedOutput()
+	if err != nil {
+		return fmt.Errorf("mkcert failed: %w\nOutput: %s", err, string(output))
+	}
+
+	return nil
+}

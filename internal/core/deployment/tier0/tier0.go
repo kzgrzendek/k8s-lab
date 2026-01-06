@@ -7,6 +7,8 @@ import (
 
 	"github.com/kzgrzendek/nova/internal/cli/ui"
 	"github.com/kzgrzendek/nova/internal/core/config"
+	"github.com/kzgrzendek/nova/internal/core/constants"
+	"github.com/kzgrzendek/nova/internal/core/deployment/shared"
 	k8s "github.com/kzgrzendek/nova/internal/tools/kubectl"
 	"github.com/kzgrzendek/nova/internal/tools/minikube"
 )
@@ -29,13 +31,22 @@ func DeployTier0(ctx context.Context, cfg *config.Config) error {
 	}
 	ui.Success("Minikube cluster started")
 
+	// Install mkcert CA certificate on all nodes for registry TLS
+	ui.Step("Installing TLS certificates on nodes...")
+	if err := minikube.InstallRegistryCA(ctx, cfg); err != nil {
+		ui.Warn("Failed to install CA certificate: %v", err)
+		ui.Info("Registry TLS verification may fail")
+	}
+
 	// Rename minikube context to cluster-admin for consistency
-	if k8s.ContextExists(ctx, "minikube") {
+	if k8s.ContextExists(ctx, "minikube") && !k8s.ContextExists(ctx, "cluster-admin") {
 		if err := k8s.RenameContext(ctx, "minikube", "cluster-admin"); err != nil {
 			ui.Warn("Failed to rename context 'minikube' to 'cluster-admin': %v", err)
 		} else {
 			ui.Info("Renamed kubectl context 'minikube' to 'cluster-admin'")
 		}
+	} else if k8s.ContextExists(ctx, "cluster-admin") {
+		ui.Debug("Context 'cluster-admin' already exists, skipping rename")
 	}
 
 	// Step 2: Mount BPF filesystem on all nodes
@@ -93,10 +104,60 @@ func DeployTier0(ctx context.Context, cfg *config.Config) error {
 
 	// Step 4: Configure node types and GPU operator
 	ui.Step("Configuring node types and GPU operator...")
+	if err := configureNodeLabelsAndTaints(ctx, cfg, allNodes); err != nil {
+		return fmt.Errorf("failed to configure node labels and taints: %w", err)
+	}
 
-	// Get list of worker nodes
-	var workerNodes []string
+	// Step 5: Add Helm repositories for cluster basics
+	ui.Step("Adding Helm repositories...")
+	repos := map[string]string{
+		"cilium": constants.HelmRepoCilium,
+	}
+	if err := shared.AddHelmRepositories(ctx, repos); err != nil {
+		return fmt.Errorf("failed to add Helm repositories: %w", err)
+	}
+	ui.Success("Helm repositories added")
+
+	// Step 6: Deploy Cilium CNI (fundamental networking)
+	ui.Step("Deploying Cilium CNI...")
+	if err := deployCilium(ctx, cfg); err != nil {
+		return fmt.Errorf("failed to deploy Cilium: %w", err)
+	}
+	ui.Success("Cilium CNI deployed")
+
+	// Step 7: Configure CoreDNS (fundamental DNS)
+	ui.Step("Configuring CoreDNS...")
+	if err := deployCoreDNS(ctx, cfg); err != nil {
+		return fmt.Errorf("failed to configure CoreDNS: %w", err)
+	}
+	ui.Success("CoreDNS configured")
+
+	// Step 8: Deploy Local Path Storage (fundamental storage)
+	ui.Step("Deploying Local Path Storage...")
+	if err := deployLocalPathStorage(ctx, cfg); err != nil {
+		return fmt.Errorf("failed to deploy storage: %w", err)
+	}
+	ui.Success("Local Path Storage deployed")
+
+	ui.Header("Tier 0 Deployment Complete")
+	ui.Info("Cluster ready with networking, DNS, and storage")
+	ui.Info("Run 'nova kubectl get nodes' to verify cluster status")
+
+	return nil
+}
+
+func plural(count int) string {
+	if count == 1 {
+		return ""
+	}
+	return "s"
+}
+
+// classifyNodes separates nodes into master and worker nodes.
+func classifyNodes(ctx context.Context, allNodes []string) (string, []string) {
 	var masterNode string
+	var workerNodes []string
+
 	for _, node := range allNodes {
 		isControlPlane, err := k8s.IsNodeControlPlane(ctx, node)
 		if err != nil {
@@ -109,119 +170,233 @@ func DeployTier0(ctx context.Context, cfg *config.Config) error {
 		}
 	}
 
+	return masterNode, workerNodes
+}
+
+// configureNodeLabelsAndTaints configures node labels and taints based on GPU/CPU mode.
+func configureNodeLabelsAndTaints(ctx context.Context, cfg *config.Config, allNodes []string) error {
+	masterNode, workerNodes := classifyNodes(ctx, allNodes)
+
 	if cfg.IsGPUMode() {
-		// GPU MODE
-		if len(workerNodes) > 0 {
-			// Multi-node GPU cluster: elect one GPU worker, rest are CPU
-			ui.Info("GPU mode: multi-node cluster")
+		return configureGPUMode(ctx, masterNode, workerNodes)
+	}
+	return configureCPUMode(ctx, masterNode, workerNodes)
+}
 
-			// Disable GPU operands on all nodes first
-			if err := k8s.LabelAllNodes(ctx, "nvidia.com/gpu.deploy.operands=false"); err != nil {
-				ui.Warn("Failed to disable GPU operands cluster-wide: %v", err)
-			}
+// configureGPUMode configures nodes for GPU mode.
+func configureGPUMode(ctx context.Context, masterNode string, workerNodes []string) error {
+	if len(workerNodes) > 0 {
+		return configureMultiNodeGPU(ctx, workerNodes)
+	}
+	return configureSingleNodeGPU(ctx, masterNode)
+}
 
-			// Elect first worker as GPU node
-			gpuNode := workerNodes[0]
-			if err := k8s.LabelNode(ctx, gpuNode, "nova.local/node-type=gpu-nvidia", false); err != nil {
-				ui.Warn("Failed to label %s as GPU node: %v", gpuNode, err)
-			} else {
-				ui.Info("Labeled %s as GPU node", gpuNode)
-			}
+// configureCPUMode configures nodes for CPU mode.
+func configureCPUMode(ctx context.Context, masterNode string, workerNodes []string) error {
+	if len(workerNodes) > 0 {
+		return configureMultiNodeCPU(ctx, workerNodes)
+	}
+	return configureSingleNodeCPU(ctx, masterNode)
+}
 
-			// Enable GPU operands on GPU node
-			if err := k8s.LabelNode(ctx, gpuNode, "nvidia.com/gpu.deploy.operands=true", false); err != nil {
-				ui.Warn("Failed to enable GPU operands on %s: %v", gpuNode, err)
-			}
+// configureMultiNodeGPU configures a multi-node cluster in GPU mode.
+func configureMultiNodeGPU(ctx context.Context, workerNodes []string) error {
+	ui.Info("GPU mode: multi-node cluster")
 
-			// Label remaining workers as CPU
-			for i := 1; i < len(workerNodes); i++ {
-				if err := k8s.LabelNode(ctx, workerNodes[i], "nova.local/node-type=cpu", false); err != nil {
-					ui.Warn("Failed to label %s as CPU node: %v", workerNodes[i], err)
-				} else {
-					ui.Info("Labeled %s as CPU node", workerNodes[i])
-				}
-			}
-		} else {
-			// Single-node GPU cluster: use master as GPU, remove taint
-			ui.Info("GPU mode: single-node cluster")
-
-			if masterNode != "" {
-				// Label master as GPU
-				if err := k8s.LabelNode(ctx, masterNode, "nova.local/node-type=gpu-nvidia", false); err != nil {
-					ui.Warn("Failed to label %s as GPU node: %v", masterNode, err)
-				} else {
-					ui.Info("Labeled %s as GPU node", masterNode)
-				}
-
-				// Enable GPU operands on master
-				if err := k8s.LabelNode(ctx, masterNode, "nvidia.com/gpu.deploy.operands=true", false); err != nil {
-					ui.Warn("Failed to enable GPU operands on %s: %v", masterNode, err)
-				}
-
-				// Remove taint from master to allow workloads
-				if err := k8s.RemoveTaint(ctx, masterNode, "node-role.kubernetes.io/control-plane"); err != nil {
-					ui.Warn("Failed to remove control-plane taint from %s: %v", masterNode, err)
-				} else {
-					ui.Info("Removed control-plane taint from %s", masterNode)
-				}
-				if err := k8s.RemoveTaint(ctx, masterNode, "node-role.kubernetes.io/master"); err != nil {
-					// This might fail on newer K8s versions, which is expected
-					ui.Debug("Master taint removal from %s (expected on newer K8s)", masterNode)
-				}
-			}
-		}
-		ui.Success("GPU mode configured")
-	} else {
-		// CPU MODE
-		if len(workerNodes) > 0 {
-			// Multi-node CPU cluster: label all workers as CPU
-			ui.Info("CPU mode: multi-node cluster")
-
-			for _, worker := range workerNodes {
-				if err := k8s.LabelNode(ctx, worker, "nova.local/node-type=cpu", false); err != nil {
-					ui.Warn("Failed to label %s as CPU node: %v", worker, err)
-				} else {
-					ui.Info("Labeled %s as CPU node", worker)
-				}
-			}
-		} else {
-			// Single-node CPU cluster: label master as CPU, remove taint
-			ui.Info("CPU mode: single-node cluster")
-
-			if masterNode != "" {
-				// Label master as CPU
-				if err := k8s.LabelNode(ctx, masterNode, "nova.local/node-type=cpu", false); err != nil {
-					ui.Warn("Failed to label %s as CPU node: %v", masterNode, err)
-				} else {
-					ui.Info("Labeled %s as CPU node", masterNode)
-				}
-
-				// Remove taint from master to allow workloads
-				if err := k8s.RemoveTaint(ctx, masterNode, "node-role.kubernetes.io/control-plane"); err != nil {
-					ui.Warn("Failed to remove control-plane taint from %s: %v", masterNode, err)
-				} else {
-					ui.Info("Removed control-plane taint from %s", masterNode)
-				}
-				if err := k8s.RemoveTaint(ctx, masterNode, "node-role.kubernetes.io/master"); err != nil {
-					// This might fail on newer K8s versions, which is expected
-					ui.Debug("Master taint removal from %s (expected on newer K8s)", masterNode)
-				}
-			}
-		}
-		ui.Success("CPU mode configured")
+	// Disable GPU operands on all nodes first
+	if err := k8s.LabelAllNodes(ctx, constants.LabelGPUOperands+"=false"); err != nil {
+		ui.Warn("Failed to disable GPU operands cluster-wide: %v", err)
 	}
 
-	ui.Header("Tier 0 Deployment Complete")
-	ui.Info("Minikube cluster is ready")
-	ui.Info("Run 'nova kubectl get nodes' to verify cluster status")
+	// First worker is GPU node
+	gpuNode := workerNodes[0]
+	if err := k8s.LabelNode(ctx, gpuNode, constants.LabelNodeTypeGPU+"=gpu-nvidia", false); err != nil {
+		return fmt.Errorf("failed to label GPU node: %w", err)
+	}
+	ui.Info("Labeled %s as GPU node", gpuNode)
+
+	if err := k8s.LabelNode(ctx, gpuNode, constants.LabelGPUOperands+"=true", false); err != nil {
+		ui.Warn("Failed to enable GPU operands: %v", err)
+	}
+
+	// Remaining workers are CPU nodes
+	for i := 1; i < len(workerNodes); i++ {
+		if err := k8s.LabelNode(ctx, workerNodes[i], constants.LabelNodeTypeGPU+"=cpu", false); err != nil {
+			ui.Warn("Failed to label CPU node %s: %v", workerNodes[i], err)
+		} else {
+			ui.Info("Labeled %s as CPU node", workerNodes[i])
+		}
+	}
+
+	ui.Success("GPU mode configured")
+	return nil
+}
+
+// configureSingleNodeGPU configures a single-node cluster in GPU mode.
+func configureSingleNodeGPU(ctx context.Context, masterNode string) error {
+	ui.Info("GPU mode: single-node cluster")
+
+	if masterNode == "" {
+		return fmt.Errorf("no master node found")
+	}
+
+	if err := k8s.LabelNode(ctx, masterNode, constants.LabelNodeTypeGPU+"=gpu-nvidia", false); err != nil {
+		return fmt.Errorf("failed to label GPU node: %w", err)
+	}
+	ui.Info("Labeled %s as GPU node", masterNode)
+
+	if err := k8s.LabelNode(ctx, masterNode, constants.LabelGPUOperands+"=true", false); err != nil {
+		ui.Warn("Failed to enable GPU operands: %v", err)
+	}
+
+	if err := removeMasterTaints(ctx, masterNode); err != nil {
+		return err
+	}
+
+	ui.Success("GPU mode configured")
+	return nil
+}
+
+// configureMultiNodeCPU configures a multi-node cluster in CPU mode.
+func configureMultiNodeCPU(ctx context.Context, workerNodes []string) error {
+	ui.Info("CPU mode: multi-node cluster")
+
+	for _, worker := range workerNodes {
+		if err := k8s.LabelNode(ctx, worker, constants.LabelNodeTypeGPU+"=cpu", false); err != nil {
+			ui.Warn("Failed to label CPU node %s: %v", worker, err)
+		} else {
+			ui.Info("Labeled %s as CPU node", worker)
+		}
+	}
+
+	ui.Success("CPU mode configured")
+	return nil
+}
+
+// configureSingleNodeCPU configures a single-node cluster in CPU mode.
+func configureSingleNodeCPU(ctx context.Context, masterNode string) error {
+	ui.Info("CPU mode: single-node cluster")
+
+	if masterNode == "" {
+		return fmt.Errorf("no master node found")
+	}
+
+	if err := k8s.LabelNode(ctx, masterNode, constants.LabelNodeTypeGPU+"=cpu", false); err != nil {
+		return fmt.Errorf("failed to label CPU node: %w", err)
+	}
+	ui.Info("Labeled %s as CPU node", masterNode)
+
+	if err := removeMasterTaints(ctx, masterNode); err != nil {
+		return err
+	}
+
+	ui.Success("CPU mode configured")
+	return nil
+}
+
+// removeMasterTaints removes taints from the master node to allow workload scheduling.
+func removeMasterTaints(ctx context.Context, masterNode string) error {
+	if err := k8s.RemoveTaint(ctx, masterNode, constants.LabelControlPlane); err != nil {
+		ui.Warn("Failed to remove control-plane taint: %v", err)
+	} else {
+		ui.Info("Removed control-plane taint from %s", masterNode)
+	}
+
+	// Try removing legacy master taint (older K8s versions)
+	if err := k8s.RemoveTaint(ctx, masterNode, constants.LabelMaster); err != nil {
+		ui.Debug("Master taint removal from %s (expected on newer K8s)", masterNode)
+	}
 
 	return nil
 }
 
-// plural returns "s" for counts != 1, empty string for count == 1.
-func plural(count int) string {
-	if count == 1 {
-		return ""
+// deployCilium deploys Cilium CNI with runtime configuration for Minikube.
+func deployCilium(ctx context.Context, cfg *config.Config) error {
+	// Label namespace
+	if err := k8s.LabelNamespace(ctx, "kube-system", "service-type", "nova"); err != nil {
+		return fmt.Errorf("failed to label kube-system namespace for routing: %w", err)
 	}
-	return "s"
+
+	// Get minikube IP for Cilium configuration
+	ui.Info("Getting Minikube control plane IP...")
+	minikubeIP, err := minikube.GetIP(ctx)
+	if err != nil {
+		return fmt.Errorf("failed to get minikube IP: %w", err)
+	}
+
+	// Get API server port from kubectl
+	ui.Info("Getting API server port...")
+	apiPort, err := minikube.GetAPIServerPort(ctx)
+	if err != nil {
+		return fmt.Errorf("failed to get API server port: %w", err)
+	}
+
+	// Create dynamic overrides for runtime configuration
+	// Note: We MUST set k8sServiceHost and k8sServicePort for Cilium to work properly in Minikube
+	ui.Info("Installing Cilium CNI with API server %s:%s (may take a few minutes)...", minikubeIP, apiPort)
+
+	return shared.DeployHelmChart(ctx, shared.HelmDeploymentOptions{
+		ReleaseName: "cilium",
+		ChartRef:    cfg.Versions.Tier1.Cilium.ChartRef(),
+		Version:     cfg.Versions.Tier1.Cilium.GetVersion(),
+		Namespace:   "kube-system",
+		ValuesPath:  "resources/core/deployment/tier1/cilium/values.yaml",
+		Values: map[string]any{
+			"k8sServiceHost": minikubeIP,
+			"k8sServicePort": apiPort,
+		},
+		Wait:            true,
+		TimeoutSeconds:  600,
+		CreateNamespace: true,
+	})
+}
+
+// deployLocalPathStorage deploys local-path-provisioner for dynamic PVC provisioning.
+func deployLocalPathStorage(ctx context.Context, cfg *config.Config) error {
+	// Apply local-path-provisioner (includes namespace creation)
+	ui.Info("Installing Local Path Provisioner...")
+	if err := k8s.ApplyURL(ctx, cfg.GetLocalPathProvisionerManifestURL()); err != nil {
+		return fmt.Errorf("failed to deploy local-path-provisioner: %w", err)
+	}
+
+	// Apply additional standard storage class
+	ui.Info("Applying standard storage class...")
+	if err := k8s.ApplyYAML(ctx, "resources/core/deployment/tier1/local-path-provisioner/storageclasses/standard.yaml"); err != nil {
+		return fmt.Errorf("failed to apply standard storage class: %w", err)
+	}
+
+	// Patch configmap for custom storage directory
+	ui.Info("Patching storage directory configuration...")
+	if err := k8s.PatchConfigMap(ctx, constants.NamespaceLocalPathStorage, "local-path-config", "resources/core/deployment/tier1/local-path-provisioner/patches/storage-dir.yaml"); err != nil {
+		return fmt.Errorf("failed to patch local-path-config: %w", err)
+	}
+
+	return nil
+}
+
+// deployCoreDNS configures CoreDNS with domain rewrites for NOVA services.
+func deployCoreDNS(ctx context.Context, cfg *config.Config) error {
+	data := map[string]any{
+		"AuthDomain": cfg.DNS.AuthDomain,
+		"Domain":     cfg.DNS.Domain,
+	}
+
+	if err := shared.ApplyTemplate(ctx, "resources/core/deployment/tier1/coredns/configmaps/config-dns-rewrite.yaml", data); err != nil {
+		return fmt.Errorf("failed to apply coredns rewrite config: %w", err)
+	}
+
+	// Restart CoreDNS to pick up changes immediately
+	ui.Info("Restarting CoreDNS to apply configuration...")
+	if err := k8s.RestartDeployment(ctx, "kube-system", "coredns"); err != nil {
+		return fmt.Errorf("failed to restart coredns: %w", err)
+	}
+
+	// Wait for CoreDNS to be fully ready before proceeding
+	// This prevents DNS resolution failures in subsequent components (e.g., Falco)
+	ui.Info("Waiting for CoreDNS to be ready...")
+	if err := k8s.WaitForDeploymentReady(ctx, "kube-system", "coredns", 120); err != nil {
+		return fmt.Errorf("coredns did not become ready: %w", err)
+	}
+
+	return nil
 }
