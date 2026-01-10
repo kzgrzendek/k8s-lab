@@ -2,10 +2,10 @@ multinode: false
 
 modelArtifacts:
   name: "{{.ModelName}}"
-  uri: "hf://{{.ModelName}}"
+  # Use pre-warmed model from NFS-backed PVC if available
+  # Format: pvc://pvc_name/path/to/model
+  uri: "pvc://{{.ModelPVCName}}/"
   size: "8Gi"
-  # Use pre-warmed model from PVC if available, otherwise llmd downloads on startup
-  existingClaim: "{{.ModelPVCName}}"
 
   labels:
     llm-d.ai/inferenceServing: "true"
@@ -30,14 +30,9 @@ decode:
 
   containers:
     - name: vllm
-      image: ghcr.io/llm-d/llm-d-cuda:v0.4.0
+      image: "{{.LLMDCudaImage}}"
       modelCommand: vllmServe
       args:
-        - {{.ModelName}}
-        - --port
-        - "8200"
-        - --served-model-name
-        - {{.ModelName}}
         - --max-model-len
         - "32768"
 

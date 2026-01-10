@@ -89,7 +89,7 @@ func init() {
 			return docker.ContainerConfig{
 				Name:  containerName,
 				Image: containerImage,
-				User:  fmt.Sprintf("%d:%d", os.Getuid(), os.Getgid()), // Run as current user to avoid permission issues
+				// bind9 needs to run as root to bind port 53 and drop privileges to bind user
 				Ports: map[string]string{
 					dnsPort + "/tcp": "53/tcp",
 					dnsPort + "/udp": "53/udp",
@@ -102,7 +102,6 @@ func init() {
 				Env: []string{
 					"BIND9_USER=bind",
 				},
-				Capabilities:  []string{"NET_ADMIN"},
 				RestartPolicy: "unless-stopped",
 			}
 		},

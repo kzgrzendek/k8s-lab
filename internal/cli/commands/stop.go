@@ -4,8 +4,8 @@ import (
 	"fmt"
 
 	"github.com/kzgrzendek/nova/internal/cli/ui"
-	"github.com/kzgrzendek/nova/internal/host/dns/bind9"
-	"github.com/kzgrzendek/nova/internal/host/gateway/nginx"
+	"github.com/kzgrzendek/nova/internal/core/config"
+	"github.com/kzgrzendek/nova/internal/host/foundation"
 	"github.com/kzgrzendek/nova/internal/tools/minikube"
 	"github.com/spf13/cobra"
 )
@@ -19,6 +19,7 @@ func newStopCmd() *cobra.Command {
   • Stops Minikube cluster (preserves disk state)
   • Stops NGINX gateway container
   • Stops Bind9 DNS container
+  • Stops NFS server container
 
 All data is preserved and can be restarted with 'nova start'.`,
 		RunE: runStop,
@@ -28,11 +29,16 @@ All data is preserved and can be restarted with 'nova start'.`,
 func runStop(cmd *cobra.Command, args []string) error {
 	ui.Header("Stopping NOVA")
 
+	// Load config
+	cfg, err := config.Load()
+	if err != nil {
+		return fmt.Errorf("failed to load config: %w", err)
+	}
+
 	// Define stop steps
 	steps := []string{
 		"Minikube Cluster",
-		"NGINX Gateway",
-		"Bind9 DNS Server",
+		"Foundation Stack",
 	}
 
 	// Create progress tracker
@@ -49,22 +55,12 @@ func runStop(cmd *cobra.Command, args []string) error {
 	progress.CompleteStep(currentStep)
 	currentStep++
 
-	// Step 2: Stop NGINX gateway
+	// Step 2: Stop Foundation Stack (NGINX, Bind9, NFS, Registry)
 	progress.StartStep(currentStep)
-	ui.Info("Stopping NGINX gateway...")
-	if err := nginx.Stop(cmd.Context()); err != nil {
+	foundationStack := foundation.New(cfg)
+	if err := foundationStack.Stop(cmd.Context()); err != nil {
 		progress.FailStep(currentStep, err)
-		return fmt.Errorf("failed to stop NGINX gateway: %w", err)
-	}
-	progress.CompleteStep(currentStep)
-	currentStep++
-
-	// Step 3: Stop Bind9 DNS
-	progress.StartStep(currentStep)
-	ui.Info("Stopping Bind9 DNS server...")
-	if err := bind9.Stop(cmd.Context()); err != nil {
-		progress.FailStep(currentStep, err)
-		return fmt.Errorf("failed to stop Bind9 DNS server: %w", err)
+		return fmt.Errorf("failed to stop foundation stack: %w", err)
 	}
 	progress.CompleteStep(currentStep)
 

@@ -13,23 +13,20 @@ import (
 	"github.com/kzgrzendek/nova/internal/tools/minikube"
 )
 
-// DeployTier0 deploys tier 0: Minikube cluster with post-configuration.
+// DeployTier0 deploys tier 0: Post-configuration of the Minikube cluster.
+// Note: The cluster itself is already started by the Foundation Stack.
 func DeployTier0(ctx context.Context, cfg *config.Config) error {
-	ui.Header("Tier 0: Minikube Cluster")
+	ui.Header("Tier 0: Cluster Configuration")
 
-	// Step 1: Start Minikube cluster
-	ui.Step("Starting Minikube cluster...")
-	ui.Info("Driver: %s", cfg.Minikube.Driver)
-	ui.Info("Nodes: %d", cfg.Minikube.Nodes)
-	ui.Info("CPUs/node: %d", cfg.Minikube.CPUs)
-	ui.Info("RAM/node: %dMB", cfg.Minikube.Memory)
-	ui.Info("Kubernetes: %s", cfg.Minikube.KubernetesVersion)
-	ui.Info("GPUs: %s", cfg.Minikube.GPUs)
+	// Minikube cluster is already started by Foundation Stack
+	ui.Info("Configuring cluster (already started by Foundation Stack)...")
 
-	if err := minikube.StartCluster(ctx, cfg); err != nil {
-		return fmt.Errorf("failed to start cluster: %w", err)
+	// Configure DNS mapping for registry.local -> host gateway IP
+	ui.Step("Configuring registry DNS on nodes...")
+	if err := minikube.ConfigureRegistryDNS(ctx, cfg); err != nil {
+		ui.Warn("Failed to configure registry DNS: %v", err)
+		ui.Info("Registry access from nodes may fail")
 	}
-	ui.Success("Minikube cluster started")
 
 	// Install mkcert CA certificate on all nodes for registry TLS
 	ui.Step("Installing TLS certificates on nodes...")
@@ -38,12 +35,20 @@ func DeployTier0(ctx context.Context, cfg *config.Config) error {
 		ui.Info("Registry TLS verification may fail")
 	}
 
-	// Rename minikube context to cluster-admin for consistency
-	if k8s.ContextExists(ctx, "minikube") && !k8s.ContextExists(ctx, "cluster-admin") {
-		if err := k8s.RenameContext(ctx, "minikube", "cluster-admin"); err != nil {
-			ui.Warn("Failed to rename context 'minikube' to 'cluster-admin': %v", err)
+	// Install NFS client on all nodes for persistent storage
+	ui.Step("Installing NFS client on nodes...")
+	if err := minikube.InstallNFSClient(ctx, cfg); err != nil {
+		ui.Warn("Failed to install NFS client: %v", err)
+		ui.Info("NFS-based storage may not work")
+	}
+
+	// Rename nova context to cluster-admin for consistency
+	// With --profile=nova, minikube creates a context named "nova" instead of "minikube"
+	if k8s.ContextExists(ctx, "nova") && !k8s.ContextExists(ctx, "cluster-admin") {
+		if err := k8s.RenameContext(ctx, "nova", "cluster-admin"); err != nil {
+			ui.Warn("Failed to rename context 'nova' to 'cluster-admin': %v", err)
 		} else {
-			ui.Info("Renamed kubectl context 'minikube' to 'cluster-admin'")
+			ui.Info("Renamed kubectl context 'nova' to 'cluster-admin'")
 		}
 	} else if k8s.ContextExists(ctx, "cluster-admin") {
 		ui.Debug("Context 'cluster-admin' already exists, skipping rename")
@@ -106,6 +111,17 @@ func DeployTier0(ctx context.Context, cfg *config.Config) error {
 	ui.Step("Configuring node types and GPU operator...")
 	if err := configureNodeLabelsAndTaints(ctx, cfg, allNodes); err != nil {
 		return fmt.Errorf("failed to configure node labels and taints: %w", err)
+	}
+
+	// Step 4.5: Elect llm-d node (must happen after node labeling for warmup to work)
+	ui.Step("Electing llm-d node...")
+	electedNode, err := minikube.ElectLLMDNode(ctx, cfg)
+	if err != nil {
+		ui.Warn("Failed to elect llm-d node: %v", err)
+		ui.Warn("Image warmup may not be able to pre-distribute to target node")
+		// Continue despite election failure
+	} else {
+		ui.Success("Node elected for llm-d: %s", electedNode)
 	}
 
 	// Step 5: Add Helm repositories for cluster basics
@@ -363,6 +379,12 @@ func deployLocalPathStorage(ctx context.Context, cfg *config.Config) error {
 	ui.Info("Applying standard storage class...")
 	if err := k8s.ApplyYAML(ctx, "resources/core/deployment/tier1/local-path-provisioner/storageclasses/standard.yaml"); err != nil {
 		return fmt.Errorf("failed to apply standard storage class: %w", err)
+	}
+
+	// Apply NFS models storage class (for tier 3 LLM model storage)
+	ui.Info("Applying NFS models storage class...")
+	if err := k8s.ApplyYAML(ctx, "resources/core/deployment/tier1/nfs/sc-nfs-models.yaml"); err != nil {
+		return fmt.Errorf("failed to apply NFS models storage class: %w", err)
 	}
 
 	// Patch configmap for custom storage directory

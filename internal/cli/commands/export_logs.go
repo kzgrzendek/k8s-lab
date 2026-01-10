@@ -7,6 +7,7 @@ import (
 	"io"
 	"os"
 	"path/filepath"
+	"strings"
 	"time"
 
 	"github.com/kzgrzendek/nova/internal/cli/ui"
@@ -266,13 +267,13 @@ func collectPodLogs(ctx context.Context, outputDir string) error {
 	}
 
 	// Parse and collect logs for each pod
-	lines := splitLines(podsOutput)
-	for _, line := range lines {
+	for _, line := range strings.Split(podsOutput, "\n") {
+		line = strings.TrimSpace(line)
 		if line == "" {
 			continue
 		}
 
-		fields := splitFields(line)
+		fields := strings.Fields(line)
 		if len(fields) < 3 {
 			continue
 		}
@@ -438,71 +439,6 @@ func createZipArchive(sourceDir, archivePath string) error {
 	})
 }
 
-// Helper functions for string parsing
-func splitLines(s string) []string {
-	lines := []string{}
-	for _, line := range splitByNewline(s) {
-		if trimmed := trimSpace(line); trimmed != "" {
-			lines = append(lines, trimmed)
-		}
-	}
-	return lines
-}
-
-func splitByNewline(s string) []string {
-	var lines []string
-	var current string
-	for _, r := range s {
-		if r == '\n' {
-			lines = append(lines, current)
-			current = ""
-		} else {
-			current += string(r)
-		}
-	}
-	if current != "" {
-		lines = append(lines, current)
-	}
-	return lines
-}
-
-func splitFields(s string) []string {
-	var fields []string
-	var current string
-	var inSpace bool
-
-	for _, r := range s {
-		if r == ' ' || r == '\t' {
-			if !inSpace && current != "" {
-				fields = append(fields, current)
-				current = ""
-			}
-			inSpace = true
-		} else {
-			current += string(r)
-			inSpace = false
-		}
-	}
-	if current != "" {
-		fields = append(fields, current)
-	}
-	return fields
-}
-
-func trimSpace(s string) string {
-	start := 0
-	end := len(s)
-
-	for start < end && (s[start] == ' ' || s[start] == '\t' || s[start] == '\n' || s[start] == '\r') {
-		start++
-	}
-	for end > start && (s[end-1] == ' ' || s[end-1] == '\t' || s[end-1] == '\n' || s[end-1] == '\r') {
-		end--
-	}
-
-	return s[start:end]
-}
-
 // collectKubeletLogs collects kubelet logs from all cluster nodes
 func collectKubeletLogs(ctx context.Context, outputDir string, cfg *config.Config) error {
 	kubeletDir := filepath.Join(outputDir, "kubelet")
@@ -516,23 +452,25 @@ func collectKubeletLogs(ctx context.Context, outputDir string, cfg *config.Confi
 		return err
 	}
 
-	nodeNames := splitLines(nodesOutput)
+	var nodeNames []string
+	for _, line := range strings.Split(nodesOutput, "\n") {
+		if nodeName := strings.TrimSpace(line); nodeName != "" {
+			nodeNames = append(nodeNames, nodeName)
+		}
+	}
 	if len(nodeNames) == 0 {
 		return fmt.Errorf("no nodes found in cluster")
 	}
 
 	// Collect kubelet logs from each node
 	for _, nodeName := range nodeNames {
-		if nodeName == "" {
-			continue
-		}
 
 		// Get kubelet logs via minikube ssh
 		// Using journalctl to get systemd kubelet logs
-		logs, err := exec.Output(ctx, "minikube", "ssh", "-n", nodeName, "--", "journalctl", "-u", "kubelet", "--no-pager", "-n", "1000")
+		logs, err := exec.Output(ctx, "minikube", "-p", "nova", "ssh", "-n", nodeName, "--", "journalctl", "-u", "kubelet", "--no-pager", "-n", "1000")
 		if err != nil {
 			// If journalctl fails, try getting logs from /var/log
-			logs, err = exec.Output(ctx, "minikube", "ssh", "-n", nodeName, "--", "cat", "/var/log/kubelet.log")
+			logs, err = exec.Output(ctx, "minikube", "-p", "nova", "ssh", "-n", nodeName, "--", "cat", "/var/log/kubelet.log")
 			if err != nil {
 				// Skip this node if we can't get logs
 				continue

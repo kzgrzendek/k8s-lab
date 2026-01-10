@@ -124,6 +124,35 @@ spec:
           [ "$MASTER_ASSIGN_CODE" != "204" ] && fail "Failed to assign master-realm roles (HTTP $MASTER_ASSIGN_CODE)"
           log "Super admin client roles assigned successfully - user can now manage all realms"
 
+          log "Assigning nova-realm client roles..."
+          # Get the nova-realm client ID (created by realm import)
+          NOVA_CLIENT_ID=$(curl -k -sf -X GET "$API_URL/admin/realms/$REALM/clients?clientId=nova-realm" \
+            -H "Authorization: Bearer $TOKEN" | grep -o '"id":"[^"]*' | head -1 | cut -d'"' -f4)
+
+          if [ -n "$NOVA_CLIENT_ID" ]; then
+            log "Nova-realm client ID: $NOVA_CLIENT_ID"
+
+            # Get all available roles from nova-realm client
+            NOVA_ROLES=$(curl -k -sf -X GET "$API_URL/admin/realms/$REALM/clients/$NOVA_CLIENT_ID/roles" \
+              -H "Authorization: Bearer $TOKEN")
+
+            if [ -n "$NOVA_ROLES" ] && [ "$NOVA_ROLES" != "[]" ]; then
+              # Assign all nova-realm management roles
+              NOVA_ASSIGN_RESPONSE=$(curl -k -s -w "\n%{http_code}" -X POST "$API_URL/admin/realms/$REALM/users/$USER_ID/role-mappings/clients/$NOVA_CLIENT_ID" \
+                -H "Authorization: Bearer $TOKEN" \
+                -H "Content-Type: application/json" \
+                -d "$NOVA_ROLES")
+
+              NOVA_ASSIGN_CODE=$(echo "$NOVA_ASSIGN_RESPONSE" | tail -n1)
+              [ "$NOVA_ASSIGN_CODE" != "204" ] && log "Warning: Failed to assign nova-realm roles (HTTP $NOVA_ASSIGN_CODE)"
+              [ "$NOVA_ASSIGN_CODE" = "204" ] && log "Nova-realm client roles assigned successfully"
+            else
+              log "No roles found in nova-realm client"
+            fi
+          else
+            log "Warning: nova-realm client not found - realm may not be imported yet"
+          fi
+
           log "Verifying new user..."
           [ -z "$(get_token "$CLUSTER_ADMIN_USER" "$CLUSTER_ADMIN_PASSWORD")" ] && fail "Verification failed"
 

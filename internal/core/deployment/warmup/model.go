@@ -1,128 +1,227 @@
+// Package warmup provides warmup operations for NOVA deployment.
+// This includes model downloading and image pre-pulling to optimize startup time.
 package warmup
 
 import (
 	"context"
 	"fmt"
-	"time"
+	"os"
+	"os/exec"
+	"path/filepath"
+	"strings"
+	"sync"
 
 	"github.com/kzgrzendek/nova/internal/cli/ui"
 	"github.com/kzgrzendek/nova/internal/core/config"
-	"github.com/kzgrzendek/nova/internal/core/constants"
-	"github.com/kzgrzendek/nova/internal/core/deployment/shared"
-	k8s "github.com/kzgrzendek/nova/internal/tools/kubectl"
+	"github.com/kzgrzendek/nova/internal/host/nfs"
 )
 
-// StartModelWarmupAsync starts warming up the LLM model in a background Kubernetes Job.
-// This downloads the model to a PVC which can then be mounted by llmd for instant startup.
+// ModelDownloadResult contains the result of a model download operation.
+type ModelDownloadResult struct {
+	// ModelPath is the absolute path to the downloaded model on the host
+	ModelPath string
+
+	// Success indicates whether the download completed successfully
+	Success bool
+
+	// Error contains any error that occurred during download
+	Error error
+}
+
+// downloader manages a background model download operation.
+type downloader struct {
+	ctx        context.Context
+	cancelFunc context.CancelFunc
+	cfg        *config.Config
+	modelPath  string
+	result     *ModelDownloadResult
+	done       chan struct{}
+	mu         sync.Mutex
+}
+
+// StartModelDownloadAsync starts downloading a model in the background.
+// The download runs in an Alpine container using Python and the huggingface_hub package.
+// This approach avoids permission issues with the standalone installer script.
 //
-// Strategy:
-//  1. Create namespace and PVC for the model (one PVC per model slug)
-//  2. Start a Kubernetes Job that downloads the model using huggingface-cli
-//  3. Job runs in background, downloads to PVC at /models/model
-//  4. llmd (in tier3) will wait for this Job and mount the PVC
+// If the download fails, it cancels the provided context to stop the parent deployment process.
 //
-// Returns a wait function that tier3 can call to wait for completion.
-// Returns nil if no model is configured (warmup skipped).
-func StartModelWarmupAsync(ctx context.Context, cfg *config.Config) func() error {
+// Returns a function that can be called to wait for download completion.
+// Returns nil if no model is configured (download skipped).
+func StartModelDownloadAsync(ctx context.Context, cancelFunc context.CancelFunc, cfg *config.Config) func() (*ModelDownloadResult, error) {
 	if cfg.LLM.Model == "" {
-		ui.Debug("No LLM model configured, skipping warmup")
+		ui.Debug("No LLM model configured, skipping download")
 		return nil
 	}
 
+	d := &downloader{
+		ctx:        ctx,
+		cancelFunc: cancelFunc,
+		cfg:        cfg,
+		result:     &ModelDownloadResult{},
+		done:       make(chan struct{}),
+	}
+
+	// Prepare model directory
+	// Download to ~/.nova/share/nfs/models/{model-slug}/ for multi-model caching
+	// This path will be accessible via NFS as /nfs-export/models/{model-slug}
 	modelSlug := cfg.GetModelSlug()
-	jobName := fmt.Sprintf("model-warmup-%s", modelSlug)
-	namespace := constants.NamespaceLLMD
+	modelsPath, err := nfs.GetModelsPath(cfg)
+	if err != nil {
+		ui.Warn("Failed to get models path: %v", err)
+		return nil
+	}
 
-	// Start warmup in goroutine (non-blocking)
-	go func() {
-		pvcName := fmt.Sprintf("llm-model-%s", modelSlug)
+	d.modelPath = filepath.Join(modelsPath, modelSlug)
 
-		ui.Info("Starting model warmup in background: %s", cfg.LLM.Model)
+	// Check if model already exists and is complete
+	if isModelComplete(d.modelPath) {
+		ui.Info("Model already cached: %s", cfg.LLM.Model)
+		d.result.ModelPath = d.modelPath
+		d.result.Success = true
+		close(d.done)
+		return d.wait
+	}
 
-		// Create namespace with proper labels
-		if err := shared.EnsureNamespace(ctx, namespace, map[string]string{
-			"name":                           "llmd",
-			"service-type":                   "llm",
-			"trust-manager/inject-ca-secret": "enabled",
-			"pod-security.kubernetes.io/enforce": "baseline",
-		}); err != nil {
-			ui.Debug("Failed to create namespace for warmup: %v", err)
-			return
-		}
+	// Start download in background goroutine
+	go d.download()
 
-		// Check if PVC already exists and has model
-		if pvcExists, _ := k8s.ResourceExists(ctx, "pvc", pvcName, namespace); pvcExists {
-			ui.Debug("PVC %s already exists, model may be cached", pvcName)
-			// PVC exists, Job is idempotent so we'll create it anyway
-		}
+	return d.wait
+}
 
-		// Create HF token secret if provided
-		if cfg.LLM.HfToken != "" {
-			if err := k8s.CreateSecret(ctx, namespace, "huggingface-token", map[string]string{
-				"token": cfg.LLM.HfToken,
-			}); err != nil {
-				ui.Debug("Failed to create HF token secret: %v", err)
-				// Not fatal, continue without token (public models will work)
-			}
-		}
+// download performs the actual model download in a background goroutine.
+func (d *downloader) download() {
+	defer close(d.done)
 
-		// Prepare template data
-		data := map[string]interface{}{
-			"Model":       cfg.LLM.Model,
-			"ModelSlug":   modelSlug,
-			"HfToken":     cfg.LLM.HfToken,
-			"StorageSize": "20Gi",
-		}
+	ui.Info("Starting model download in background: %s", d.cfg.LLM.Model)
 
-		// Create PVC
-		pvcPath := "resources/core/deployment/warmup/model-warmup/pvc.yaml"
-		if err := k8s.ApplyYAMLWithTemplate(ctx, pvcPath, data); err != nil {
-			ui.Debug("Failed to create model PVC: %v", err)
-			return
-		}
+	// Ensure parent directory exists
+	if err := os.MkdirAll(d.modelPath, 0755); err != nil {
+		d.setResult(nil, fmt.Errorf("failed to create model directory: %w", err))
+		return
+	}
 
-		// Create warmup Job
-		jobPath := "resources/core/deployment/warmup/model-warmup/job.yaml"
-		if err := k8s.ApplyYAMLWithTemplate(ctx, jobPath, data); err != nil {
-			ui.Debug("Failed to create warmup Job: %v", err)
-			return
-		}
+	// Build download command using Python and huggingface_hub package
+	// Run as current user with tmpfs for /tmp to avoid permission issues
+	uid := os.Getuid()
+	gid := os.Getgid()
 
-		ui.Success("Model warmup Job created: model-warmup-%s", modelSlug)
-	}()
+	args := []string{
+		"run",
+		"--rm",
+		"--user", fmt.Sprintf("%d:%d", uid, gid),
+		"-v", fmt.Sprintf("%s:/models", d.modelPath),
+		// Use tmpfs for /tmp - Docker-managed, no host permission issues
+		"--tmpfs", "/tmp:rw,exec,mode=1777",
+		"-w", "/tmp",
+		"-e", "HOME=/tmp",
+		"-e", "TMPDIR=/tmp",
+	}
 
-	// Return wait function for tier3 to use
-	return func() error {
-		return waitForModelWarmup(ctx, jobName, namespace)
+	// Add HF token as environment variable if provided
+	if d.cfg.LLM.HfToken != "" {
+		args = append(args, "-e", fmt.Sprintf("HF_TOKEN=%s", d.cfg.LLM.HfToken))
+	}
+
+	// Build the download command using uv tool runner
+	downloadCmd := "pip install uv --no-cache-dir && "
+	downloadCmd += "python -m uv tool run hf download " + d.cfg.LLM.Model + " --local-dir /models"
+	if d.cfg.LLM.HfToken != "" {
+		downloadCmd += " --token $HF_TOKEN"
+	}
+
+	// Use Python Alpine image with uv tool runner
+	args = append(args, []string{
+		"python:3.14-alpine",
+		"sh", "-c",
+		downloadCmd,
+	}...)
+
+	// Run download command
+	cmd := exec.CommandContext(d.ctx, "docker", args...)
+	output, err := cmd.CombinedOutput()
+	if err != nil {
+		d.setResult(nil, fmt.Errorf("download failed: %w\nOutput: %s", err, string(output)))
+		return
+	}
+
+	// Get model size for reporting
+	size := getDirectorySize(d.modelPath)
+
+	ui.Success("Model downloaded successfully (%s): %s", size, d.cfg.LLM.Model)
+
+	d.setResult(&ModelDownloadResult{
+		ModelPath: d.modelPath,
+		Success:   true,
+	}, nil)
+}
+
+// wait blocks until the download completes and returns the result.
+func (d *downloader) wait() (*ModelDownloadResult, error) {
+	<-d.done
+
+	d.mu.Lock()
+	defer d.mu.Unlock()
+
+	if d.result.Error != nil {
+		return d.result, d.result.Error
+	}
+
+	return d.result, nil
+}
+
+// setResult sets the download result in a thread-safe manner.
+// If an error occurred, it cancels the parent context to stop deployment immediately.
+func (d *downloader) setResult(result *ModelDownloadResult, err error) {
+	d.mu.Lock()
+	defer d.mu.Unlock()
+
+	if result != nil {
+		d.result = result
+	}
+
+	if err != nil {
+		d.result.Error = err
+		d.result.Success = false
+		ui.Error("Model download failed: %v", err)
+		ui.Error("Cancelling deployment - warmup is required for tier 3")
+		// Cancel parent context to stop deployment immediately
+		d.cancelFunc()
 	}
 }
 
-// waitForModelWarmup waits for a model warmup Kubernetes Job to complete successfully.
-func waitForModelWarmup(ctx context.Context, jobName, namespace string) error {
-	const timeout = 30 * time.Minute
-
-	ctx, cancel := context.WithTimeout(ctx, timeout)
-	defer cancel()
-
-	ticker := time.NewTicker(time.Duration(constants.DefaultCheckInterval) * time.Second)
-	defer ticker.Stop()
-
-	for {
-		select {
-		case <-ctx.Done():
-			return fmt.Errorf("timeout waiting for Job %s to complete", jobName)
-		case <-ticker.C:
-			// Check Job status
-			completed, err := k8s.IsJobComplete(ctx, jobName, namespace)
-			if err != nil {
-				ui.Debug("Error checking Job status: %v", err)
-				continue
-			}
-			if completed {
-				return nil
-			}
-			// Log progress every interval
-			ui.Debug("Waiting for warmup Job %s to complete...", jobName)
-		}
+// isModelComplete checks if a model directory exists and contains files.
+func isModelComplete(modelPath string) bool {
+	info, err := os.Stat(modelPath)
+	if err != nil {
+		return false
 	}
+
+	if !info.IsDir() {
+		return false
+	}
+
+	// Check if directory has any files
+	entries, err := os.ReadDir(modelPath)
+	if err != nil || len(entries) == 0 {
+		return false
+	}
+
+	// Directory exists and has content
+	return true
+}
+
+// getDirectorySize returns a human-readable size of a directory.
+func getDirectorySize(path string) string {
+	cmd := exec.Command("du", "-sh", path)
+	output, err := cmd.Output()
+	if err != nil {
+		return "unknown"
+	}
+
+	parts := strings.Fields(string(output))
+	if len(parts) > 0 {
+		return parts[0]
+	}
+
+	return "unknown"
 }

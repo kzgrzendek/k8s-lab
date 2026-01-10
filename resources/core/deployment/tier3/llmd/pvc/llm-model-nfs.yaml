@@ -1,0 +1,23 @@
+apiVersion: v1
+kind: PersistentVolumeClaim
+metadata:
+  name: llm-model
+  namespace: llmd
+  labels:
+    app: llm-model-cache
+    storage-type: nfs
+    model-slug: {{.ModelSlug}}
+spec:
+  accessModes:
+    - ReadWriteMany
+  storageClassName: nfs-models
+  resources:
+    requests:
+      storage: 20Gi
+  # Selector to bind to the model-specific NFS PV
+  # Each model has its own PV pointing to /models/{model-slug} (NFSv4 root)
+  selector:
+    matchLabels:
+      type: nfs
+      storage-tier: models
+      model-slug: {{.ModelSlug}}

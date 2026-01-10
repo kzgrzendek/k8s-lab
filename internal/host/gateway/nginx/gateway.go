@@ -78,13 +78,14 @@ func init() {
 					confdDir:      "/etc/nginx/conf.d",
 				},
 				RestartPolicy:      "unless-stopped",
-				AdditionalNetworks: []string{"minikube"}, // Connect to minikube for TLS passthrough
+				AdditionalNetworks: []string{"nova"}, // Connect to nova network for TLS passthrough
 			}
 		},
 	})
 }
 
 // Start starts the NGINX gateway container.
+// This function fetches the minikube IP at runtime using minikube.GetIP().
 func Start(ctx context.Context, cfg *config.Config) error {
 	return service.Start(ctx, cfg)
 }

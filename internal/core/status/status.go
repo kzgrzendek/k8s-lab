@@ -349,7 +349,7 @@ func (c *Checker) checkBPFMounted() bool {
 	}
 
 	// Check mount via minikube ssh
-	checkCmd := exec.CommandContext(c.ctx, "minikube", "ssh", "-n", nodeName, "--", "mount | grep bpf")
+	checkCmd := exec.CommandContext(c.ctx, "minikube", "-p", "nova", "ssh", "-n", nodeName, "--", "mount | grep bpf")
 	err = checkCmd.Run()
 	return err == nil
 }

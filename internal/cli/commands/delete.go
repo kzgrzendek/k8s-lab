@@ -8,9 +8,7 @@ import (
 
 	"github.com/kzgrzendek/nova/internal/cli/ui"
 	"github.com/kzgrzendek/nova/internal/core/config"
-	"github.com/kzgrzendek/nova/internal/host/dns/bind9"
-	"github.com/kzgrzendek/nova/internal/host/gateway/nginx"
-	"github.com/kzgrzendek/nova/internal/host/registry"
+	"github.com/kzgrzendek/nova/internal/host/foundation"
 	"github.com/kzgrzendek/nova/internal/setup/system/dns"
 	"github.com/kzgrzendek/nova/internal/tools/minikube"
 	"github.com/spf13/cobra"
@@ -19,6 +17,7 @@ import (
 func newDeleteCmd() *cobra.Command {
 	var purge bool
 	var yes bool
+	var rootless bool
 
 	cmd := &cobra.Command{
 		Use:   "delete",
@@ -28,11 +27,14 @@ func newDeleteCmd() *cobra.Command {
   • Deletes Minikube cluster
   • Removes NGINX gateway container
   • Removes Bind9 DNS container
+  • Removes NFS server container
+  • Removes local registry container
 
-Use --purge to also remove configuration, certificates, and generated files.
+Use --purge to also remove configuration, certificates, generated files, and Docker network.
+Use --rootless to skip DNS cleanup (requires manual cleanup).
 Use --yes to skip confirmation prompt.`,
 		RunE: func(cmd *cobra.Command, args []string) error {
-			return runDelete(cmd, purge, yes)
+			return runDelete(cmd, purge, yes, rootless)
 		},
 	}
 
@@ -40,11 +42,13 @@ Use --yes to skip confirmation prompt.`,
 		"also remove config, certificates, and generated files")
 	cmd.Flags().BoolVarP(&yes, "yes", "y", false,
 		"skip confirmation prompt")
+	cmd.Flags().BoolVar(&rootless, "rootless", false,
+		"rootless mode - skip DNS cleanup and warn instead")
 
 	return cmd
 }
 
-func runDelete(cmd *cobra.Command, purge, yes bool) error {
+func runDelete(cmd *cobra.Command, purge, yes, rootless bool) error {
 	ui.Header("Delete NOVA")
 
 	if !yes {
@@ -65,12 +69,18 @@ func runDelete(cmd *cobra.Command, purge, yes bool) error {
 		}
 	}
 
+	// Load config (needed for foundation stack)
+	cfg, err := config.Load()
+	if err != nil {
+		// If config doesn't exist, we can still delete minikube and foundation
+		ui.Warn("Failed to load config: %v", err)
+		cfg = nil
+	}
+
 	// Define delete steps
 	steps := []string{
 		"Minikube Cluster",
-		"NGINX Gateway",
-		"Bind9 DNS Server",
-		"Registry",
+		"Foundation Stack",
 	}
 	if purge {
 		steps = append(steps, "DNS Configuration", "Configuration Directory")
@@ -90,66 +100,42 @@ func runDelete(cmd *cobra.Command, purge, yes bool) error {
 	progress.CompleteStep(currentStep)
 	currentStep++
 
-	// Step 2: Remove NGINX gateway
+	// Step 2: Delete Foundation Stack (NGINX, Bind9, NFS, Registry, nova network)
 	progress.StartStep(currentStep)
-	ui.Info("Removing NGINX gateway...")
-	if nginx.IsRunning(cmd.Context()) {
-		if err := nginx.Delete(cmd.Context()); err != nil {
+	if cfg != nil {
+		foundationStack := foundation.New(cfg)
+		if err := foundationStack.Delete(cmd.Context()); err != nil {
 			progress.FailStep(currentStep, err)
-			return fmt.Errorf("failed to remove NGINX gateway: %w", err)
+			return fmt.Errorf("failed to delete foundation stack: %w", err)
 		}
 	} else {
-		ui.Warn("NGINX gateway not running (already deleted or never started)")
-	}
-	progress.CompleteStep(currentStep)
-	currentStep++
-
-	// Step 3: Remove Bind9 DNS
-	progress.StartStep(currentStep)
-	ui.Info("Removing Bind9 DNS server...")
-	if bind9.IsRunning(cmd.Context()) {
-		if err := bind9.Delete(cmd.Context()); err != nil {
-			progress.FailStep(currentStep, err)
-			return fmt.Errorf("failed to remove Bind9 DNS server: %w", err)
-		}
-	} else {
-		ui.Warn("Bind9 DNS server not running (already deleted or never started)")
-	}
-	progress.CompleteStep(currentStep)
-	currentStep++
-
-	// Step 4: Remove Registry
-	progress.StartStep(currentStep)
-	ui.Info("Removing local registry...")
-	registryRunning, err := registry.IsRunning(cmd.Context())
-	if err != nil {
-		ui.Warn("Failed to check registry status: %v", err)
-	}
-	if registryRunning {
-		if err := registry.Delete(cmd.Context()); err != nil {
-			progress.FailStep(currentStep, err)
-			return fmt.Errorf("failed to remove registry: %w", err)
-		}
-	} else {
-		ui.Warn("Registry not running (already deleted or never started)")
+		ui.Warn("Skipping foundation stack cleanup (config not available)")
 	}
 	progress.CompleteStep(currentStep)
 	currentStep++
 
 	// Purge configuration if requested
 	if purge {
-		// Step 5: Remove DNS configuration
+		// Step 3: Remove DNS configuration
 		progress.StartStep(currentStep)
-		ui.Info("Removing DNS configuration...")
-		ui.Info("You may be prompted for your sudo password to remove DNS configuration")
-		if err := dns.RemoveResolvconf(); err != nil {
-			progress.FailStep(currentStep, err)
-			return fmt.Errorf("failed to remove DNS configuration: %w", err)
+		if rootless {
+			ui.Info("Skipping DNS cleanup (--rootless mode)")
+			ui.Warn("You'll need to manually remove DNS configuration:")
+			ui.Info("Run: sudo rm -f /etc/resolvconf/resolv.conf.d/nova.conf")
+			ui.Info("Then: sudo resolvconf -u")
+			progress.CompleteStep(currentStep)
+		} else {
+			ui.Info("Removing DNS configuration...")
+			ui.Info("You may be prompted for your sudo password to remove DNS configuration")
+			if err := dns.RemoveResolvconf(); err != nil {
+				progress.FailStep(currentStep, err)
+				return fmt.Errorf("failed to remove DNS configuration: %w", err)
+			}
+			progress.CompleteStep(currentStep)
 		}
-		progress.CompleteStep(currentStep)
 		currentStep++
 
-		// Step 6: Remove config directory
+		// Step 4: Remove config directory
 		progress.StartStep(currentStep)
 		ui.Info("Removing configuration directory...")
 		if err := os.RemoveAll(config.ConfigDir()); err != nil {
@@ -158,6 +144,7 @@ func runDelete(cmd *cobra.Command, purge, yes bool) error {
 		}
 		ui.Success("Removed %s", config.ConfigDir())
 		progress.CompleteStep(currentStep)
+		currentStep++
 	}
 
 	// Mark all steps complete

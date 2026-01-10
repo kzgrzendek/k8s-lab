@@ -1,10 +1,7 @@
 package shared
 
 import (
-	"bytes"
 	"fmt"
-	"os"
-	"text/template"
 
 	"github.com/kzgrzendek/nova/internal/core/config"
 	"sigs.k8s.io/yaml"
@@ -34,32 +31,21 @@ type LLMDValues struct {
 func GetLLMDImage(cfg *config.Config) (string, error) {
 	valuesPath := GetLLMDValuesPath(cfg)
 
-	// Read values file (it's a template)
-	templateContent, err := os.ReadFile(valuesPath)
-	if err != nil {
-		return "", fmt.Errorf("failed to read llmd values template %s: %w", valuesPath, err)
-	}
-
 	// Prepare template data with model configuration
 	templateData := map[string]string{
 		"ModelName": cfg.GetModelName(),
 		"ModelSlug": cfg.GetModelSlug(),
 	}
 
-	// Parse and render template
-	tmpl, err := template.New("llmd-values").Parse(string(templateContent))
+	// Render template
+	rendered, err := RenderTemplate(valuesPath, templateData)
 	if err != nil {
-		return "", fmt.Errorf("failed to parse llmd values template %s: %w", valuesPath, err)
-	}
-
-	var buf bytes.Buffer
-	if err := tmpl.Execute(&buf, templateData); err != nil {
-		return "", fmt.Errorf("failed to render llmd values template %s: %w", valuesPath, err)
+		return "", err
 	}
 
 	// Parse rendered YAML
 	var values LLMDValues
-	if err := yaml.Unmarshal(buf.Bytes(), &values); err != nil {
+	if err := yaml.Unmarshal([]byte(rendered), &values); err != nil {
 		return "", fmt.Errorf("failed to parse rendered llmd values from %s: %w", valuesPath, err)
 	}
 

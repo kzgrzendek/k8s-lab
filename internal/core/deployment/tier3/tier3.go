@@ -4,7 +4,6 @@ package tier3
 import (
 	"context"
 	"fmt"
-	"time"
 
 	"github.com/kzgrzendek/nova/internal/cli/ui"
 	"github.com/kzgrzendek/nova/internal/core/config"
@@ -27,6 +26,9 @@ func DeployTier3(ctx context.Context, cfg *config.Config) error {
 	if err := shared.AddHelmRepositories(ctx, repos); err != nil {
 		return fmt.Errorf("failed to add Tier 3 Helm repositories: %w", err)
 	}
+
+	// Note: llm-d node election now happens in Tier 0 (after node labeling)
+	// This ensures warmup can distribute images to the elected node during background operations
 
 	steps := []string{
 		"llm-d Model Service",
@@ -89,8 +91,28 @@ func deployLLMD(ctx context.Context, cfg *config.Config) error {
 		return err
 	}
 
-	// Note: HF token secret is created in tier1 during model warmup setup
-	// Both the model warmup Job and llmd will use the same "huggingface-token" secret
+	// Create NFS-backed PV and PVC for the pre-downloaded model
+	// The model was downloaded to ~/.nova/share/nfs/models/{model-slug}/ during pre-warmup phase
+	// and is accessible via NFS mount from all nodes
+	pvcName := "llm-model"
+	modelSlug := cfg.GetModelSlug()
+
+	modelData := map[string]string{
+		"ModelSlug": modelSlug,
+	}
+
+	// Create model-specific PV (points to /nfs-export/models/{model-slug})
+	ui.Info("Creating NFS PersistentVolume for model: %s", modelSlug)
+	if err := shared.ApplyTemplate(ctx, "resources/core/deployment/tier1/nfs/pv-nfs-models.yaml", modelData); err != nil {
+		return fmt.Errorf("failed to create model PV: %w", err)
+	}
+
+	// Create PVC that binds to the model-specific PV
+	ui.Info("Creating NFS-backed PVC for model storage...")
+	if err := shared.ApplyTemplate(ctx, "resources/core/deployment/tier3/llmd/pvc/llm-model-nfs.yaml", modelData); err != nil {
+		return fmt.Errorf("failed to create model PVC: %w", err)
+	}
+	ui.Success("NFS storage configured for model: %s", modelSlug)
 
 	// Choose default values file based on GPU/CPU mode
 	defaultValuesPath := shared.GetLLMDValuesPath(cfg)
@@ -111,31 +133,15 @@ func deployLLMD(ctx context.Context, cfg *config.Config) error {
 		ui.Info("Using custom values from: %s", cfg.Versions.Tier3.LLMD.CustomValuesPath)
 	}
 
-	// Wait for model warmup Job to complete (if it exists)
-	modelSlug := cfg.GetModelSlug()
-	warmupJobName := fmt.Sprintf("model-warmup-%s", modelSlug)
-	pvcName := fmt.Sprintf("llm-model-%s", modelSlug)
-
-	if jobExists, _ := k8s.ResourceExists(ctx, "job", warmupJobName, constants.NamespaceLLMD); jobExists {
-		ui.Info("Waiting for model warmup to complete (this may take 10-20 minutes)...")
-		if err := waitForModelWarmup(ctx, warmupJobName); err != nil {
-			ui.Warn("Model warmup Job incomplete: %v", err)
-			ui.Warn("llm-d will download the model on first startup (slower)")
-			pvcName = "" // Don't mount PVC if warmup failed
-		} else {
-			ui.Success("Model pre-warmed and ready on PVC: %s", pvcName)
-		}
-	} else {
-		ui.Debug("No model warmup Job found, llm-d will download on startup")
-		pvcName = "" // No PVC to mount
-	}
-
 	// Prepare template data for model configuration
+	// The model is accessible via the NFS-backed PVC created above
 	templateData := map[string]string{
-		"ModelName":    cfg.GetModelName(),
-		"ModelSlug":    modelSlug,
-		"ModelURI":     cfg.GetModelURI(),
-		"ModelPVCName": pvcName, // Empty if no warmup, otherwise PVC name
+		"ModelName":     cfg.GetModelName(),
+		"ModelSlug":     modelSlug,
+		"ModelURI":      cfg.GetModelURI(),
+		"ModelPVCName":  pvcName, // Empty if no warmup, otherwise PVC name
+		"LLMDCudaImage": fmt.Sprintf("ghcr.io/llm-d/llm-d-cuda:%s", cfg.GetLLMDImageTag()),
+		"LLMDCpuImage":  fmt.Sprintf("ghcr.io/llm-d/llm-d-cpu:%s", cfg.GetLLMDImageTag()),
 	}
 
 	// Deploy llm-d via Helm
@@ -259,7 +265,6 @@ func deployOpenWebUI(ctx context.Context, cfg *config.Config) error {
 	ui.Info("Creating Open WebUI secrets...")
 	secrets := []string{
 		"resources/core/deployment/tier3/openwebui/secrets/api-key.yaml",
-		"resources/core/deployment/tier3/openwebui/secrets/oidc.yaml",
 		"resources/core/deployment/tier3/openwebui/secrets/openwebui-secret-key.yaml",
 	}
 
@@ -267,6 +272,14 @@ func deployOpenWebUI(ctx context.Context, cfg *config.Config) error {
 		if err := k8s.ApplyYAML(ctx, secret); err != nil {
 			return fmt.Errorf("failed to apply secret %s: %w", secret, err)
 		}
+	}
+
+	// Create OIDC secret using shared constants (same values as configured in Keycloak realm)
+	if err := k8s.CreateSecret(ctx, constants.NamespaceOpenWebUI, "oidc", map[string]string{
+		"client-id":     constants.OIDCOpenWebUI.ID,
+		"client-secret": constants.OIDCOpenWebUI.Secret,
+	}); err != nil {
+		return fmt.Errorf("failed to create OIDC secret: %w", err)
 	}
 
 	// Deploy Open WebUI via Helm with templated values
@@ -322,10 +335,13 @@ func deployHelix(ctx context.Context, cfg *config.Config) error {
 		return err
 	}
 
-	// Apply OIDC secret
+	// Create OIDC secret using shared constants (same values as configured in Keycloak realm)
 	ui.Info("Creating HELIX OIDC secret...")
-	if err := k8s.ApplyYAML(ctx, "resources/core/deployment/tier3/helix/secrets/oidc.yaml"); err != nil {
-		return fmt.Errorf("failed to apply HELIX OIDC secret: %w", err)
+	if err := k8s.CreateSecret(ctx, constants.NamespaceHelix, "oidc", map[string]string{
+		"client-id":     constants.OIDCHelix.ID,
+		"client-secret": constants.OIDCHelix.Secret,
+	}); err != nil {
+		return fmt.Errorf("failed to create OIDC secret: %w", err)
 	}
 
 	// Deploy HELIX via Helm with templated values
@@ -391,42 +407,4 @@ func deployHelix(ctx context.Context, cfg *config.Config) error {
 	}
 
 	return nil
-}
-
-// waitForModelWarmup waits for the model warmup Job to complete.
-// This is called before deploying llmd to ensure the model is pre-downloaded.
-func waitForModelWarmup(ctx context.Context, jobName string) error {
-	namespace := constants.NamespaceLLMD
-	const timeout = 30 * time.Minute
-
-	ctx, cancel := context.WithTimeout(ctx, timeout)
-	defer cancel()
-
-	ticker := time.NewTicker(time.Duration(constants.DefaultCheckInterval) * time.Second)
-	defer ticker.Stop()
-
-	lastLog := time.Now()
-	const logInterval = 30 * time.Second
-
-	for {
-		select {
-		case <-ctx.Done():
-			return fmt.Errorf("timeout waiting for warmup Job %s to complete", jobName)
-		case <-ticker.C:
-			// Check Job status
-			completed, err := k8s.IsJobComplete(ctx, jobName, namespace)
-			if err != nil {
-				return fmt.Errorf("error checking Job status: %w", err)
-			}
-			if completed {
-				return nil
-			}
-
-			// Log progress every 30 seconds
-			if time.Since(lastLog) >= logInterval {
-				ui.Info("Model warmup in progress...")
-				lastLog = time.Now()
-			}
-		}
-	}
 }

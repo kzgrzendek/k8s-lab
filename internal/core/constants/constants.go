@@ -3,6 +3,10 @@
 // may need to be updated or referenced in multiple places.
 package constants
 
+import (
+	"github.com/kzgrzendek/nova/internal/tools/crypto"
+)
+
 // --- Helm Repository URLs ---
 const (
 	HelmRepoCilium          = "https://helm.cilium.io/"
@@ -59,6 +63,7 @@ const (
 	ImageBind9    = "ubuntu/bind9:latest"
 	ImageNginx    = "nginx:stable-alpine3.21-perl"
 	ImageRegistry = "registry:2.8.3"
+	ImageNFS      = "itsthenetwork/nfs-server-alpine:12"
 )
 
 // --- Container Names ---
@@ -66,12 +71,21 @@ const (
 	ContainerBind9    = "nova-bind9-dns"
 	ContainerNginx    = "nova-nginx-gateway"
 	ContainerRegistry = "nova-registry"
+	ContainerNFS      = "nova-nfs-server"
 )
 
 // --- Registry Configuration ---
 const (
-	RegistryPort = 5000
-	RegistryHost = "nova-registry:5000"
+	RegistryPort   = 5000
+	RegistryDomain = "registry.local"
+	RegistryHost   = "registry.local:5000"
+)
+
+// --- NFS Configuration ---
+const (
+	NFSPort           = 2049
+	NFSStorageClass   = "nfs-models"
+	NFSProvisionerKey = "nfs.kubernetes.io/provisioner"
 )
 
 // --- Namespaces ---
@@ -99,6 +113,7 @@ const (
 // --- Storage Classes ---
 const (
 	StorageClassLocalPath = "local-path"
+	StorageClassNFS       = NFSStorageClass // Alias for consistency
 )
 
 // --- Installation Hints (URLs for documentation) ---
@@ -156,13 +171,37 @@ const (
 	SlowCheckInterval        = 10 // seconds
 )
 
-// --- OIDC Client IDs ---
-const (
-	OIDCClientHubble    = "hubble"
-	OIDCClientGrafana   = "grafana"
-	OIDCClientHelix     = "helix"
-	OIDCClientOpenWebUI = "open-webui"
+// --- OIDC Clients ---
+// OIDCClient represents an OIDC client configuration with ID and secret.
+type OIDCClient struct {
+	ID     string
+	Secret string
+}
+
+// OIDC client configurations for lab applications.
+// Secrets are generated once at program startup and remain constant for the session.
+var (
+	OIDCHubble    OIDCClient
+	OIDCGrafana   OIDCClient
+	OIDCHelix     OIDCClient
+	OIDCOpenWebUI OIDCClient
 )
+
+func init() {
+	OIDCHubble = OIDCClient{ID: "hubble", Secret: mustGenerateSecret()}
+	OIDCGrafana = OIDCClient{ID: "grafana", Secret: mustGenerateSecret()}
+	OIDCHelix = OIDCClient{ID: "helix", Secret: mustGenerateSecret()}
+	OIDCOpenWebUI = OIDCClient{ID: "open-webui", Secret: mustGenerateSecret()}
+}
+
+// mustGenerateSecret generates a random secret or panics on failure.
+func mustGenerateSecret() string {
+	secret, err := crypto.GenerateRandomPassword(OIDCSecretLength)
+	if err != nil {
+		panic("failed to generate OIDC secret: " + err.Error())
+	}
+	return secret
+}
 
 // --- Password/Secret Lengths ---
 const (

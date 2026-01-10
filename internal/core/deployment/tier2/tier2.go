@@ -114,9 +114,8 @@ func DeployTier2(ctx context.Context, cfg *config.Config) (*DeployResult, error)
 	}
 
 	// 5. Keycloak Instance (after theme is ready)
-	var oidcSecrets *OIDCSecrets
 	if err := runner.RunStep("Keycloak Instance", func() error {
-		pwd, secrets, err := deployKeycloakInstance(ctx, cfg)
+		pwd, err := deployKeycloakInstance(ctx, cfg)
 		if err != nil {
 			return err
 		}
@@ -126,7 +125,6 @@ func DeployTier2(ctx context.Context, cfg *config.Config) (*DeployResult, error)
 			{Username: "developer", Password: "developer", Group: "DEVELOPER"},
 			{Username: "user", Password: "user", Group: "USER"},
 		}
-		oidcSecrets = secrets
 		return nil
 	}); err != nil {
 		return nil, err
@@ -134,7 +132,7 @@ func DeployTier2(ctx context.Context, cfg *config.Config) (*DeployResult, error)
 
 	// 6. Hubble
 	if err := runner.RunStep("Hubble", func() error {
-		return deployHubble(ctx, cfg, oidcSecrets)
+		return deployHubble(ctx, cfg)
 	}); err != nil {
 		return nil, err
 	}
@@ -155,7 +153,7 @@ func DeployTier2(ctx context.Context, cfg *config.Config) (*DeployResult, error)
 
 	// 9. VictoriaMetrics Stack
 	if err := runner.RunStep("VictoriaMetrics Stack", func() error {
-		return deployVictoriaMetricsStack(ctx, cfg, oidcSecrets)
+		return deployVictoriaMetricsStack(ctx, cfg)
 	}); err != nil {
 		return nil, err
 	}
@@ -294,16 +292,18 @@ spec:
 }
 
 // deployKeycloakInstance deploys Keycloak IAM instance.
-// Returns the generated admin password and OIDC secrets.
-func deployKeycloakInstance(ctx context.Context, cfg *config.Config) (string, *OIDCSecrets, error) {
+// Returns the generated admin password.
+func deployKeycloakInstance(ctx context.Context, cfg *config.Config) (string, error) {
 	var adminPwd string
 
-	adminUserExists := false
+	// Check if admin secret already exists - if so, this is a redeployment
+	// and we should skip the admin user creation job
+	isRedeployment := false
 	if k8s.SecretExists(ctx, keycloakNamespace, "keycloak-admin-secret") {
 		data, err := k8s.GetSecretData(ctx, keycloakNamespace, "keycloak-admin-secret")
 		if err == nil && data["password"] != "" {
 			adminPwd = data["password"]
-			adminUserExists = true
+			isRedeployment = true
 		}
 	}
 
@@ -311,61 +311,16 @@ func deployKeycloakInstance(ctx context.Context, cfg *config.Config) (string, *O
 		var err error
 		adminPwd, err = crypto.GenerateRandomPassword(10)
 		if err != nil {
-			return "", nil, err
+			return "", err
 		}
 	}
 
-	// Generate OIDC client secrets
-	oidcSecrets := &OIDCSecrets{}
-	var err error
-
-	oidcSecrets.Hubble, err = shared.GetOrGenerateSecret(ctx, keycloakNamespace, "oidc-hubble", "client-secret", constants.OIDCSecretLength)
-	if err != nil {
-		return "", nil, fmt.Errorf("failed to generate Hubble OIDC secret: %w", err)
-	}
-
-	oidcSecrets.Grafana, err = shared.GetOrGenerateSecret(ctx, keycloakNamespace, "oidc-grafana", "client-secret", constants.OIDCSecretLength)
-	if err != nil {
-		return "", nil, fmt.Errorf("failed to generate Grafana OIDC secret: %w", err)
-	}
-
-	oidcSecrets.Helix, err = shared.GetOrGenerateSecret(ctx, keycloakNamespace, "oidc-helix", "client-secret", constants.OIDCSecretLength)
-	if err != nil {
-		return "", nil, fmt.Errorf("failed to generate Helix OIDC secret: %w", err)
-	}
-
-	oidcSecrets.OpenWebUI, err = shared.GetOrGenerateSecret(ctx, keycloakNamespace, "oidc-openwebui", "client-secret", constants.OIDCSecretLength)
-	if err != nil {
-		return "", nil, fmt.Errorf("failed to generate OpenWebUI OIDC secret: %w", err)
-	}
-
-	// Store OIDC secrets in Kubernetes
-	if err := k8s.CreateSecret(ctx, keycloakNamespace, "oidc-hubble", map[string]string{
-		"client-id":     constants.OIDCClientHubble,
-		"client-secret": oidcSecrets.Hubble,
-	}); err != nil {
-		return "", nil, fmt.Errorf("failed to create Hubble OIDC secret: %w", err)
-	}
-
-	if err := k8s.CreateSecret(ctx, keycloakNamespace, "oidc-grafana", map[string]string{
-		"client-id":     constants.OIDCClientGrafana,
-		"client-secret": oidcSecrets.Grafana,
-	}); err != nil {
-		return "", nil, fmt.Errorf("failed to create Grafana OIDC secret: %w", err)
-	}
-
-	if err := k8s.CreateSecret(ctx, keycloakNamespace, "oidc-helix", map[string]string{
-		"client-id":     constants.OIDCClientHelix,
-		"client-secret": oidcSecrets.Helix,
-	}); err != nil {
-		return "", nil, fmt.Errorf("failed to create Helix OIDC secret: %w", err)
-	}
-
-	if err := k8s.CreateSecret(ctx, keycloakNamespace, "oidc-openwebui", map[string]string{
-		"client-id":     constants.OIDCClientOpenWebUI,
-		"client-secret": oidcSecrets.OpenWebUI,
-	}); err != nil {
-		return "", nil, fmt.Errorf("failed to create OpenWebUI OIDC secret: %w", err)
+	// Use OIDC client secrets from constants (generated once at startup)
+	oidcSecrets := &OIDCSecrets{
+		Hubble:    constants.OIDCHubble.Secret,
+		Grafana:   constants.OIDCGrafana.Secret,
+		Helix:     constants.OIDCHelix.Secret,
+		OpenWebUI: constants.OIDCOpenWebUI.Secret,
 	}
 
 	data := map[string]any{
@@ -379,13 +334,13 @@ func deployKeycloakInstance(ctx context.Context, cfg *config.Config) (string, *O
 	// Create bootstrap admin secret (temporary admin for initial setup)
 	bootstrapPwd, err := crypto.GenerateRandomPassword(16)
 	if err != nil {
-		return "", nil, fmt.Errorf("failed to generate bootstrap password: %w", err)
+		return "", fmt.Errorf("failed to generate bootstrap password: %w", err)
 	}
 	if err := k8s.CreateSecret(ctx, keycloakNamespace, "keycloak-bootstrap-admin", map[string]string{
 		"username": "admin",
 		"password": bootstrapPwd,
 	}); err != nil {
-		return "", nil, fmt.Errorf("failed to create keycloak-bootstrap-admin secret: %w", err)
+		return "", fmt.Errorf("failed to create keycloak-bootstrap-admin secret: %w", err)
 	}
 
 	// Create cluster-admin secret for master realm
@@ -393,53 +348,55 @@ func deployKeycloakInstance(ctx context.Context, cfg *config.Config) (string, *O
 		"username": "cluster-admin",
 		"password": adminPwd,
 	}); err != nil {
-		return "", nil, fmt.Errorf("failed to create keycloak-admin-secret: %w", err)
+		return "", fmt.Errorf("failed to create keycloak-admin-secret: %w", err)
 	}
 
 	if err := shared.ApplyTemplate(ctx, "resources/core/deployment/tier2/keycloak/certificates/keycloak-tls.yaml", data); err != nil {
-		return "", nil, err
+		return "", err
 	}
 
 	ui.Info("Deploying Keycloak instance...")
 	if err := shared.ApplyTemplate(ctx, "resources/core/deployment/tier2/keycloak/keycloaks/keycloak.yaml", data); err != nil {
-		return "", nil, err
+		return "", err
 	}
 
 	if err := k8s.WaitForCondition(ctx, keycloakNamespace, "keycloaks.k8s.keycloak.org/keycloak", "Ready", 600); err != nil {
-		return "", nil, err
+		return "", err
 	}
 
-	if !adminUserExists {
+	// Import Nova Realm FIRST so the nova-realm client exists when the job runs
+	ui.Info("Importing Nova Realm...")
+	if err := shared.ApplyTemplate(ctx, "resources/core/deployment/tier2/keycloak/keycloakrealmimports/nova.yaml", data); err != nil {
+		return "", err
+	}
+	if err := k8s.WaitForCondition(ctx, keycloakNamespace, "keycloakrealmimports/nova-import", "Done", 300); err != nil {
+		return "", err
+	}
+
+	// Run the admin user job only on fresh deployments (when secret didn't exist before)
+	if !isRedeployment {
 		ui.Info("Creating cluster-admin user via Job...")
 		if err := k8s.ApplyYAML(ctx, "resources/core/deployment/tier2/keycloak/jobs/create-admin-user.yaml"); err != nil {
-			return "", nil, fmt.Errorf("failed to create admin user job: %w", err)
+			return "", fmt.Errorf("failed to create admin user job: %w", err)
 		}
 
 		// Wait for the job to complete
 		if err := k8s.WaitForCondition(ctx, keycloakNamespace, "job/keycloak-create-admin", "Complete", 120); err != nil {
-			return "", nil, fmt.Errorf("failed to create admin user: %w", err)
+			return "", fmt.Errorf("failed to create admin user: %w", err)
 		}
 	} else {
-		ui.Info("Cluster admin user already exists (secret found), skipping user creation job.")
-	}
-
-	ui.Info("Importing Nova Realm...")
-	if err := shared.ApplyTemplate(ctx, "resources/core/deployment/tier2/keycloak/keycloakrealmimports/nova.yaml", data); err != nil {
-		return "", nil, err
-	}
-	if err := k8s.WaitForCondition(ctx, keycloakNamespace, "keycloakrealmimports/nova-import", "Done", 300); err != nil {
-		return "", nil, err
+		ui.Info("Cluster admin user already exists (secret found), skipping job")
 	}
 
 	if err := shared.ApplyTemplate(ctx, "resources/core/deployment/tier2/keycloak/tlsroutes/keycloak.yaml", data); err != nil {
-		return "", nil, err
+		return "", err
 	}
 
-	return adminPwd, oidcSecrets, nil
+	return adminPwd, nil
 }
 
 // deployHubble enables Hubble UI.
-func deployHubble(ctx context.Context, cfg *config.Config, oidcSecrets *OIDCSecrets) error {
+func deployHubble(ctx context.Context, cfg *config.Config) error {
 	if err := k8s.LabelNamespace(ctx, "kube-system", "service-type", "nova"); err != nil {
 		return err
 	}
@@ -450,10 +407,10 @@ func deployHubble(ctx context.Context, cfg *config.Config, oidcSecrets *OIDCSecr
 		return fmt.Errorf("cilium not found: %w", err)
 	}
 
-	// Create OIDC secret for Hubble in kube-system using generated secret
+	// Create OIDC secret for Hubble in kube-system
 	if err := k8s.CreateSecret(ctx, "kube-system", "oidc", map[string]string{
-		"client-id":     constants.OIDCClientHubble,
-		"client-secret": oidcSecrets.Hubble,
+		"client-id":     constants.OIDCHubble.ID,
+		"client-secret": constants.OIDCHubble.Secret,
 	}); err != nil {
 		return fmt.Errorf("failed to create oidc secret: %w", err)
 	}
@@ -526,7 +483,7 @@ func deployVictoriaLogsCollector(ctx context.Context, cfg *config.Config) error 
 }
 
 // deployVictoriaMetricsStack deploys VM Stack with OIDC.
-func deployVictoriaMetricsStack(ctx context.Context, cfg *config.Config, oidcSecrets *OIDCSecrets) error {
+func deployVictoriaMetricsStack(ctx context.Context, cfg *config.Config) error {
 	if err := shared.EnsureNamespace(ctx, victoriametricsNamespace, map[string]string{
 		"service-type":                   "nova",
 		"trust-manager/inject-ca-secret": "enabled",
@@ -534,10 +491,10 @@ func deployVictoriaMetricsStack(ctx context.Context, cfg *config.Config, oidcSec
 		return err
 	}
 
-	// Create OIDC secret for Grafana using generated secret
+	// Create OIDC secret for Grafana
 	if err := k8s.CreateSecret(ctx, victoriametricsNamespace, "oidc", map[string]string{
-		"client-id":     constants.OIDCClientGrafana,
-		"client-secret": oidcSecrets.Grafana,
+		"client-id":     constants.OIDCGrafana.ID,
+		"client-secret": constants.OIDCGrafana.Secret,
 	}); err != nil {
 		return fmt.Errorf("failed to create oidc secret: %w", err)
 	}
@@ -555,9 +512,11 @@ func deployVictoriaMetricsStack(ctx context.Context, cfg *config.Config, oidcSec
 		return fmt.Errorf("failed to create grafana-admin secret: %w", err)
 	}
 
-	// Deploy GPU dashboard ConfigMap before Grafana starts
-	if err := k8s.ApplyYAML(ctx, "resources/core/deployment/tier2/victoriametrics/dashboards/gpu-overview.yaml"); err != nil {
-		return fmt.Errorf("failed to deploy GPU dashboard: %w", err)
+	// Deploy GPU dashboard ConfigMap before Grafana starts (only in GPU mode)
+	if cfg.IsGPUMode() {
+		if err := k8s.ApplyYAML(ctx, "resources/core/deployment/tier2/victoriametrics/dashboards/gpu-overview.yaml"); err != nil {
+			return fmt.Errorf("failed to deploy GPU dashboard: %w", err)
+		}
 	}
 
 	if err := shared.DeployHelmChart(ctx, shared.HelmDeploymentOptions{
@@ -569,6 +528,7 @@ func deployVictoriaMetricsStack(ctx context.Context, cfg *config.Config, oidcSec
 		TemplateData: map[string]any{
 			"Domain":     cfg.DNS.Domain,
 			"AuthDomain": cfg.DNS.AuthDomain,
+			"IsGPUMode":  cfg.IsGPUMode(),
 		},
 		Wait:           true,
 		TimeoutSeconds: 600,

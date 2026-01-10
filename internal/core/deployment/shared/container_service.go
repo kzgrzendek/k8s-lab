@@ -168,7 +168,8 @@ func WithDockerClient(ctx context.Context, fn func(*docker.Client) error) error 
 // GenerateTemplateFile generates a file from a template.
 // This utility eliminates repeated template generation code.
 func GenerateTemplateFile(templateContent, outputPath string, data any) error {
-	// Parse template
+	// Note: This function receives template content directly (not a file path),
+	// so we parse it inline rather than using RenderTemplate
 	tmpl, err := template.New(filepath.Base(outputPath)).Parse(templateContent)
 	if err != nil {
 		return fmt.Errorf("failed to parse template: %w", err)

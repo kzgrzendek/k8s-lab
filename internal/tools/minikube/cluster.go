@@ -15,18 +15,39 @@ import (
 
 	"github.com/kzgrzendek/nova/internal/cli/ui"
 	"github.com/kzgrzendek/nova/internal/core/config"
+	"github.com/kzgrzendek/nova/internal/core/constants"
 	pki "github.com/kzgrzendek/nova/internal/setup/certificates"
 	"github.com/kzgrzendek/nova/internal/tools/exec"
 	k8s "github.com/kzgrzendek/nova/internal/tools/kubectl"
 )
 
-// StartCluster starts a Minikube cluster with the given configuration.
+// getEnglishLocale returns environment variables that force English locale.
+// This ensures consistent output parsing regardless of the user's system locale.
+func getEnglishLocale() []string {
+	return []string{
+		"LC_ALL=C",
+		"LANG=C",
+	}
+}
+
+
+// setEnglishLocale sets English locale environment variables on an exec.Cmd.
+// This ensures minikube output is in English for consistent parsing.
+func setEnglishLocale(cmd *execCmd.Cmd) {
+	// Preserve existing environment and append locale settings
+	cmd.Env = append(os.Environ(), getEnglishLocale()...)
+}
+
+// StartCluster starts the minikube cluster with the given configuration.
+// Uses profile name "nova" for consistent naming across all components.
 func StartCluster(ctx context.Context, cfg *config.Config) error {
 	// Build minikube start command
 	args := []string{
 		"start",
+		"--profile", "nova", // Consistent profile name
 		"--install-addons=false",
 		"--driver", cfg.Minikube.Driver,
+		"--network", "nova", // Use nova network (created before cluster start)
 		"--cpus", fmt.Sprintf("%d", cfg.Minikube.CPUs),
 		"--memory", fmt.Sprintf("%d", cfg.Minikube.Memory),
 		"--container-runtime", "docker",
@@ -56,6 +77,7 @@ func StartCluster(ctx context.Context, cfg *config.Config) error {
 	defer ephemeralWriter.Done()
 
 	if err := exec.New(ctx, "minikube", args...).
+		WithEnv(getEnglishLocale()).
 		RunWithEphemeralOutput(ephemeralWriter); err != nil {
 		// Keep error visible, don't clear on failure
 		ephemeralWriter.KeepOnDone()
@@ -67,7 +89,9 @@ func StartCluster(ctx context.Context, cfg *config.Config) error {
 
 // IsRunning checks if the Minikube cluster is running.
 func IsRunning(ctx context.Context) (bool, error) {
-	output, err := exec.OutputStdout(ctx, "minikube", "status", "--format", "{{.Host}}")
+	output, err := exec.New(ctx, "minikube", "-p", "nova", "status", "--format", "{{.Host}}").
+		WithEnv(getEnglishLocale()).
+		OutputStdout()
 	if err != nil {
 		// If minikube status fails, cluster is not running
 		return false, nil
@@ -82,7 +106,8 @@ func Stop(ctx context.Context) error {
 	ephemeralWriter := ui.PipeWriter()
 	defer ephemeralWriter.Done()
 
-	if err := exec.New(ctx, "minikube", "stop").
+	if err := exec.New(ctx, "minikube", "-p", "nova", "stop").
+		WithEnv(getEnglishLocale()).
 		RunWithEphemeralOutput(ephemeralWriter); err != nil {
 		ephemeralWriter.KeepOnDone()
 		return fmt.Errorf("failed to stop minikube cluster: %w", err)
@@ -96,11 +121,162 @@ func Delete(ctx context.Context) error {
 	ephemeralWriter := ui.PipeWriter()
 	defer ephemeralWriter.Done()
 
-	if err := exec.New(ctx, "minikube", "delete").
+	if err := exec.New(ctx, "minikube", "-p", "nova", "delete").
+		WithEnv(getEnglishLocale()).
 		RunWithEphemeralOutput(ephemeralWriter); err != nil {
 		ephemeralWriter.KeepOnDone()
 		return fmt.Errorf("failed to delete minikube cluster: %w", err)
 	}
+	return nil
+}
+
+// ConfigureRegistryDNS adds a /etc/hosts entry on all minikube nodes to resolve
+// the registry domain to the host's gateway IP. This allows nodes to access the
+// registry running on the host machine.
+func ConfigureRegistryDNS(ctx context.Context, cfg *config.Config) error {
+	// Verify minikube is running
+	running, err := IsRunning(ctx)
+	if err != nil {
+		return fmt.Errorf("failed to check minikube status: %w", err)
+	}
+	if !running {
+		return fmt.Errorf("minikube is not running")
+	}
+
+	// Get all node names
+	nodes, err := GetNodeNames(ctx, cfg)
+	if err != nil {
+		return fmt.Errorf("failed to get node names: %w", err)
+	}
+
+	ui.Debug("Configuring registry DNS on minikube nodes...")
+
+	// Track success/failure for each node
+	successCount := 0
+	var lastError error
+
+	for _, node := range nodes {
+		ui.Debug("Configuring DNS on node %s...", node)
+
+		// Get host gateway IP from inside the node
+		// The gateway is the host machine's IP as seen from the container
+		gatewayCmd := execCmd.CommandContext(ctx, "minikube", "-p", "nova", "ssh", "-n", node, "--",
+			"ip", "route", "show", "default", "|", "awk", "'/default/ {print $3}'")
+		setEnglishLocale(gatewayCmd)
+		gatewayOutput, err := gatewayCmd.CombinedOutput()
+		if err != nil {
+			lastError = fmt.Errorf("failed to get gateway IP on node %s: %w", node, err)
+			ui.Error("✗ Failed to get gateway IP on node %s: %v", node, err)
+			continue
+		}
+
+		gatewayIP := strings.TrimSpace(string(gatewayOutput))
+		if gatewayIP == "" {
+			lastError = fmt.Errorf("empty gateway IP on node %s", node)
+			ui.Error("✗ Empty gateway IP on node %s", node)
+			continue
+		}
+
+		ui.Debug("Gateway IP on node %s: %s", node, gatewayIP)
+
+		// Add registry.local to /etc/hosts
+		// First check if entry already exists to avoid duplicates
+		checkCmd := execCmd.CommandContext(ctx, "minikube", "-p", "nova", "ssh", "-n", node, "--",
+			"grep", "-q", constants.RegistryDomain, "/etc/hosts")
+		setEnglishLocale(checkCmd)
+		entryExists := checkCmd.Run() == nil
+
+		if !entryExists {
+			// Add the hosts entry using echo piped to tee within the ssh session
+			// Note: Can't use stdin with tee through minikube ssh - it doesn't forward stdin properly
+			// Solution: Use the pipe within the ssh command string itself
+			hostsEntry := fmt.Sprintf("%s %s", gatewayIP, constants.RegistryDomain)
+			cmdString := fmt.Sprintf("echo '%s' | sudo tee -a /etc/hosts > /dev/null", hostsEntry)
+			addHostsCmd := execCmd.CommandContext(ctx, "minikube", "-p", "nova", "ssh", "-n", node, "--", cmdString)
+			setEnglishLocale(addHostsCmd)
+
+			if output, err := addHostsCmd.CombinedOutput(); err != nil {
+				lastError = fmt.Errorf("failed to add hosts entry on node %s: %w", node, err)
+				ui.Error("✗ Failed to add hosts entry on node %s: %v", node, err)
+				ui.Debug("Output: %s", string(output))
+				continue
+			}
+		} else {
+			ui.Debug("Registry entry already exists in /etc/hosts on node %s", node)
+		}
+
+		ui.Info("✓ Configured DNS on node %s (%s -> %s)", node, constants.RegistryDomain, gatewayIP)
+		successCount++
+	}
+
+	// Check if any nodes were successful
+	if successCount == 0 {
+		return fmt.Errorf("failed to configure DNS on any node: %w", lastError)
+	}
+	if successCount < len(nodes) {
+		ui.Warn("DNS configured on %d/%d nodes", successCount, len(nodes))
+		return fmt.Errorf("DNS configuration incomplete (%d/%d nodes)", successCount, len(nodes))
+	}
+
+	ui.Success("✓ Configured registry DNS on all %d minikube nodes", len(nodes))
+	return nil
+}
+
+// InstallNFSClient installs NFS client utilities on all minikube nodes.
+// This allows nodes to mount NFS volumes for persistent storage.
+func InstallNFSClient(ctx context.Context, cfg *config.Config) error {
+	// Verify minikube is running
+	running, err := IsRunning(ctx)
+	if err != nil {
+		return fmt.Errorf("failed to check minikube status: %w", err)
+	}
+	if !running {
+		return fmt.Errorf("minikube is not running")
+	}
+
+	// Get all node names
+	nodes, err := GetNodeNames(ctx, cfg)
+	if err != nil {
+		return fmt.Errorf("failed to get node names: %w", err)
+	}
+
+	ui.Debug("Installing NFS client on minikube nodes...")
+
+	// Track success/failure for each node
+	successCount := 0
+	var lastError error
+
+	for _, node := range nodes {
+		ui.Debug("Installing NFS client on node %s...", node)
+
+		// Install nfs-common package (Debian/Ubuntu) - required for kernel NFS mounting
+		// Minikube uses Ubuntu, so we use apt-get
+		// Note: The entire command must be a single string for bash -c
+		installCmd := execCmd.CommandContext(ctx, "minikube", "-p", "nova", "ssh", "-n", node, "--",
+			"sudo", "bash", "-c", "'apt-get update -qq && apt-get install -y -qq nfs-common'")
+		setEnglishLocale(installCmd)
+
+		if output, err := installCmd.CombinedOutput(); err != nil {
+			lastError = fmt.Errorf("failed to install NFS client on node %s: %w", node, err)
+			ui.Error("✗ Failed to install NFS client on node %s: %v", node, err)
+			ui.Debug("Output: %s", string(output))
+			continue
+		}
+
+		ui.Info("✓ Installed NFS client on node %s", node)
+		successCount++
+	}
+
+	// Check if any nodes were successful
+	if successCount == 0 {
+		return fmt.Errorf("failed to install NFS client on any node: %w", lastError)
+	}
+	if successCount < len(nodes) {
+		ui.Warn("NFS client installed on %d/%d nodes", successCount, len(nodes))
+		return fmt.Errorf("NFS client installation incomplete (%d/%d nodes)", successCount, len(nodes))
+	}
+
+	ui.Success("✓ Installed NFS client on all %d minikube nodes", len(nodes))
 	return nil
 }
 
@@ -159,8 +335,10 @@ func InstallRegistryCA(ctx context.Context, cfg *config.Config) error {
 		ui.Debug("Installing CA certificate on node %s...", node)
 
 		// Create directory for Docker registry certs
-		mkdirCmd := execCmd.CommandContext(ctx, "minikube", "ssh", "-n", node, "--",
-			"sudo", "mkdir", "-p", "/etc/docker/certs.d/nova-registry:5000")
+		certDir := fmt.Sprintf("/etc/docker/certs.d/%s", constants.RegistryHost)
+		mkdirCmd := execCmd.CommandContext(ctx, "minikube", "-p", "nova", "ssh", "-n", node, "--",
+			"sudo", "mkdir", "-p", certDir)
+		setEnglishLocale(mkdirCmd)
 		if _, err := mkdirCmd.CombinedOutput(); err != nil {
 			lastError = fmt.Errorf("failed to create cert directory on node %s: %w", node, err)
 			ui.Error("✗ Failed to create cert directory on node %s: %v", node, err)
@@ -169,7 +347,8 @@ func InstallRegistryCA(ctx context.Context, cfg *config.Config) error {
 
 		// Copy CA cert to node using minikube cp (to temp location first)
 		tempDest := fmt.Sprintf("%s:/tmp/nova-ca.crt", node)
-		cpCmd := execCmd.CommandContext(ctx, "minikube", "cp", tmpFile.Name(), tempDest)
+		cpCmd := execCmd.CommandContext(ctx, "minikube", "-p", "nova", "cp", tmpFile.Name(), tempDest)
+		setEnglishLocale(cpCmd)
 		if output, err := cpCmd.CombinedOutput(); err != nil {
 			lastError = fmt.Errorf("failed to copy CA cert to node %s: %w", node, err)
 			ui.Error("✗ Failed to copy CA cert to node %s: %v", node, err)
@@ -178,8 +357,10 @@ func InstallRegistryCA(ctx context.Context, cfg *config.Config) error {
 		}
 
 		// Move cert to final location with sudo
-		moveCmd := execCmd.CommandContext(ctx, "minikube", "ssh", "-n", node, "--",
-			"sudo", "mv", "/tmp/nova-ca.crt", "/etc/docker/certs.d/nova-registry:5000/ca.crt")
+		finalCertPath := fmt.Sprintf("%s/ca.crt", certDir)
+		moveCmd := execCmd.CommandContext(ctx, "minikube", "-p", "nova", "ssh", "-n", node, "--",
+			"sudo", "mv", "/tmp/nova-ca.crt", finalCertPath)
+		setEnglishLocale(moveCmd)
 		if output, err := moveCmd.CombinedOutput(); err != nil {
 			lastError = fmt.Errorf("failed to move CA cert on node %s: %w", node, err)
 			ui.Error("✗ Failed to move CA cert on node %s: %v", node, err)
@@ -204,19 +385,23 @@ func InstallRegistryCA(ctx context.Context, cfg *config.Config) error {
 	return nil
 }
 
-// GetNodeNames returns the names of all nodes in the cluster based on config.
+// GetNodeNames returns the names of all nodes in the cluster using kubectl discovery.
+// This automatically discovers node names regardless of minikube profile naming.
 func GetNodeNames(ctx context.Context, cfg *config.Config) ([]string, error) {
-	// Minikube naming convention: minikube, minikube-m02, minikube-m03, ...
-	var nodes []string
-	for i := 1; i <= cfg.Minikube.Nodes; i++ {
-		if i == 1 {
-			nodes = append(nodes, "minikube")
-		} else {
-			nodes = append(nodes, fmt.Sprintf("minikube-m%02d", i))
-		}
+	// Use kubectl to discover all node names dynamically
+	output, err := exec.OutputStdout(ctx, "kubectl", "get", "nodes",
+		"-o", "jsonpath={.items[*].metadata.name}")
+	if err != nil {
+		return nil, fmt.Errorf("failed to discover cluster nodes: %w", err)
 	}
 
-	return nodes, nil
+	// Split the space-separated node names
+	nodeNames := strings.Fields(strings.TrimSpace(output))
+	if len(nodeNames) == 0 {
+		return nil, fmt.Errorf("no nodes found in cluster")
+	}
+
+	return nodeNames, nil
 }
 
 // GetNodesByLabel returns the names of nodes matching a specific label selector.
@@ -246,13 +431,29 @@ func GetNodesByLabel(ctx context.Context, cfg *config.Config, labelSelector stri
 //
 // Returns the elected node name.
 func ElectLLMDNode(ctx context.Context, cfg *config.Config) (string, error) {
+	// Check if a node is already elected
+	existingNodes, err := GetNodesByLabel(ctx, cfg, "nova.local/llmd-node=true")
+	if err == nil && len(existingNodes) > 0 {
+		ui.Info("Node %s already elected for llm-d", existingNodes[0])
+		return existingNodes[0], nil
+	}
+
 	nodeCount := cfg.Minikube.Nodes
 	var electedNode string
 
 	if nodeCount == 1 {
-		// Single-node mode: use master node
-		electedNode = "minikube"
+		// Single-node mode: use master node (discover dynamically)
 		ui.Info("Single-node mode: electing master node for llm-d")
+
+		// Get the control plane node name dynamically
+		nodes, err := GetNodeNames(ctx, cfg)
+		if err != nil {
+			return "", fmt.Errorf("failed to discover master node: %w", err)
+		}
+		if len(nodes) == 0 {
+			return "", fmt.Errorf("no nodes found in cluster")
+		}
+		electedNode = nodes[0] // In single-node mode, the only node is the master
 
 		// Remove NoSchedule taint from master if present
 		ui.Debug("Removing NoSchedule taint from master node...")
@@ -310,8 +511,10 @@ func GetNodeCount(ctx context.Context) (int, error) {
 
 // MountBPFFS mounts the BPF filesystem on a node.
 func MountBPFFS(ctx context.Context, nodeName string) error {
-	if err := exec.Run(ctx, "minikube", "ssh", "-n", nodeName, "--",
-		"grep -q 'bpffs /sys/fs/bpf' /proc/mounts || sudo mount -t bpf bpffs /sys/fs/bpf"); err != nil {
+	if err := exec.New(ctx, "minikube", "-p", "nova", "ssh", "-n", nodeName, "--",
+		"grep -q 'bpffs /sys/fs/bpf' /proc/mounts || sudo mount -t bpf bpffs /sys/fs/bpf").
+		WithEnv(getEnglishLocale()).
+		Run(); err != nil {
 		return fmt.Errorf("failed to mount bpffs on node %s: %w", nodeName, err)
 	}
 	return nil
@@ -319,7 +522,9 @@ func MountBPFFS(ctx context.Context, nodeName string) error {
 
 // GetIP returns the IP address of the Minikube control plane node.
 func GetIP(ctx context.Context) (string, error) {
-	ip, err := exec.OutputStdout(ctx, "minikube", "ip")
+	ip, err := exec.New(ctx, "minikube", "-p", "nova", "ip").
+		WithEnv(getEnglishLocale()).
+		OutputStdout()
 	if err != nil {
 		return "", fmt.Errorf("failed to get minikube IP: %w", err)
 	}
@@ -357,7 +562,9 @@ func GetAPIServerPort(ctx context.Context) (string, error) {
 // GetVersion returns the installed Minikube version.
 // Returns version string in format "v1.37.0" or similar.
 func GetVersion(ctx context.Context) (string, error) {
-	output, err := exec.OutputStdout(ctx, "minikube", "version", "--short")
+	output, err := exec.New(ctx, "minikube", "-p", "nova", "version", "--short").
+		WithEnv(getEnglishLocale()).
+		OutputStdout()
 	if err != nil {
 		return "", fmt.Errorf("failed to get minikube version: %w", err)
 	}
@@ -397,7 +604,9 @@ func GetDockerEnv(ctx context.Context) (*DockerEnv, error) {
 		}
 
 		// Get docker-env output from minikube
-		output, err := exec.OutputStdout(ctx, "minikube", "docker-env", "--shell", "bash")
+		output, err := exec.New(ctx, "minikube", "-p", "nova", "docker-env", "--shell", "bash").
+			WithEnv(getEnglishLocale()).
+			OutputStdout()
 		if err != nil {
 			lastErr = err
 			ui.Debug("Failed to get docker-env (attempt %d/%d): %v", attempt+1, maxRetries, err)
@@ -452,30 +661,4 @@ func GetDockerEnv(ctx context.Context) (*DockerEnv, error) {
 	}
 
 	return nil, fmt.Errorf("failed to get minikube docker-env after %d attempts: %w", maxRetries, lastErr)
-}
-
-// LoadImageFromHost loads a docker image from the host's docker daemon into minikube.
-// DEPRECATED: This function is memory-intensive and should be avoided.
-// Use direct pulls to minikube's daemon instead (via GetDockerEnv).
-func LoadImageFromHost(ctx context.Context, image string) error {
-	ui.Info("Loading image from host into minikube: %s", image)
-
-	// Check if image exists on host first
-	output, err := exec.OutputStdout(ctx, "docker", "images", "-q", image)
-	if err != nil || output == "" {
-		return fmt.Errorf("image %s not found in host docker daemon", image)
-	}
-
-	// Use ephemeral output for image loading
-	ephemeralWriter := ui.PipeWriter()
-	defer ephemeralWriter.Done()
-
-	if err := exec.New(ctx, "minikube", "image", "load", image).
-		RunWithEphemeralOutput(ephemeralWriter); err != nil {
-		ephemeralWriter.KeepOnDone()
-		return fmt.Errorf("failed to load image into minikube: %w", err)
-	}
-
-	ui.Success("✓ Image loaded into minikube")
-	return nil
 }

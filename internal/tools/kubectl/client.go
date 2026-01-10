@@ -11,7 +11,6 @@ import (
 	"os"
 	"path/filepath"
 	"strings"
-	"text/template"
 	"time"
 
 	corev1 "k8s.io/api/core/v1"
@@ -24,6 +23,7 @@ import (
 	"github.com/kzgrzendek/nova/internal/cli/ui"
 	"github.com/kzgrzendek/nova/internal/core/constants"
 	"github.com/kzgrzendek/nova/internal/tools/exec"
+	"github.com/kzgrzendek/nova/internal/utils"
 )
 
 // getClient creates a Kubernetes client using the cluster-admin context.
@@ -166,19 +166,29 @@ func LabelNode(ctx context.Context, nodeName, label string, remove bool) error {
 		node.Labels = make(map[string]string)
 	}
 
+	modified := false
 	if remove {
-		// Remove the label
-		delete(node.Labels, label)
+		// Remove the label (only if it exists)
+		key, _ := parseLabel(label)
+		if _, exists := node.Labels[key]; exists {
+			delete(node.Labels, key)
+			modified = true
+		}
 	} else {
-		// Parse and apply label
+		// Parse and apply label (only if value changed)
 		key, value := parseLabel(label)
-		node.Labels[key] = value
+		if currentValue, exists := node.Labels[key]; !exists || currentValue != value {
+			node.Labels[key] = value
+			modified = true
+		}
 	}
 
-	// Update the node
-	_, err = clientset.CoreV1().Nodes().Update(ctx, node, metav1.UpdateOptions{})
-	if err != nil {
-		return fmt.Errorf("failed to label node %s: %w", nodeName, err)
+	// Only update the node if there were changes
+	if modified {
+		_, err = clientset.CoreV1().Nodes().Update(ctx, node, metav1.UpdateOptions{})
+		if err != nil {
+			return fmt.Errorf("failed to label node %s: %w", nodeName, err)
+		}
 	}
 
 	return nil
@@ -871,25 +881,14 @@ func RenameContext(ctx context.Context, oldName, newName string) error {
 // ApplyYAMLWithTemplate applies a YAML file with template substitution.
 // The template data is passed as a map and used to render the YAML content.
 func ApplyYAMLWithTemplate(ctx context.Context, path string, data interface{}) error {
-	// Read template file
-	content, err := os.ReadFile(path)
+	// Render template
+	rendered, err := utils.RenderTemplate(path, data)
 	if err != nil {
-		return fmt.Errorf("failed to read template file %s: %w", path, err)
-	}
-
-	// Parse and execute template
-	tmpl, err := template.New("kubectl-yaml").Parse(string(content))
-	if err != nil {
-		return fmt.Errorf("failed to parse template %s: %w", path, err)
-	}
-
-	var buf strings.Builder
-	if err := tmpl.Execute(&buf, data); err != nil {
-		return fmt.Errorf("failed to execute template %s: %w", path, err)
+		return err
 	}
 
 	// Apply rendered YAML
-	return ApplyYAMLContent(ctx, buf.String())
+	return ApplyYAMLContent(ctx, rendered)
 }
 
 // ResourceExists checks if a Kubernetes resource exists.

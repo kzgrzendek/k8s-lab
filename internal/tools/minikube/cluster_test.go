@@ -26,8 +26,8 @@ func TestGetNodeNames(t *testing.T) {
 			nodeCount: 3,
 			expectedNodes: []string{
 				"minikube",
-				"minikube-m02",
-				"minikube-m03",
+				"nova-m02",
+				"nova-m03",
 			},
 		},
 		{
@@ -35,8 +35,8 @@ func TestGetNodeNames(t *testing.T) {
 			nodeCount: 5,
 			expectedNodes: []string{
 				"minikube",
-				"minikube-m02",
-				"minikube-m03",
+				"nova-m02",
+				"nova-m03",
 				"minikube-m04",
 				"minikube-m05",
 			},
@@ -228,8 +228,8 @@ func TestMinikubeNodeNamingConvention(t *testing.T) {
 		expectedName string
 	}{
 		{nodeIndex: 1, expectedName: "minikube"},
-		{nodeIndex: 2, expectedName: "minikube-m02"},
-		{nodeIndex: 3, expectedName: "minikube-m03"},
+		{nodeIndex: 2, expectedName: "nova-m02"},
+		{nodeIndex: 3, expectedName: "nova-m03"},
 		{nodeIndex: 10, expectedName: "minikube-m10"},
 		{nodeIndex: 99, expectedName: "minikube-m99"},
 	}
@@ -396,12 +396,12 @@ func TestMountBPFFSCommand(t *testing.T) {
 		},
 		{
 			name:        "Mount on worker node",
-			nodeName:    "minikube-m02",
+			nodeName:    "nova-m02",
 			expectedCmd: "minikube",
 			expectedArgs: []string{
 				"ssh",
 				"-n",
-				"minikube-m02",
+				"nova-m02",
 				"--",
 				"grep -q 'bpffs /sys/fs/bpf' /proc/mounts || sudo mount -t bpf bpffs /sys/fs/bpf",
 			},

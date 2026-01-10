@@ -2,7 +2,7 @@
 // Skopeo is used to copy container images between registries with minimal
 // RAM usage by streaming layers rather than loading entire images into memory.
 //
-// This client runs skopeo inside a Docker container on the minikube network,
+// This client runs skopeo inside a Docker container on the nova network,
 // allowing direct access to the local registry without port exposure.
 package skopeo
 
@@ -11,6 +11,7 @@ import (
 	"fmt"
 	"os"
 	"os/exec"
+	"strings"
 
 	"github.com/kzgrzendek/nova/internal/cli/ui"
 	pki "github.com/kzgrzendek/nova/internal/setup/certificates"
@@ -29,7 +30,7 @@ type CopyToRegistryOptions struct {
 	// SourceImage is the full source image reference (e.g., "ghcr.io/llm-d/image:tag")
 	SourceImage string
 
-	// DestRegistry is the destination registry host (e.g., "nova-registry:5000")
+	// DestRegistry is the destination registry host (e.g., "registry.local:5000")
 	DestRegistry string
 
 	// DestImage is the image name in the destination registry (e.g., "llm-d/image:tag")
@@ -44,7 +45,7 @@ type CopyToRegistryOptions struct {
 
 // CopyToRegistry copies an image from a source registry to the local registry.
 // This operation streams image layers and uses minimal RAM (~300MB).
-// Runs skopeo inside a Docker container on the minikube network with TLS support.
+// Runs skopeo inside a Docker container on the nova network with TLS support.
 func (c *Client) CopyToRegistry(ctx context.Context, opts CopyToRegistryOptions) error {
 	sourceRef := fmt.Sprintf("docker://%s", opts.SourceImage)
 	destRef := fmt.Sprintf("docker://%s/%s", opts.DestRegistry, opts.DestImage)
@@ -53,9 +54,15 @@ func (c *Client) CopyToRegistry(ctx context.Context, opts CopyToRegistryOptions)
 	ui.Debug("  Source: %s", sourceRef)
 	ui.Debug("  Destination: %s", destRef)
 
+	// Get the registry container IP for DNS resolution in skopeo container
+	registryIP, err := getRegistryContainerIP(ctx)
+	if err != nil {
+		return fmt.Errorf("failed to get registry container IP: %w", err)
+	}
+	ui.Debug("  Registry IP: %s", registryIP)
+
 	// Get mkcert CA certificate for mounting (if TLS verification is enabled)
 	var combinedCAPath string
-	var err error
 	if !opts.SkipTLSVerify {
 		caCertPath, _, err := pki.GetCAPaths()
 		if err != nil {
@@ -92,11 +99,13 @@ func (c *Client) CopyToRegistry(ctx context.Context, opts CopyToRegistryOptions)
 	// Add source and destination
 	skopeoArgs = append(skopeoArgs, sourceRef, destRef)
 
-	// Run skopeo inside a Docker container on the minikube network
+	// Run skopeo inside a Docker container on the nova network
+	// Add DNS mapping for registry.local to resolve to the registry container IP
 	dockerArgs := []string{
 		"run",
-		"--rm",                  // Remove container after completion
-		"--network", "minikube", // Connect to minikube network
+		"--rm",              // Remove container after completion
+		"--network", "nova", // Connect to nova network
+		"--add-host", fmt.Sprintf("registry.local:%s", registryIP), // Map domain to container IP
 	}
 
 	// Mount the combined CA bundle and set environment variable for TLS verification
@@ -149,8 +158,8 @@ func createCombinedCABundle(customCAPath string) (string, error) {
 	systemCALocations := []string{
 		"/etc/ssl/certs/ca-certificates.crt", // Debian/Ubuntu
 		"/etc/pki/tls/certs/ca-bundle.crt",   // RHEL/CentOS
-		"/etc/ssl/ca-bundle.pem",              // OpenSUSE
-		"/etc/ssl/cert.pem",                   // Alpine
+		"/etc/ssl/ca-bundle.pem",             // OpenSUSE
+		"/etc/ssl/cert.pem",                  // Alpine
 	}
 
 	var systemCA []byte
@@ -195,4 +204,25 @@ func createCombinedCABundle(customCAPath string) (string, error) {
 	}
 
 	return tmpFile.Name(), nil
+}
+
+// getRegistryContainerIP retrieves the IP address of the registry container on the nova network.
+// This IP is used to configure DNS resolution in the skopeo container.
+func getRegistryContainerIP(ctx context.Context) (string, error) {
+	// Use docker inspect to get the container's IP on the nova network
+	cmd := exec.CommandContext(ctx, "docker", "inspect",
+		"--format", "{{.NetworkSettings.Networks.nova.IPAddress}}",
+		"nova-registry")
+
+	output, err := cmd.CombinedOutput()
+	if err != nil {
+		return "", fmt.Errorf("failed to inspect registry container: %w", err)
+	}
+
+	ip := strings.TrimSpace(string(output))
+	if ip == "" {
+		return "", fmt.Errorf("registry container not found on nova network")
+	}
+
+	return ip, nil
 }

@@ -1,12 +1,10 @@
 package shared
 
 import (
-	"bytes"
 	"context"
 	"fmt"
 	"os"
 	"strings"
-	"text/template"
 	"time"
 
 	"github.com/kzgrzendek/nova/internal/cli/ui"
@@ -55,25 +53,17 @@ func DeployHelmChart(ctx context.Context, opts HelmDeploymentOptions) error {
 		var err error
 
 		if opts.TemplateData != nil {
-			// Read template file
-			templateContent, err := os.ReadFile(opts.ValuesPath)
+			// Render template
+			rendered, err := RenderTemplate(opts.ValuesPath, opts.TemplateData)
 			if err != nil {
-				return fmt.Errorf("failed to read values template file: %w", err)
+				return fmt.Errorf("failed to render values template: %w", err)
 			}
 
-			// Parse and execute template
-			tmpl, err := template.New("values").Parse(string(templateContent))
-			if err != nil {
-				return fmt.Errorf("failed to parse values template: %w", err)
-			}
+			// DEBUG: dump rendered template to file
+			_ = os.WriteFile("/tmp/nova-rendered-values.yaml", []byte(rendered), 0644)
 
-			var buf bytes.Buffer
-			if err := tmpl.Execute(&buf, opts.TemplateData); err != nil {
-				return fmt.Errorf("failed to execute values template: %w", err)
-			}
-
-			// Parse YAML from buffer
-			if err := helm.UnmarshalValues(buf.Bytes(), &loadedValues); err != nil {
+			// Parse YAML from rendered content
+			if err := helm.UnmarshalValues([]byte(rendered), &loadedValues); err != nil {
 				return fmt.Errorf("failed to parse templated values from %s: %w", opts.ValuesPath, err)
 			}
 		} else {
@@ -129,25 +119,14 @@ func DeployHelmChart(ctx context.Context, opts HelmDeploymentOptions) error {
 // ApplyTemplate processes a template file with the given data and applies it to the cluster.
 // This is useful for generating Kubernetes manifests with dynamic values (e.g., secrets with passwords).
 func ApplyTemplate(ctx context.Context, templatePath string, data any) error {
-	// Read template file
-	templateContent, err := os.ReadFile(templatePath)
+	// Render template
+	rendered, err := RenderTemplate(templatePath, data)
 	if err != nil {
-		return fmt.Errorf("failed to read template file: %w", err)
-	}
-
-	// Parse and execute template
-	tmpl, err := template.New("manifest").Parse(string(templateContent))
-	if err != nil {
-		return fmt.Errorf("failed to parse template: %w", err)
-	}
-
-	var buf bytes.Buffer
-	if err := tmpl.Execute(&buf, data); err != nil {
-		return fmt.Errorf("failed to execute template: %w", err)
+		return err
 	}
 
 	// Apply the generated manifest
-	if err := k8s.ApplyYAMLContent(ctx, buf.String()); err != nil {
+	if err := k8s.ApplyYAMLContent(ctx, rendered); err != nil {
 		return fmt.Errorf("failed to apply manifest: %w", err)
 	}
 
@@ -209,23 +188,14 @@ func LoadAndTemplateCustomValues(customValuesPath string, templateData any) (map
 		return nil, nil
 	}
 
-	templateContent, err := os.ReadFile(customValuesPath)
+	// Render template
+	rendered, err := RenderTemplate(customValuesPath, templateData)
 	if err != nil {
-		return nil, fmt.Errorf("failed to read custom values file: %w", err)
-	}
-
-	tmpl, err := template.New("custom-values").Parse(string(templateContent))
-	if err != nil {
-		return nil, fmt.Errorf("failed to parse custom values template: %w", err)
-	}
-
-	var buf bytes.Buffer
-	if err := tmpl.Execute(&buf, templateData); err != nil {
-		return nil, fmt.Errorf("failed to execute custom values template: %w", err)
+		return nil, err
 	}
 
 	var customValues map[string]any
-	if err := helm.UnmarshalValues(buf.Bytes(), &customValues); err != nil {
+	if err := helm.UnmarshalValues([]byte(rendered), &customValues); err != nil {
 		return nil, fmt.Errorf("failed to parse custom values: %w", err)
 	}
 

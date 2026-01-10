@@ -6,7 +6,6 @@ import (
 	"fmt"
 
 	"github.com/kzgrzendek/nova/internal/cli/ui"
-	"github.com/kzgrzendek/nova/internal/core/constants"
 	"github.com/kzgrzendek/nova/internal/tools/crypto"
 	"github.com/kzgrzendek/nova/internal/tools/helm"
 	k8s "github.com/kzgrzendek/nova/internal/tools/kubectl"
@@ -78,9 +77,4 @@ func GetOrGenerateSecret(ctx context.Context, namespace, secretName, key string,
 	}
 
 	return crypto.GenerateRandomPassword(length)
-}
-
-// GenerateOIDCSecret generates a cryptographically secure OIDC client secret.
-func GenerateOIDCSecret() (string, error) {
-	return crypto.GenerateRandomPassword(constants.OIDCSecretLength)
 }

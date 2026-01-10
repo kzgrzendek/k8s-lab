@@ -85,10 +85,11 @@ type Tier2Versions struct {
 
 // Tier3Versions holds all tier 3 (AI workloads) dependency versions.
 type Tier3Versions struct {
-	LLMD          Tier3AppConfig `json:"llmd" yaml:"llmd"`
+	LLMD         Tier3AppConfig `json:"llmd" yaml:"llmd"`
 	InferencePool Tier3AppConfig `json:"inferencePool" yaml:"inferencePool"`
-	OpenWebUI     Tier3AppConfig `json:"openWebui" yaml:"openWebui"`
-	Helix         Tier3AppConfig `json:"helix" yaml:"helix"`
+	OpenWebUI    Tier3AppConfig `json:"openWebui" yaml:"openWebui"`
+	Helix        Tier3AppConfig `json:"helix" yaml:"helix"`
+	LLMDImageTag string         `json:"llmdImageTag" yaml:"llmdImageTag"` // llm-d image tag (e.g., "v0.4.0"), used for both CPU and CUDA variants
 }
 
 // Versions holds all external dependency versions for reproducible deployments.
@@ -221,7 +222,7 @@ func Default() *Config {
 				LLMD: Tier3AppConfig{
 					ChartVersion: ChartVersion{
 						Chart:   "llm-d-modelservice/llm-d-modelservice",
-						Version: "v0.3.16",
+						Version: "v0.3.17",
 					},
 				},
 				InferencePool: Tier3AppConfig{
@@ -242,6 +243,7 @@ func Default() *Config {
 						Version: "1.3.1",
 					},
 				},
+				LLMDImageTag: "v0.4.0",
 			},
 		},
 	}
@@ -460,4 +462,12 @@ func (c *Config) GetModelName() string {
 // GetModelURI returns the Hugging Face URI for the model.
 func (c *Config) GetModelURI() string {
 	return fmt.Sprintf("hf://%s", c.GetModelName())
+}
+
+// GetLLMDImageTag returns the llm-d image tag with a fallback to default.
+func (c *Config) GetLLMDImageTag() string {
+	if c.Versions.Tier3.LLMDImageTag == "" {
+		return "v0.4.0"
+	}
+	return c.Versions.Tier3.LLMDImageTag
 }

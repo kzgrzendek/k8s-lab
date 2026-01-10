@@ -10,9 +10,7 @@ import (
 	"github.com/kzgrzendek/nova/internal/core/deployment/tier2"
 	"github.com/kzgrzendek/nova/internal/core/deployment/tier3"
 	"github.com/kzgrzendek/nova/internal/core/deployment/warmup"
-	"github.com/kzgrzendek/nova/internal/host/dns/bind9"
-	"github.com/kzgrzendek/nova/internal/host/gateway/nginx"
-	"github.com/kzgrzendek/nova/internal/host/registry"
+	"github.com/kzgrzendek/nova/internal/host/foundation"
 	pki "github.com/kzgrzendek/nova/internal/setup/certificates"
 	k8s "github.com/kzgrzendek/nova/internal/tools/kubectl"
 	"github.com/kzgrzendek/nova/internal/tools/minikube"
@@ -114,7 +112,7 @@ func runStart(cmd *cobra.Command, targetTier int, hfToken string, model string, 
 	ui.Header("Starting NOVA (Tier 0-%d)", targetTier)
 
 	// Build deployment steps based on target tier
-	steps := []string{"Tier 0: Minikube Cluster"}
+	steps := []string{"Foundation Stack", "Tier 0: Minikube Cluster"}
 	if targetTier >= 1 {
 		steps = append(steps, "Tier 1: Infrastructure")
 	}
@@ -124,57 +122,74 @@ func runStart(cmd *cobra.Command, targetTier int, hfToken string, model string, 
 	if targetTier >= 3 {
 		steps = append(steps, "Tier 3: Applications")
 	}
-	steps = append(steps, "Host Services (Bind9 & NGINX)")
 
 	// Create progress tracker
 	progress := ui.NewStepProgress(steps)
 	currentStep := 0
 
+	// Step 1: Foundation Stack (network, NGINX, DNS, NFS, Registry)
+	progress.StartStep(currentStep)
+	foundationStack := foundation.New(cfg)
+	if err := foundationStack.Start(cmd.Context(), targetTier); err != nil {
+		progress.FailStep(currentStep, err)
+		return fmt.Errorf("failed to start foundation stack: %w", err)
+	}
+	progress.CompleteStep(currentStep)
+	currentStep++
+
+	// Step 2: Warmup operations (tier 3 only, runs in background)
+	var warmupOrch *warmup.Orchestrator
+	if targetTier >= 3 {
+		warmupOrch = warmup.New(cmd.Context(), cfg)
+		if err := warmupOrch.Start(); err != nil {
+			return fmt.Errorf("failed to start warmup operations: %w", err)
+		}
+	}
+
+	// Use warmup context for deployments if tier 3, otherwise use cmd.Context()
+	// This ensures fail-fast behavior if warmup fails
+	deployCtx := cmd.Context()
+	if warmupOrch != nil {
+		deployCtx = warmupOrch.Context()
+	}
+
 	// Check if cluster is already running
-	running, err := minikube.IsRunning(cmd.Context())
+	running, err := minikube.IsRunning(deployCtx)
 	if err != nil {
 		ui.Warn("Failed to check cluster status: %v", err)
 	}
 
-	// Tier 0: Start Minikube cluster if not running
+	// Step 3: Tier 0: Configure Minikube cluster (already started by Foundation Stack)
 	progress.StartStep(currentStep)
 	if !running {
-		if err := tier0.DeployTier0(cmd.Context(), cfg); err != nil {
+		// Check if warmup failed and cancelled context
+		if deployCtx.Err() != nil {
+			progress.FailStep(currentStep, deployCtx.Err())
+			return fmt.Errorf("deployment cancelled due to warmup failure: %w", deployCtx.Err())
+		}
+		if err := tier0.DeployTier0(deployCtx, cfg); err != nil {
 			progress.FailStep(currentStep, err)
 			return fmt.Errorf("failed to deploy tier 0: %w", err)
 		}
 		progress.CompleteStep(currentStep)
 	} else {
-		ui.Info("Minikube cluster already running - skipping")
+		ui.Info("Minikube cluster already running - applying configuration")
+		if err := tier0.DeployTier0(deployCtx, cfg); err != nil {
+			progress.FailStep(currentStep, err)
+			return fmt.Errorf("failed to deploy tier 0: %w", err)
+		}
 		progress.CompleteStep(currentStep)
 	}
 	currentStep++
 
-	// Start registry (needed for image warmup in warmup module)
-	if targetTier >= 3 {
-		ui.Info("Starting local registry for image distribution...")
-		if err := registry.Start(cmd.Context(), cfg); err != nil {
-			ui.Warn("Failed to start registry: %v", err)
-			ui.Info("Images will be pulled during tier 3 deployment instead")
-		}
-	}
-
-	// Deploy warmup module (node election + model warmup + image warmup)
-	// This runs between tier0 and tier1, with warmups executing in background
-	var warmupResult *warmup.WarmupResult
-	if targetTier >= 1 {
-		var err error
-		warmupResult, err = warmup.DeployWarmup(cmd.Context(), cfg)
-		if err != nil {
-			ui.Warn("Warmup module failed: %v", err)
-			ui.Info("Deployment will continue, but warmups may not be complete")
-		}
-	}
-
 	// Deploy higher tiers
 	if targetTier >= 1 {
+		// Check if warmup failed and cancelled context
+		if deployCtx.Err() != nil {
+			return fmt.Errorf("deployment cancelled due to warmup failure: %w", deployCtx.Err())
+		}
 		progress.StartStep(currentStep)
-		if err := tier1.DeployTier1(cmd.Context(), cfg); err != nil {
+		if err := tier1.DeployTier1(deployCtx, cfg); err != nil {
 			progress.FailStep(currentStep, err)
 			return fmt.Errorf("failed to deploy tier 1: %w", err)
 		}
@@ -184,9 +199,13 @@ func runStart(cmd *cobra.Command, targetTier int, hfToken string, model string, 
 
 	var tier2Result *tier2.DeployResult
 	if targetTier >= 2 {
+		// Check if warmup failed and cancelled context
+		if deployCtx.Err() != nil {
+			return fmt.Errorf("deployment cancelled due to warmup failure: %w", deployCtx.Err())
+		}
 		progress.StartStep(currentStep)
 		var err error
-		tier2Result, err = tier2.DeployTier2(cmd.Context(), cfg)
+		tier2Result, err = tier2.DeployTier2(deployCtx, cfg)
 		if err != nil {
 			progress.FailStep(currentStep, err)
 			return fmt.Errorf("failed to deploy tier 2: %w", err)
@@ -196,65 +215,21 @@ func runStart(cmd *cobra.Command, targetTier int, hfToken string, model string, 
 	}
 
 	if targetTier >= 3 {
-		// Wait for image warmup to complete before deploying tier 3
-		// Images are already on all minikube nodes - no loading step needed!
-		if warmupResult != nil && warmupResult.WaitForImageWarmup != nil {
-			ui.Info("")
-			ui.Info("⏳ Waiting for image warmup to complete...")
-			result, warmupErr := warmupResult.WaitForImageWarmup()
-			if warmupErr != nil {
-				ui.Warn("Image warmup check failed: %v", warmupErr)
+		// Wait for warmup operations to complete before deploying tier 3
+		if warmupOrch != nil {
+			if err := warmupOrch.Wait(); err != nil {
+				return fmt.Errorf("warmup operations failed: %w", err)
 			}
-
-			if result != nil && result.Success && result.Image != "" {
-				ui.Success("✓ Image warmed up successfully on all nodes")
-			} else {
-				ui.Warn("Image warmup incomplete - image will be pulled during tier 3 deployment")
-			}
-			ui.Info("")
 		}
 
 		progress.StartStep(currentStep)
-		if err := tier3.DeployTier3(cmd.Context(), cfg); err != nil {
+		if err := tier3.DeployTier3(deployCtx, cfg); err != nil {
 			progress.FailStep(currentStep, err)
 			return fmt.Errorf("failed to deploy tier 3: %w", err)
 		}
 		progress.CompleteStep(currentStep)
 		currentStep++
 	}
-
-	// Start host services (Bind9 DNS and NGINX gateway)
-	progress.StartStep(currentStep)
-
-	var hostServicesErr error
-
-	// Start Bind9 DNS
-	ui.Info("Starting Bind9 DNS server...")
-	if err := bind9.Start(cmd.Context(), cfg); err != nil {
-		ui.Error("Failed to start Bind9: %v", err)
-		hostServicesErr = fmt.Errorf("failed to start Bind9: %w", err)
-	} else {
-		ui.Success("Bind9 DNS server started on port %d", cfg.DNS.Bind9Port)
-	}
-
-	// Start NGINX gateway (only if Bind9 succeeded)
-	if hostServicesErr == nil {
-		ui.Info("Starting NGINX gateway...")
-		if err := nginx.Start(cmd.Context(), cfg); err != nil {
-			ui.Error("Failed to start NGINX: %v", err)
-			hostServicesErr = fmt.Errorf("failed to start NGINX: %w", err)
-		} else {
-			ui.Success("NGINX gateway started (HTTPS:443)")
-		}
-	}
-
-	// Handle host services errors
-	if hostServicesErr != nil {
-		progress.FailStep(currentStep, hostServicesErr)
-		return fmt.Errorf("host services failed: %w", hostServicesErr)
-	}
-
-	progress.CompleteStep(currentStep)
 
 	// Mark all steps complete
 	progress.Complete()

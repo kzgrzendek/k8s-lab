@@ -15,6 +15,82 @@ for AI/ML workloads. With a single command, you get:
 - **Tier 2 - Platform**: Keycloak (IAM), Kyverno (policies), Victoria Metrics/Logs (observability)
 - **Tier 3 - Applications**: llm-d (LLM serving), Open WebUI (chat interface), HELIX (JupyterHub)
 
+## Architecture
+
+NOVA uses a **Foundation Stack** architecture where host-level Docker services start before the Kubernetes cluster. This design ensures all prerequisites are in place for seamless cluster operation.
+
+### Deployment Flow
+
+```text
+┌─────────────────────────────────────────────────────────────────┐
+│  1. Foundation Stack (Host Docker Containers)                   │
+│     ├── Nova Network (172.19.0.0/16)                            │
+│     ├── NGINX Gateway (.242) - Reverse proxy to cluster         │
+│     ├── Bind9 DNS (.243) - DNS for *.nova.local domains         │
+│     ├── NFS Server (.241) - Model storage (tier 3 only)         │
+│     └── Registry (.240) - Image distribution (tier 3 only)      │
+└─────────────────────────────────────────────────────────────────┘
+                            ↓
+┌─────────────────────────────────────────────────────────────────┐
+│  2. Warmup Phase (Tier 3 only, runs in background)              │
+│     ├── Model Download - Downloads LLMs to NFS storage          │
+│     └── Image Warmup - Pre-pulls CUDA images (GPU mode)         │
+└─────────────────────────────────────────────────────────────────┘
+                            ↓
+┌─────────────────────────────────────────────────────────────────┐
+│  3. Tier 0: Minikube Cluster                                    │
+│     ├── Control Plane (.2) - Uses static IP                     │
+│     ├── Workers (.3, .4, .5...) - Sequential allocation         │
+│     └── Kubernetes Dashboard                                    │
+└─────────────────────────────────────────────────────────────────┘
+                            ↓
+┌─────────────────────────────────────────────────────────────────┐
+│  4. Tier 1: Infrastructure                                      │
+│     ├── Cilium CNI, Falco, NVIDIA GPU Operator                  │
+│     ├── Cert-Manager, Trust-Manager                             │
+│     └── Envoy Gateway, Envoy AI Gateway                         │
+└─────────────────────────────────────────────────────────────────┘
+                            ↓
+┌─────────────────────────────────────────────────────────────────┐
+│  5. Tier 2: Platform                                            │
+│     ├── Kyverno (Policy Engine)                                 │
+│     ├── Keycloak (Identity & Access Management)                 │
+│     └── Victoria Metrics/Logs, Hubble UI                        │
+└─────────────────────────────────────────────────────────────────┘
+                            ↓
+┌─────────────────────────────────────────────────────────────────┐
+│  6. Tier 3: Applications                                        │
+│     ├── llm-d (LLM Serving with vLLM)                           │
+│     ├── Open WebUI (Chat Interface)                             │
+│     └── HELIX (JupyterHub for ML)                               │
+└─────────────────────────────────────────────────────────────────┘
+```
+
+### IP Allocation Strategy
+
+All services use **static IP allocation** on the nova Docker network to prevent conflicts:
+
+| Service           | IP Address    | Purpose                                    |
+|-------------------|---------------|--------------------------------------------|
+| Minikube Control  | `.2`          | Kubernetes control plane (static IP)      |
+| Minikube Workers  | `.3-.239`     | Worker nodes (sequential allocation)      |
+| Registry          | `.240`        | Local container registry (tier 3 only)    |
+| NFS Server        | `.241`        | Persistent storage (tier 3 only)          |
+| NGINX Gateway     | `.242`        | Reverse proxy to cluster                  |
+| Bind9 DNS         | `.243`        | DNS resolution for *.nova.local           |
+
+**Key Design**: Minikube uses `.2` (first usable IP) so workers follow naturally. Host services use the high range (.240-.243) to avoid conflicts.
+
+### Foundation Stack Benefits
+
+- **Consistent startup**: All host services ready before cluster starts
+- **Static IP strategy**: NGINX pre-configured with known minikube IP
+- **Parallel warmup**: Models and images download while cluster deploys
+- **Clean abstraction**: Simple API for complex orchestration
+- **Fail-fast**: Errors stop deployment immediately
+
+For detailed foundation architecture, see [internal/host/foundation/README.md](internal/host/foundation/README.md).
+
 ## Installation
 
 ### Prerequisites
@@ -114,7 +190,6 @@ nova delete --purge
 | `nova status [-v]`           | Show status of all components. `-v` for verbose output         |
 | `nova export-logs [-o DIR]`  | Export all logs to timestamped zip archive                     |
 | `nova kubectl ...`           | Run kubectl against NOVA cluster                               |
-| `nova helm ...`              | Run helm against NOVA cluster                                  |
 | `nova version`               | Show version information                                       |
 
 ### Start Command Flags
@@ -122,10 +197,25 @@ nova delete --purge
 | Flag                      | Type   | Default         | Description                                    |
 |---------------------------|--------|-----------------|------------------------------------------------|
 | `--tier`                  | int    | 3               | Deploy up to tier N (0, 1, 2, or 3)            |
-| `--kubernetes-version`    | string | v1.33.5         | Kubernetes version for Minikube cluster        |
+| `--k8s-version`           | string | v1.33.5         | Kubernetes version for Minikube cluster        |
+| `--nodes`                 | int    | (from config)   | Total number of nodes in the cluster           |
 | `--cpu-mode`              | bool   | false           | Force CPU mode even if GPU is available        |
 | `--hf-token`              | string | -               | Hugging Face token for model downloads         |
 | `--model`                 | string | Qwen/Qwen3-0.6B | Hugging Face model to serve                    |
+
+### Setup Command Flags
+
+| Flag          | Type | Default | Description                                   |
+|---------------|------|---------|-----------------------------------------------|
+| `--skip-dns`  | bool | false   | Skip DNS configuration                        |
+| `--rootless`  | bool | false   | Rootless mode (skip DNS, warn instead of fail)|
+
+### Delete Command Flags
+
+| Flag          | Type | Default | Description                                   |
+|---------------|------|---------|-----------------------------------------------|
+| `--purge`     | bool | false   | Remove config and certificates too            |
+| `-y, --yes`   | bool | false   | Skip confirmation prompt                      |
 
 ### Model Configuration
 
@@ -484,43 +574,28 @@ Log in via Keycloak:
 
 NOVA uses mkcert to generate a Root CA that's automatically trusted by your browser. No certificate warnings!
 
-### Developer kubectl Context
+### Kubectl Context
 
-NOVA automatically creates a restricted kubectl context (`nova-developer`) during Tier 0 deployment. This context provides full read/write access to namespace-scoped resources, but only within the `developer` namespace.
-
-**Permissions include:**
-
-- Pods, Deployments, Services, ConfigMaps, Secrets
-- Jobs, CronJobs, StatefulSets, DaemonSets
-- PersistentVolumeClaims, ServiceAccounts
-- Ingresses, NetworkPolicies
-- Events, Endpoints, ResourceQuotas, LimitRanges
-
-**Restrictions:**
-
-- No access to cluster-scoped resources (nodes, namespaces, etc.)
-- No access to other namespaces (kube-system, etc.)
+NOVA automatically creates a `cluster-admin` kubectl context during Tier 0 deployment. This context provides full cluster access for administrative operations.
 
 **Switch contexts:**
 
 ```bash
-# Use the developer context (restricted to 'developer' namespace)
-kubectl config use-context nova-developer
+# Use the cluster-admin context (full cluster access)
+kubectl config use-context cluster-admin
 
-# Switch back to admin context (full cluster access)
+# Or use minikube's default context
 kubectl config use-context minikube
 ```
 
 **Example workflow:**
 
 ```bash
-# As developer: deploy an application in the developer namespace
-kubectl config use-context nova-developer
-kubectl run nginx --image=nginx
-kubectl get pods  # Shows pods in 'developer' namespace only
-
-# Cannot access other namespaces
-kubectl get pods -n kube-system  # Error: forbidden
+# Switch to cluster-admin context
+kubectl config use-context cluster-admin
+kubectl get nodes
+kubectl get pods -A  # Shows pods in all namespaces
+kubectl get pods -n kube-system  # Full access to all namespaces
 ```
 
 ## Development
