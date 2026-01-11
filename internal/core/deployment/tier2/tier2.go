@@ -177,7 +177,7 @@ func deployKyverno(ctx context.Context, cfg *config.Config) error {
 		Namespace:       kyvernoNamespace,
 		ValuesPath:      "resources/core/deployment/tier2/kyverno/values.yaml",
 		Wait:            true,
-		TimeoutSeconds:  300,
+		TimeoutSeconds:  600,
 		CreateNamespace: true,
 	})
 }

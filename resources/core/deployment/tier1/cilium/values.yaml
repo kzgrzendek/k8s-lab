@@ -3,6 +3,8 @@
 #
 # This file contains base configuration for Cilium CNI.
 # Dynamic values (k8sServiceHost, k8sServicePort) are set at deployment time.
+operator:
+  replicas: 1
 
 autoDirectNodeRoutes: false
 

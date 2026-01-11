@@ -143,8 +143,8 @@ func deployFalco(ctx context.Context, cfg *config.Config) error {
 }
 
 func deployGPUOperator(ctx context.Context, cfg *config.Config) error {
-	// Skip if no GPU configured or disabled
-	if cfg.Minikube.GPUs == "" || cfg.Minikube.GPUs == "none" || cfg.Minikube.GPUs == "disabled" {
+	// Skip if not in GPU mode (no GPU configured, disabled, or CPU mode forced)
+	if !cfg.IsGPUMode() {
 		ui.Info("GPU mode disabled - skipping NVIDIA GPU Operator")
 		return nil
 	}

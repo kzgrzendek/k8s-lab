@@ -1,5 +1,9 @@
 multinode: false
 
+# Disable GPU accelerator for CPU mode
+accelerator:
+  type: ""
+
 modelArtifacts:
   name: "{{.ModelName}}"
   # Use pre-warmed model from NFS-backed PVC if available
@@ -49,6 +53,14 @@ decode:
           protocol: TCP
 
       mountModelVolume: true
+
+      resources:
+        limits:
+          cpu: "8"
+          memory: "8Gi"
+        requests:
+          cpu: "4"
+          memory: "4Gi"
 
       startupProbe:
         httpGet:
