@@ -116,7 +116,7 @@ func (c *Checker) GetSystemStatus() (*SystemStatus, error) {
 // GetClusterStatus checks Minikube cluster status.
 func (c *Checker) GetClusterStatus() (*ClusterStatus, error) {
 	status := &ClusterStatus{
-		GPU: c.cfg.Minikube.GPUs,
+		GPU: string(c.cfg.GetGPUMode()),
 	}
 
 	// Check if cluster is running
@@ -131,7 +131,7 @@ func (c *Checker) GetClusterStatus() (*ClusterStatus, error) {
 	}
 
 	// Get Minikube version
-	cmd := exec.CommandContext(c.ctx, "minikube", "version", "--short")
+	cmd := exec.CommandContext(c.ctx, "minikube", "-p", "nova", "version", "--short")
 	output, err := cmd.Output()
 	if err == nil {
 		status.Version = strings.TrimSpace(string(output))
@@ -318,7 +318,7 @@ func (c *Checker) checkTier0Components(clusterStatus *ClusterStatus) []Component
 					Name:    "GPU Node Labeling",
 					Status:  map[bool]string{true: "configured", false: "not configured"}[gpuLabeled],
 					Healthy: gpuLabeled,
-					Details: fmt.Sprintf("Mode: %s", c.cfg.Minikube.GPUs),
+					Details: fmt.Sprintf("Mode: %s", c.cfg.GetGPUMode()),
 				},
 			}
 		}()

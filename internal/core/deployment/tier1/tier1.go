@@ -3,6 +3,7 @@ package tier1
 import (
 	"context"
 	"fmt"
+	"strings"
 	"time"
 
 	"github.com/kzgrzendek/nova/internal/cli/ui"
@@ -17,16 +18,16 @@ import (
 	k8s "github.com/kzgrzendek/nova/internal/tools/kubectl"
 )
 
-// DeployTier1 deploys tier 1: Infrastructure layer (Security, GPU, Certificates, Gateways).
+// DeployTier1 deploys tier 1: Infrastructure layer (Security, Certificates, GPU, Gateways).
 func DeployTier1(ctx context.Context, cfg *config.Config) error {
 	// Define deployment steps
 	steps := []string{
 		"Prerequisites Check",
 		"Helm Repositories",
 		"Falco Security",
-		"NVIDIA GPU Operator",
 		"Cert Manager",
 		"Trust Manager",
+		"GPU Support",
 		"Envoy AI Gateway",
 		"Envoy Gateway",
 		"Nova Namespace & RBAC",
@@ -45,10 +46,12 @@ func DeployTier1(ctx context.Context, cfg *config.Config) error {
 	// Step 2: Add Helm repositories
 	if err := runner.RunStep("Helm Repositories", func() error {
 		repos := map[string]string{
-			"nvidia":        constants.HelmRepoNvidia,
 			"falcosecurity": constants.HelmRepoFalco,
 			"jetstack":      constants.HelmRepoJetstack,
 			"dandydev":      constants.HelmRepoDandyDev,
+			"nvidia":        constants.HelmRepoNvidia,
+			"intel":         constants.HelmRepoIntel,
+			"nfd":           constants.HelmRepoNFD,
 		}
 		return shared.AddHelmRepositories(ctx, repos)
 	}); err != nil {
@@ -62,28 +65,28 @@ func DeployTier1(ctx context.Context, cfg *config.Config) error {
 		return err
 	}
 
-	// Step 6: NVIDIA GPU Operator
-	if err := runner.RunStep("NVIDIA GPU Operator", func() error {
-		return deployGPUOperator(ctx, cfg)
-	}); err != nil {
-		return err
-	}
-
-	// Step 7: Cert Manager
+	// Step 4: Cert Manager (must be before GPU Support - Intel Device Plugin requires it)
 	if err := runner.RunStep("Cert Manager", func() error {
 		return deployCertManager(ctx, cfg)
 	}); err != nil {
 		return err
 	}
 
-	// Step 8: Trust Manager
+	// Step 5: Trust Manager
 	if err := runner.RunStep("Trust Manager", func() error {
 		return deployTrustManager(ctx, cfg)
 	}); err != nil {
 		return err
 	}
 
-	// Step 9: Envoy AI Gateway
+	// Step 6: GPU Support (NVIDIA GPU Operator or Intel Device Plugin)
+	if err := runner.RunStep("GPU Support", func() error {
+		return deployGPUSupport(ctx, cfg)
+	}); err != nil {
+		return err
+	}
+
+	// Step 7: Envoy AI Gateway
 	if err := runner.RunStep("Envoy AI Gateway", func() error {
 		return deployEnvoyAIGateway(ctx, cfg)
 	}); err != nil {
@@ -138,36 +141,6 @@ func deployFalco(ctx context.Context, cfg *config.Config) error {
 		Wait:            true,
 		TimeoutSeconds:  600,
 		InfoMessage:     "Installing Falco Security (may take a few minutes)...",
-		CreateNamespace: true,
-	})
-}
-
-func deployGPUOperator(ctx context.Context, cfg *config.Config) error {
-	// Skip if not in GPU mode (no GPU configured, disabled, or CPU mode forced)
-	if !cfg.IsGPUMode() {
-		ui.Info("GPU mode disabled - skipping NVIDIA GPU Operator")
-		return nil
-	}
-
-	ui.Info("GPU mode: %s", cfg.Minikube.GPUs)
-
-	// Skip if already installed to avoid hanging on pre-upgrade hooks (common with this operator)
-	helmClient := helm.NewClient("nvidia-gpu-operator")
-	if exists, _ := helmClient.ReleaseExists(ctx, "gpu-operator", "nvidia-gpu-operator"); exists {
-		ui.Info("NVIDIA GPU Operator already installed - skipping")
-		return nil
-	}
-
-	return shared.DeployHelmChart(ctx, shared.HelmDeploymentOptions{
-		ReleaseName:     "gpu-operator",
-		ChartRef:        cfg.Versions.Tier1.GPUOperator.ChartRef(),
-		Version:         cfg.Versions.Tier1.GPUOperator.GetVersion(),
-		Namespace:       "nvidia-gpu-operator",
-		ValuesPath:      "resources/core/deployment/tier1/nvidia-gpu-operator/values.yaml",
-		Wait:            true,
-		TimeoutSeconds:  1200,
-		InfoMessage:     "Installing NVIDIA GPU Operator (may take several minutes)...",
-		SuccessMessage:  "NVIDIA GPU Operator deployed (using host drivers)",
 		CreateNamespace: true,
 	})
 }
@@ -501,4 +474,222 @@ func setupNovaNamespace(ctx context.Context) error {
 
 	ui.Success("Nova namespace and RBAC configured")
 	return nil
+}
+
+// deployGPUSupport deploys the appropriate GPU support based on GPU mode.
+func deployGPUSupport(ctx context.Context, cfg *config.Config) error {
+	gpuMode := cfg.GetGPUMode()
+
+	switch gpuMode {
+	case config.GPUModeNVIDIA:
+		return deployNVIDIAGPUOperator(ctx, cfg)
+	case config.GPUModeIntel:
+		return deployIntelDevicePlugin(ctx, cfg)
+	default:
+		ui.Info("GPU mode: auto (should be resolved during setup)")
+		return nil
+	}
+}
+
+// deployNVIDIAGPUOperator deploys the NVIDIA GPU Operator.
+func deployNVIDIAGPUOperator(ctx context.Context, cfg *config.Config) error {
+	ui.Info("GPU mode: NVIDIA")
+
+	// Skip if already installed to avoid hanging on pre-upgrade hooks (common with this operator)
+	helmClient := helm.NewClient("nvidia-gpu-operator")
+	if exists, _ := helmClient.ReleaseExists(ctx, "gpu-operator", "nvidia-gpu-operator"); exists {
+		ui.Info("NVIDIA GPU Operator already installed - skipping")
+		return nil
+	}
+
+	return shared.DeployHelmChart(ctx, shared.HelmDeploymentOptions{
+		ReleaseName:     "gpu-operator",
+		ChartRef:        cfg.Versions.Tier1.GPUOperator.ChartRef(),
+		Version:         cfg.Versions.Tier1.GPUOperator.GetVersion(),
+		Namespace:       "nvidia-gpu-operator",
+		ValuesPath:      "resources/core/deployment/tier1/nvidia-gpu-operator/values.yaml",
+		Wait:            true,
+		TimeoutSeconds:  1200,
+		InfoMessage:     "Installing NVIDIA GPU Operator (may take several minutes)...",
+		SuccessMessage:  "NVIDIA GPU Operator deployed (using host drivers)",
+		CreateNamespace: true,
+	})
+}
+
+// deployNodeFeatureDiscovery deploys Node Feature Discovery (NFD) for automatic hardware detection.
+// NFD labels nodes with hardware features like GPU vendor, model, and capabilities.
+// This is required for Intel Device Plugins to discover Intel GPUs.
+// Reference: https://kubernetes-sigs.github.io/node-feature-discovery/
+func deployNodeFeatureDiscovery(ctx context.Context, cfg *config.Config) error {
+	const nfdNamespace = "node-feature-discovery"
+
+	// Pre-create namespace with labels
+	if err := shared.EnsureNamespace(ctx, nfdNamespace, map[string]string{
+		"service-type": "nova",
+	}); err != nil {
+		return fmt.Errorf("failed to create NFD namespace: %w", err)
+	}
+
+	helmClient := helm.NewClient(nfdNamespace)
+
+	// Skip if already installed
+	if exists, _ := helmClient.ReleaseExists(ctx, "nfd", nfdNamespace); exists {
+		ui.Info("Node Feature Discovery already installed - skipping")
+		return nil
+	}
+
+	if err := shared.DeployHelmChart(ctx, shared.HelmDeploymentOptions{
+		ReleaseName:     "nfd",
+		ChartRef:        cfg.Versions.Tier1.NodeFeatureDiscovery.ChartRef(),
+		Version:         cfg.Versions.Tier1.NodeFeatureDiscovery.GetVersion(),
+		Namespace:       nfdNamespace,
+		ValuesPath:      "resources/core/deployment/tier1/node-feature-discovery/values.yaml",
+		Wait:            true,
+		TimeoutSeconds:  300,
+		InfoMessage:     "Installing Node Feature Discovery...",
+		SuccessMessage:  "Node Feature Discovery deployed",
+		CreateNamespace: true,
+	}); err != nil {
+		return fmt.Errorf("failed to install Node Feature Discovery: %w", err)
+	}
+
+	// Wait for NFD master to be ready before proceeding
+	ui.Info("Waiting for NFD master to be ready...")
+	if err := k8s.WaitForDeploymentReady(ctx, nfdNamespace, "nfd-node-feature-discovery-master", 120); err != nil {
+		return fmt.Errorf("NFD master not ready: %w", err)
+	}
+
+	// Brief pause to allow NFD worker DaemonSet to start labeling nodes
+	select {
+	case <-ctx.Done():
+		return ctx.Err()
+	case <-time.After(5 * time.Second):
+	}
+
+	ui.Info("NFD is running - nodes will be labeled with hardware features")
+	return nil
+}
+
+// deployIntelDevicePlugin deploys the Intel GPU Device Plugin for Intel integrated/discrete GPUs.
+// This requires Node Feature Discovery (NFD) and Intel Device Plugins Operator to be installed first.
+// Reference: https://github.com/intel/intel-device-plugins-for-kubernetes/blob/main/INSTALL.md
+func deployIntelDevicePlugin(ctx context.Context, cfg *config.Config) error {
+	ui.Info("GPU mode: Intel")
+
+	// Step 0: Deploy Node Feature Discovery first (required for Intel GPU detection)
+	if err := deployNodeFeatureDiscovery(ctx, cfg); err != nil {
+		return fmt.Errorf("failed to deploy NFD: %w", err)
+	}
+
+	const intelNamespace = "inteldeviceplugins-system"
+
+	// Pre-create namespace with labels for Cilium network routing
+	// This is required for API server to reach the webhook service
+	if err := shared.EnsureNamespace(ctx, intelNamespace, map[string]string{
+		"service-type": "nova",
+	}); err != nil {
+		return fmt.Errorf("failed to create Intel namespace: %w", err)
+	}
+
+	helmClient := helm.NewClient(intelNamespace)
+
+	// Step 1: Deploy the Intel Device Plugins Operator (contains CRDs)
+	// Operator is restricted to GPU node via nodeSelector (same as NVIDIA GPU Operator)
+	if exists, _ := helmClient.ReleaseExists(ctx, "intel-device-plugins-operator", intelNamespace); !exists {
+		if err := shared.DeployHelmChart(ctx, shared.HelmDeploymentOptions{
+			ReleaseName:     "intel-device-plugins-operator",
+			ChartRef:        cfg.Versions.Tier1.IntelDevicePluginsOperator.ChartRef(),
+			Version:         cfg.Versions.Tier1.IntelDevicePluginsOperator.GetVersion(),
+			Namespace:       intelNamespace,
+			ValuesPath:      "resources/core/deployment/tier1/intel-device-plugins-operator/values.yaml",
+			Wait:            true,
+			TimeoutSeconds:  300,
+			InfoMessage:     "Installing Intel Device Plugins Operator (CRDs)...",
+			SuccessMessage:  "Intel Device Plugins Operator deployed",
+			CreateNamespace: true,
+		}); err != nil {
+			return fmt.Errorf("failed to install Intel Device Plugins Operator: %w", err)
+		}
+	} else {
+		ui.Info("Intel Device Plugins Operator already installed - skipping")
+	}
+
+	// Always wait for the webhook to be ready before deploying the GPU plugin
+	// (even if operator was already installed from a previous failed attempt)
+	ui.Info("Waiting for Intel Device Plugins webhook...")
+	if err := k8s.WaitForDeploymentReady(ctx, intelNamespace, "inteldeviceplugins-controller-manager", 120); err != nil {
+		return fmt.Errorf("Intel Device Plugins controller not ready: %w", err)
+	}
+
+	// Wait for webhook endpoints to be ready
+	ui.Info("Waiting for webhook endpoints...")
+	if err := k8s.WaitForEndpoints(ctx, intelNamespace, "inteldeviceplugins-webhook-service", 120); err != nil {
+		return fmt.Errorf("Intel Device Plugins webhook endpoints not ready: %w", err)
+	}
+
+	// Brief pause for network routing stabilization
+	select {
+	case <-ctx.Done():
+		return ctx.Err()
+	case <-time.After(3 * time.Second):
+	}
+
+	// Step 2: Deploy the GPU Device Plugin CR
+	if exists, _ := helmClient.ReleaseExists(ctx, "intel-gpu-plugin", intelNamespace); exists {
+		ui.Info("Intel GPU Device Plugin already installed - skipping")
+		return nil
+	}
+
+	// Retry the GPU plugin install - Cilium eBPF datapath may not be fully
+	// programmed for the webhook service yet, causing "operation not permitted"
+	// errors when API server tries to call the mutating webhook
+	var lastErr error
+	for attempt := 1; attempt <= 3; attempt++ {
+		if attempt > 1 {
+			ui.Info("Retrying GPU plugin install (attempt %d/3)...", attempt)
+			select {
+			case <-ctx.Done():
+				return ctx.Err()
+			case <-time.After(10 * time.Second):
+			}
+		}
+
+		lastErr = shared.DeployHelmChart(ctx, shared.HelmDeploymentOptions{
+			ReleaseName:     "intel-gpu-plugin",
+			ChartRef:        cfg.Versions.Tier1.IntelGPUPlugin.ChartRef(),
+			Version:         cfg.Versions.Tier1.IntelGPUPlugin.GetVersion(),
+			Namespace:       intelNamespace,
+			ValuesPath:      "resources/core/deployment/tier1/intel-gpu-plugin/values.yaml",
+			Wait:            true,
+			TimeoutSeconds:  600,
+			InfoMessage:     "Installing Intel GPU Device Plugin...",
+			SuccessMessage:  "Intel GPU Device Plugin deployed",
+			CreateNamespace: true,
+		})
+		if lastErr == nil {
+			return nil
+		}
+
+		// Only retry on webhook connectivity errors
+		if !isWebhookConnectivityError(lastErr) {
+			return lastErr
+		}
+		ui.Warn("Webhook not reachable yet: %v", lastErr)
+	}
+	return lastErr
+}
+
+// isWebhookConnectivityError checks if the error is a webhook connectivity issue
+// that might resolve with a retry (Cilium eBPF datapath not ready yet)
+func isWebhookConnectivityError(err error) bool {
+	if err == nil {
+		return false
+	}
+	errStr := err.Error()
+	// "operation not permitted" = eBPF/iptables not ready
+	// "connection refused" = service endpoints not ready
+	// "i/o timeout" = network path not established
+	return strings.Contains(errStr, "operation not permitted") ||
+		strings.Contains(errStr, "connection refused") ||
+		strings.Contains(errStr, "i/o timeout")
 }

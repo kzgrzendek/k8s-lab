@@ -512,11 +512,17 @@ func deployVictoriaMetricsStack(ctx context.Context, cfg *config.Config) error {
 		return fmt.Errorf("failed to create grafana-admin secret: %w", err)
 	}
 
-	// Deploy GPU dashboard ConfigMap before Grafana starts (only in GPU mode)
-	if cfg.IsGPUMode() {
+	// Deploy NVIDIA GPU dashboard ConfigMap before Grafana starts (NVIDIA mode only)
+	// The dashboard uses DCGM metrics which are only available with NVIDIA GPU Operator
+	if cfg.IsNVIDIAMode() {
 		if err := k8s.ApplyYAML(ctx, "resources/core/deployment/tier2/victoriametrics/dashboards/gpu-overview.yaml"); err != nil {
 			return fmt.Errorf("failed to deploy GPU dashboard: %w", err)
 		}
+	}
+
+	// Deploy vLLM inference dashboard (works with all GPU backends: NVIDIA, Intel, CPU)
+	if err := k8s.ApplyYAML(ctx, "resources/core/deployment/tier2/victoriametrics/dashboards/vllm-inference.yaml"); err != nil {
+		return fmt.Errorf("failed to deploy vLLM dashboard: %w", err)
 	}
 
 	if err := shared.DeployHelmChart(ctx, shared.HelmDeploymentOptions{
@@ -526,12 +532,14 @@ func deployVictoriaMetricsStack(ctx context.Context, cfg *config.Config) error {
 		Namespace:   victoriametricsNamespace,
 		ValuesPath:  "resources/core/deployment/tier2/victoriametrics/values.yaml",
 		TemplateData: map[string]any{
-			"Domain":     cfg.DNS.Domain,
-			"AuthDomain": cfg.DNS.AuthDomain,
-			"IsGPUMode":  cfg.IsGPUMode(),
+			"Domain":       cfg.DNS.Domain,
+			"AuthDomain":   cfg.DNS.AuthDomain,
+			"IsGPUMode":    cfg.IsGPUMode(),
+			"IsNVIDIAMode": cfg.IsNVIDIAMode(),
+			"IsIntelMode":  cfg.IsIntelMode(),
 		},
 		Wait:           true,
-		TimeoutSeconds: 600,
+		TimeoutSeconds: 1200, // Increased to 20min to account for large image pulls, plugin installation, and initial startup
 	}); err != nil {
 		return err
 	}

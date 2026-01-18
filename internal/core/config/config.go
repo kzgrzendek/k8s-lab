@@ -10,15 +10,39 @@ import (
 	"sigs.k8s.io/yaml"
 )
 
+// GPUModeType represents the GPU mode for NOVA deployments.
+type GPUModeType string
+
+const (
+	GPUModeAuto   GPUModeType = "auto"   // Auto-detect: NVIDIA first, then Intel
+	GPUModeNVIDIA GPUModeType = "nvidia" // Force NVIDIA GPU mode
+	GPUModeIntel  GPUModeType = "intel"  // Force Intel GPU mode (integrated or discrete)
+	GPUModeCPU    GPUModeType = "cpu"    // Force CPU-only mode (no GPU)
+)
+
+// NodeLabel returns the Kubernetes node label value for this GPU mode.
+// Used for node selection in deployments (e.g., nova.local/node-type=gpu-nvidia).
+func (m GPUModeType) NodeLabel() string {
+	switch m {
+	case GPUModeNVIDIA:
+		return "gpu-nvidia"
+	case GPUModeIntel:
+		return "gpu-intel"
+	case GPUModeCPU:
+		return "cpu"
+	default:
+		return "gpu-nvidia" // Fallback for auto/unknown
+	}
+}
+
 // MinikubeConfig holds Minikube cluster settings.
 type MinikubeConfig struct {
-	CPUs              int    `json:"cpus" yaml:"cpus"`
-	Memory            int    `json:"memory" yaml:"memory"`
-	Nodes             int    `json:"nodes" yaml:"nodes"` // Total nodes (1 master + N workers)
-	KubernetesVersion string `json:"kubernetesVersion" yaml:"kubernetesVersion"`
-	Driver            string `json:"driver" yaml:"driver"`
-	GPUs              string `json:"gpus" yaml:"gpus"`                   // GPU passthrough mode ("all", "none", "disabled")
-	CPUModeForced     bool   `json:"cpuModeForced" yaml:"cpuModeForced"` // Force CPU mode even if GPU available
+	CPUs              int         `json:"cpus" yaml:"cpus"`
+	Memory            int         `json:"memory" yaml:"memory"`
+	Nodes             int         `json:"nodes" yaml:"nodes"` // Total nodes (1 master + N workers)
+	KubernetesVersion string      `json:"kubernetesVersion" yaml:"kubernetesVersion"`
+	Driver            string      `json:"driver" yaml:"driver"`
+	GPUMode           GPUModeType `json:"gpuMode" yaml:"gpuMode"` // GPU mode: "auto", "nvidia", "intel"
 }
 
 // DNSConfig holds DNS settings.
@@ -63,6 +87,9 @@ type Tier1Versions struct {
 	Cilium                       ChartVersion `json:"cilium" yaml:"cilium"`
 	Falco                        ChartVersion `json:"falco" yaml:"falco"`
 	GPUOperator                  ChartVersion `json:"gpuOperator" yaml:"gpuOperator"`
+	NodeFeatureDiscovery         ChartVersion `json:"nodeFeatureDiscovery" yaml:"nodeFeatureDiscovery"`
+	IntelDevicePluginsOperator   ChartVersion `json:"intelDevicePluginsOperator" yaml:"intelDevicePluginsOperator"`
+	IntelGPUPlugin               ChartVersion `json:"intelGpuPlugin" yaml:"intelGpuPlugin"`
 	CertManager                  ChartVersion `json:"certManager" yaml:"certManager"`
 	TrustManager                 ChartVersion `json:"trustManager" yaml:"trustManager"`
 	EnvoyAiGatewayCRDs           ChartVersion `json:"envoyAiGatewayCRDs" yaml:"envoyAiGatewayCRDs"`
@@ -133,8 +160,7 @@ func Default() *Config {
 			Nodes:             3,
 			KubernetesVersion: "v1.33.5",
 			Driver:            "docker",
-			GPUs:              "all",
-			CPUModeForced:     false, // Auto-detect GPU by default
+			GPUMode:           GPUModeAuto, // Auto-detect GPU by default
 		},
 		DNS: DNSConfig{
 			Domain:     "nova.local",
@@ -167,6 +193,18 @@ func Default() *Config {
 				GPUOperator: ChartVersion{
 					Chart:   "nvidia/gpu-operator",
 					Version: "v25.10.1",
+				},
+				NodeFeatureDiscovery: ChartVersion{
+					Chart:   "nfd/node-feature-discovery",
+					Version: "0.18.1",
+				},
+				IntelDevicePluginsOperator: ChartVersion{
+					Chart:   "intel/intel-device-plugins-operator",
+					Version: "0.34.1",
+				},
+				IntelGPUPlugin: ChartVersion{
+					Chart:   "intel/intel-device-plugins-gpu",
+					Version: "0.34.1",
 				},
 				CertManager: ChartVersion{
 					Chart:   "jetstack/cert-manager",
@@ -278,11 +316,11 @@ func Load() (*Config, error) {
 // This ensures backward compatibility when new fields are added.
 func migrateConfig(cfg *Config) error {
 	migrated := false
+	defaultCfg := Default()
 
 	// Check if Versions section is missing or incomplete
 	if cfg.Versions.Kubernetes == "" {
 		// Populate with defaults from Default()
-		defaultCfg := Default()
 		cfg.Versions = defaultCfg.Versions
 
 		// Preserve existing Kubernetes version if set in Minikube config
@@ -290,6 +328,24 @@ func migrateConfig(cfg *Config) error {
 			cfg.Versions.Kubernetes = cfg.Minikube.KubernetesVersion
 		}
 
+		migrated = true
+	}
+
+	// Migrate Node Feature Discovery field (added in GPU refactoring for Intel support)
+	if cfg.Versions.Tier1.NodeFeatureDiscovery.Chart == "" {
+		cfg.Versions.Tier1.NodeFeatureDiscovery = defaultCfg.Versions.Tier1.NodeFeatureDiscovery
+		migrated = true
+	}
+
+	// Migrate Intel Device Plugins Operator field (added in GPU refactoring)
+	if cfg.Versions.Tier1.IntelDevicePluginsOperator.Chart == "" {
+		cfg.Versions.Tier1.IntelDevicePluginsOperator = defaultCfg.Versions.Tier1.IntelDevicePluginsOperator
+		migrated = true
+	}
+
+	// Migrate Intel GPU Plugin field (added in GPU refactoring)
+	if cfg.Versions.Tier1.IntelGPUPlugin.Chart == "" {
+		cfg.Versions.Tier1.IntelGPUPlugin = defaultCfg.Versions.Tier1.IntelGPUPlugin
 		migrated = true
 	}
 
@@ -360,17 +416,71 @@ func (c *Config) Validate() error {
 	return nil
 }
 
-// HasGPU returns true if GPU support is enabled.
-func (c *Config) HasGPU() bool {
-	return c.Minikube.GPUs != "" && c.Minikube.GPUs != "none" && c.Minikube.GPUs != "disabled"
+// ValidateResourcesForMode returns warnings if resources seem insufficient for the configuration.
+// Returns a list of warning messages (empty if configuration looks OK).
+func (c *Config) ValidateResourcesForMode() []string {
+	var warnings []string
+
+	// Single-node mode needs more resources since everything runs on one node
+	if c.Minikube.Nodes == 1 {
+		// Minimum recommendations for single-node:
+		// - Control plane overhead: ~2 CPUs, ~2GB RAM
+		// - GPU plugins (NVIDIA/Intel): ~1 CPU, ~1GB RAM
+		// - Core services (Cilium, cert-manager, etc.): ~2 CPUs, ~2GB RAM
+		// - LLM workload: ~4+ CPUs, ~8+ GB RAM (depending on model)
+		// Total recommended: 8+ CPUs, 12+ GB RAM
+
+		if c.Minikube.CPUs < 6 {
+			warnings = append(warnings, fmt.Sprintf(
+				"single-node mode with %d CPUs may cause timeouts; recommend at least 6 CPUs",
+				c.Minikube.CPUs))
+		}
+
+		if c.Minikube.Memory < 8192 {
+			warnings = append(warnings, fmt.Sprintf(
+				"single-node mode with %dMB RAM may cause OOM; recommend at least 8192MB (8GB)",
+				c.Minikube.Memory))
+		}
+	}
+
+	return warnings
 }
 
-// IsGPUMode returns true if GPU mode should be used for deployments.
-// GPU mode is enabled only when:
-// - Host has GPU configured (GPUs != "" && != "none" && != "disabled")
-// - AND CPU mode is NOT forced
+// GetGPUMode returns the configured GPU mode.
+// Returns the stored mode, defaulting to "auto" if empty.
+func (c *Config) GetGPUMode() GPUModeType {
+	if c.Minikube.GPUMode == "" {
+		return GPUModeAuto
+	}
+	return c.Minikube.GPUMode
+}
+
+// IsNVIDIAMode returns true if NVIDIA GPU mode is active.
+func (c *Config) IsNVIDIAMode() bool {
+	return c.GetGPUMode() == GPUModeNVIDIA
+}
+
+// IsIntelMode returns true if Intel GPU mode is active.
+func (c *Config) IsIntelMode() bool {
+	return c.GetGPUMode() == GPUModeIntel
+}
+
+// IsCPUMode returns true if CPU-only mode is active.
+func (c *Config) IsCPUMode() bool {
+	return c.GetGPUMode() == GPUModeCPU
+}
+
+// IsGPUMode returns true if any GPU mode is active (NVIDIA or Intel).
+// This is a convenience method for code that doesn't care about the specific GPU type.
+// CPU-only mode is not considered a GPU mode.
 func (c *Config) IsGPUMode() bool {
-	return c.HasGPU() && !c.Minikube.CPUModeForced
+	mode := c.GetGPUMode()
+	return mode == GPUModeNVIDIA || mode == GPUModeIntel
+}
+
+// HasGPU is an alias for IsGPUMode for backward compatibility.
+func (c *Config) HasGPU() bool {
+	return c.IsGPUMode()
 }
 
 // WorkerNodes returns the number of worker nodes (total nodes - 1 master).

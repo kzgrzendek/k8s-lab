@@ -104,25 +104,26 @@ func TestDetector_GetNVIDIAGPUInfo(t *testing.T) {
 	}
 }
 
-func TestGetGPUConfig_Disabled(t *testing.T) {
+func TestGetGPUConfig_UnsupportedModes(t *testing.T) {
 	ctx := context.Background()
 
 	tests := []struct {
 		name          string
 		requestedMode string
+		expectError   bool
 	}{
-		{"empty string", ""},
-		{"none", "none"},
-		{"disabled", "disabled"},
+		{"none is unsupported", "none", true},
+		{"disabled is unsupported", "disabled", true},
+		{"unknown mode", "unknown", true},
 	}
 
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
-			cfg, err := GetGPUConfig(ctx, tt.requestedMode)
-			assert.NoError(t, err)
-			assert.NotNil(t, cfg)
-			assert.Equal(t, ModeDisabled, cfg.Mode)
-			assert.False(t, cfg.Enabled)
+			_, err := GetGPUConfig(ctx, tt.requestedMode)
+			if tt.expectError {
+				assert.Error(t, err)
+				assert.Contains(t, err.Error(), "unsupported GPU mode")
+			}
 		})
 	}
 }

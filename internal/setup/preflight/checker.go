@@ -115,18 +115,25 @@ func (c *Checker) CheckGPU(ctx context.Context, requestedMode string) (*shared.C
 	if cfg.Enabled {
 		ui.Success("GPU mode: %s", cfg.Mode.String())
 
-		// Get GPU info if NVIDIA
-		if cfg.Mode == shared.ModeNVIDIA {
-			detector := shared.NewDetector(ctx)
+		detector := shared.NewDetector(ctx)
+
+		// Get GPU info based on mode
+		switch cfg.Mode {
+		case shared.ModeNVIDIA:
 			gpus, err := detector.GetNVIDIAGPUInfo()
 			if err == nil && len(gpus) > 0 {
 				for i, gpuInfo := range gpus {
 					ui.Info("  GPU %d: %s", i, gpuInfo)
 				}
 			}
+		case shared.ModeIntel:
+			gpus, err := detector.GetIntelGPUInfo()
+			if err == nil && len(gpus) > 0 {
+				for i, gpuInfo := range gpus {
+					ui.Info("  GPU %d: %s", i, gpuInfo)
+				}
+			}
 		}
-	} else {
-		ui.Info("GPU mode: disabled (CPU-only)")
 	}
 
 	return cfg, nil

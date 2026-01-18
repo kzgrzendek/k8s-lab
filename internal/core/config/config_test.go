@@ -17,7 +17,7 @@ func TestDefault(t *testing.T) {
 	assert.Equal(t, 3, cfg.Minikube.Nodes)
 	assert.Equal(t, "v1.33.5", cfg.Minikube.KubernetesVersion)
 	assert.Equal(t, "docker", cfg.Minikube.Driver)
-	assert.Equal(t, "all", cfg.Minikube.GPUs)
+	assert.Equal(t, GPUModeAuto, cfg.Minikube.GPUMode)
 
 	assert.Equal(t, "nova.local", cfg.DNS.Domain)
 	assert.Equal(t, "auth.local", cfg.DNS.AuthDomain)
@@ -79,4 +79,67 @@ func TestLoadOrDefault(t *testing.T) {
 	cfg := LoadOrDefault()
 	assert.Equal(t, 4, cfg.Minikube.CPUs)
 	assert.False(t, cfg.State.Initialized)
+}
+
+func TestGPUModeType_NodeLabel(t *testing.T) {
+	tests := []struct {
+		mode     GPUModeType
+		expected string
+	}{
+		{GPUModeNVIDIA, "gpu-nvidia"},
+		{GPUModeIntel, "gpu-intel"},
+		{GPUModeAuto, "gpu-nvidia"}, // Fallback
+		{"unknown", "gpu-nvidia"},   // Unknown mode falls back
+	}
+
+	for _, tt := range tests {
+		t.Run(string(tt.mode), func(t *testing.T) {
+			assert.Equal(t, tt.expected, tt.mode.NodeLabel())
+		})
+	}
+}
+
+func TestConfig_GetGPUMode(t *testing.T) {
+	tests := []struct {
+		name     string
+		mode     GPUModeType
+		expected GPUModeType
+	}{
+		{"nvidia mode", GPUModeNVIDIA, GPUModeNVIDIA},
+		{"intel mode", GPUModeIntel, GPUModeIntel},
+		{"auto mode", GPUModeAuto, GPUModeAuto},
+		{"empty defaults to auto", "", GPUModeAuto},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			cfg := &Config{Minikube: MinikubeConfig{GPUMode: tt.mode}}
+			assert.Equal(t, tt.expected, cfg.GetGPUMode())
+		})
+	}
+}
+
+func TestConfig_GPUModeHelpers(t *testing.T) {
+	tests := []struct {
+		name       string
+		mode       GPUModeType
+		isNVIDIA   bool
+		isIntel    bool
+		isGPUMode  bool
+	}{
+		{"nvidia", GPUModeNVIDIA, true, false, true},
+		{"intel", GPUModeIntel, false, true, true},
+		{"auto", GPUModeAuto, false, false, false},
+		{"empty", "", false, false, false},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			cfg := &Config{Minikube: MinikubeConfig{GPUMode: tt.mode}}
+			assert.Equal(t, tt.isNVIDIA, cfg.IsNVIDIAMode(), "IsNVIDIAMode")
+			assert.Equal(t, tt.isIntel, cfg.IsIntelMode(), "IsIntelMode")
+			assert.Equal(t, tt.isGPUMode, cfg.IsGPUMode(), "IsGPUMode")
+			assert.Equal(t, tt.isGPUMode, cfg.HasGPU(), "HasGPU (alias)")
+		})
+	}
 }

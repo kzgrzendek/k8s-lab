@@ -11,7 +11,7 @@ for AI/ML workloads. With a single command, you get:
 
 - **Tier 0 - Cluster Basics**: Minikube cluster with Cilium CNI, CoreDNS, and Local Path Storage
 - **Warmup Module**: Background model and image pre-loading for faster application startup
-- **Tier 1 - Infrastructure**: Security (Falco), GPU (NVIDIA Operator), Certificates (Cert-Manager), and Gateways (Envoy)
+- **Tier 1 - Infrastructure**: Security (Falco), GPU (NVIDIA/Intel), Certificates (Cert-Manager), and Gateways (Envoy)
 - **Tier 2 - Platform**: Keycloak (IAM), Kyverno (policies), Victoria Metrics/Logs (observability)
 - **Tier 3 - Applications**: llm-d (LLM serving), Open WebUI (chat interface), HELIX (JupyterHub)
 
@@ -106,9 +106,11 @@ Install these tools before running NOVA:
 
 **Image Distribution**: NOVA automatically manages large container images (5-8GB LLM models) using a local Docker registry and skopeo (Docker container). This memory-efficient approach uses ~300MB RAM instead of 5-10GB, preventing system instability during image transfers to multi-node clusters.
 
-### GPU Support (Optional)
+### GPU Support
 
-For NVIDIA GPU acceleration:
+NOVA requires a GPU for LLM inference. Both NVIDIA and Intel GPUs are supported.
+
+#### NVIDIA GPU
 
 ```bash
 # 1. NVIDIA Driver (should already be installed)
@@ -128,6 +130,23 @@ sudo systemctl restart docker
 # 4. Verify
 docker run --rm --gpus all nvidia/cuda:12.2.0-base-ubuntu22.04 nvidia-smi
 ```
+
+#### Intel GPU
+
+Intel integrated and discrete GPUs (Arc) are supported via the Intel GPU Device Plugin.
+
+```bash
+# Verify Intel GPU kernel modules are loaded
+lsmod | grep -E 'i915|xe'
+
+# i915 = integrated/older discrete GPUs
+# xe = newer Arc discrete GPUs
+```
+
+NOVA auto-detects GPU type during `nova setup` and deploys the appropriate operator:
+
+- **NVIDIA**: GPU Operator for CUDA workloads
+- **Intel**: Intel GPU Device Plugin for IPEX optimization
 
 ### Install NOVA
 
@@ -157,8 +176,9 @@ nova start --tier=2  # + platform services
 # Optional: Customize Kubernetes version
 nova start --kubernetes-version=v1.32.0
 
-# Optional: Force CPU mode even if GPU is available
-nova start --cpu-mode
+# Optional: Specify GPU mode (auto-detection by default)
+nova start --gpu=nvidia   # Use NVIDIA GPU
+nova start --gpu=intel    # Use Intel GPU
 
 # Optional: Provide Hugging Face token for faster model downloads (tier 3)
 nova start --hf-token=YOUR_HF_TOKEN
@@ -199,7 +219,7 @@ nova delete --purge
 | `--tier`                  | int    | 3               | Deploy up to tier N (0, 1, 2, or 3)            |
 | `--k8s-version`           | string | v1.33.5         | Kubernetes version for Minikube cluster        |
 | `--nodes`                 | int    | (from config)   | Total number of nodes in the cluster           |
-| `--cpu-mode`              | bool   | false           | Force CPU mode even if GPU is available        |
+| `--gpu`                   | string | auto            | GPU mode: auto (detect), nvidia, or intel      |
 | `--hf-token`              | string | -               | Hugging Face token for model downloads         |
 | `--model`                 | string | Qwen/Qwen3-0.6B | Hugging Face model to serve                    |
 
@@ -249,8 +269,7 @@ minikube:
   nodes: 3                          # Total nodes (1 control plane + 2 workers)
   kubernetesVersion: v1.33.5        # Kubernetes version
   driver: docker                    # Minikube driver (docker or kvm2)
-  gpus: all                         # GPU passthrough: "all", "none", or "disabled"
-  cpuModeForced: false              # Force CPU mode even if GPU available
+  gpuMode: auto                     # GPU mode: auto, nvidia, or intel
 
 dns:
   domain: nova.local                # Primary domain for services
@@ -467,8 +486,8 @@ NOVA's foundation - the Kubernetes cluster with essential networking, DNS, and s
 - **Minikube** (latest version) - Multi-node Kubernetes cluster with Docker driver
   - Kubernetes v1.33.5 (configurable via `--kubernetes-version`)
   - 3 nodes (1 control plane + 2 workers)
-  - GPU passthrough support via NVIDIA Container Toolkit
-  - CPU mode fallback for systems without GPU
+  - GPU passthrough support (NVIDIA via Container Toolkit, Intel via kernel modules)
+  - Auto-detection of available GPU type
 - **Cilium CNI** (v1.18.5) - eBPF-based networking with network policies
 - **CoreDNS** - DNS configuration with domain rewrites for NOVA services
 - **Local Path Provisioner** (v0.0.33) - Dynamic local storage provisioner
@@ -506,7 +525,8 @@ Security, GPU management, certificates, and gateway infrastructure:
 | Component               | Version  | Description                                  |
 | ----------------------- | -------- | -------------------------------------------- |
 | **Falco**               | v7.0.2   | Runtime security monitoring with modern eBPF |
-| **NVIDIA GPU Operator** | v25.10.1 | GPU resource management (GPU mode only)      |
+| **NVIDIA GPU Operator** | v25.10.1 | GPU resource management (NVIDIA mode)        |
+| **Intel GPU Plugin**    | v0.34.1  | GPU resource management (Intel mode)         |
 | **Cert-Manager**        | v1.19.2  | TLS certificate management                   |
 | **Trust-Manager**       | v0.20.3  | Certificate bundle distribution              |
 | **Envoy Gateway**       | v1.6.1   | Gateway API implementation                   |

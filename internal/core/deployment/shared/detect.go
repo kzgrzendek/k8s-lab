@@ -3,9 +3,9 @@
 // This package contains code that is used across multiple deployment tiers,
 // such as GPU detection and validation:
 //   - Tier 0: GPU configuration and node labels during Minikube cluster creation
-//   - Tier 1: Determines whether to deploy NVIDIA GPU Operator and drivers
+//   - Tier 1: Determines whether to deploy NVIDIA GPU Operator or Intel Device Plugin
 //
-// GPU detection identifies available GPU hardware (NVIDIA, AMD, Intel) and validates
+// GPU detection uses ghw to identify available GPU hardware (NVIDIA, Intel) and validates
 // that required drivers and container runtimes are properly configured.
 package shared
 
@@ -14,6 +14,8 @@ import (
 	"fmt"
 	"os/exec"
 	"strings"
+
+	"github.com/jaypipes/ghw"
 )
 
 // Mode represents the GPU mode for the cluster.
@@ -26,7 +28,7 @@ const (
 	ModeNVIDIA
 	// ModeAMD indicates AMD GPU support (future).
 	ModeAMD
-	// ModeIntel indicates Intel GPU support (future).
+	// ModeIntel indicates Intel GPU support.
 	ModeIntel
 )
 
@@ -52,6 +54,24 @@ type Config struct {
 	Enabled bool
 }
 
+// GPUVendor represents the GPU vendor.
+type GPUVendor string
+
+const (
+	VendorNVIDIA  GPUVendor = "NVIDIA"
+	VendorIntel   GPUVendor = "Intel"
+	VendorAMD     GPUVendor = "AMD"
+	VendorUnknown GPUVendor = "Unknown"
+)
+
+// GPUInfo holds information about a detected GPU.
+type GPUInfo struct {
+	Vendor  GPUVendor
+	Name    string
+	Driver  string
+	Address string
+}
+
 // Detector handles GPU detection and validation.
 type Detector struct {
 	ctx context.Context
@@ -62,15 +82,87 @@ func NewDetector(ctx context.Context) *Detector {
 	return &Detector{ctx: ctx}
 }
 
+// DetectGPUsWithGHW uses ghw to detect all GPUs (no root required).
+func (d *Detector) DetectGPUsWithGHW() ([]GPUInfo, error) {
+	gpu, err := ghw.GPU()
+	if err != nil {
+		return nil, fmt.Errorf("ghw GPU detection failed: %w", err)
+	}
+
+	var gpus []GPUInfo
+	for _, card := range gpu.GraphicsCards {
+		gpuInfo := GPUInfo{
+			Vendor: VendorUnknown,
+			Name:   "Unknown GPU",
+		}
+
+		if card.Address != "" {
+			gpuInfo.Address = card.Address
+		}
+
+		if card.DeviceInfo != nil {
+			// Get vendor from PCI database
+			if card.DeviceInfo.Vendor != nil {
+				vendorName := card.DeviceInfo.Vendor.Name
+				gpuInfo.Name = vendorName
+
+				vendorLower := strings.ToLower(vendorName)
+				switch {
+				case strings.Contains(vendorLower, "nvidia"):
+					gpuInfo.Vendor = VendorNVIDIA
+				case strings.Contains(vendorLower, "intel"):
+					gpuInfo.Vendor = VendorIntel
+				case strings.Contains(vendorLower, "amd") || strings.Contains(vendorLower, "advanced micro"):
+					gpuInfo.Vendor = VendorAMD
+				}
+			}
+
+			// Get product name
+			if card.DeviceInfo.Product != nil && card.DeviceInfo.Product.Name != "" {
+				gpuInfo.Name = card.DeviceInfo.Product.Name
+			}
+
+			// Get driver
+			if card.DeviceInfo.Driver != "" {
+				gpuInfo.Driver = card.DeviceInfo.Driver
+			}
+		}
+
+		gpus = append(gpus, gpuInfo)
+	}
+
+	return gpus, nil
+}
+
 // DetectMode detects the GPU mode based on available hardware and drivers.
+// Priority: NVIDIA first, then Intel.
 func (d *Detector) DetectMode() (Mode, error) {
-	// Check for NVIDIA GPUs first
+	// Try ghw-based detection first
+	gpus, err := d.DetectGPUsWithGHW()
+	if err == nil && len(gpus) > 0 {
+		// Check for NVIDIA first (higher priority)
+		for _, gpu := range gpus {
+			if gpu.Vendor == VendorNVIDIA {
+				return ModeNVIDIA, nil
+			}
+		}
+		// Check for Intel
+		for _, gpu := range gpus {
+			if gpu.Vendor == VendorIntel {
+				return ModeIntel, nil
+			}
+		}
+	}
+
+	// Fallback to nvidia-smi check if ghw didn't find anything
 	if hasNVIDIA, err := d.HasNVIDIAGPU(); err == nil && hasNVIDIA {
 		return ModeNVIDIA, nil
 	}
 
-	// Future: Check for AMD GPUs
-	// Future: Check for Intel GPUs
+	// Fallback to Intel driver check
+	if hasIntel, err := d.HasIntelGPU(); err == nil && hasIntel {
+		return ModeIntel, nil
+	}
 
 	return ModeDisabled, nil
 }
@@ -142,7 +234,55 @@ func (d *Detector) GetNVIDIAGPUInfo() ([]string, error) {
 	return gpus, nil
 }
 
+// HasIntelGPU checks if Intel GPU is available by checking for i915 or xe kernel modules.
+func (d *Detector) HasIntelGPU() (bool, error) {
+	// Check for i915 (integrated/older discrete) or xe (newer Arc) kernel modules
+	cmd := exec.CommandContext(d.ctx, "lsmod")
+	output, err := cmd.Output()
+	if err != nil {
+		return false, nil // lsmod not available
+	}
+
+	outputStr := string(output)
+	return strings.Contains(outputStr, "i915") || strings.Contains(outputStr, "xe"), nil
+}
+
+// ValidateIntelSetup validates the Intel GPU setup.
+func (d *Detector) ValidateIntelSetup() error {
+	hasGPU, err := d.HasIntelGPU()
+	if err != nil {
+		return fmt.Errorf("failed to check for Intel GPU: %w", err)
+	}
+	if !hasGPU {
+		return fmt.Errorf("no Intel GPU detected (i915/xe kernel modules not loaded)")
+	}
+
+	return nil
+}
+
+// GetIntelGPUInfo returns information about Intel GPUs using ghw.
+func (d *Detector) GetIntelGPUInfo() ([]string, error) {
+	gpus, err := d.DetectGPUsWithGHW()
+	if err != nil {
+		return nil, err
+	}
+
+	var intelGPUs []string
+	for _, gpu := range gpus {
+		if gpu.Vendor == VendorIntel {
+			info := gpu.Name
+			if gpu.Driver != "" {
+				info += fmt.Sprintf(" (driver: %s)", gpu.Driver)
+			}
+			intelGPUs = append(intelGPUs, info)
+		}
+	}
+
+	return intelGPUs, nil
+}
+
 // GetGPUConfig determines the GPU configuration based on user preference and system capabilities.
+// A GPU (NVIDIA or Intel) is required for LLM inference.
 func GetGPUConfig(ctx context.Context, requestedMode string) (*Config, error) {
 	detector := NewDetector(ctx)
 
@@ -151,29 +291,29 @@ func GetGPUConfig(ctx context.Context, requestedMode string) (*Config, error) {
 		Enabled: false,
 	}
 
-	// Handle explicit disable
-	if requestedMode == "" || requestedMode == "none" || requestedMode == "disabled" {
-		return cfg, nil
-	}
-
 	// Detect available GPU
 	detectedMode, err := detector.DetectMode()
 	if err != nil {
 		return nil, fmt.Errorf("failed to detect GPU: %w", err)
 	}
 
-	// If auto mode, use detected mode
-	if requestedMode == "auto" || requestedMode == "all" {
+	// If auto mode (default), use detected mode
+	if requestedMode == "" || requestedMode == "auto" || requestedMode == "all" {
 		if detectedMode == ModeDisabled {
-			return cfg, nil // No GPU detected, return disabled
+			return nil, fmt.Errorf("no GPU detected. A GPU is required for LLM inference.\n\nChecked for:\n  - NVIDIA GPU: nvidia-smi not found or no GPU detected\n  - Intel GPU: i915/xe kernel modules not loaded\n\nTo fix:\n  - For NVIDIA: Install NVIDIA drivers and Container Toolkit\n  - For Intel: Ensure i915 or xe kernel module is loaded")
 		}
 		cfg.Mode = detectedMode
 		cfg.Enabled = true
 
 		// Validate the setup
-		if detectedMode == ModeNVIDIA {
+		switch detectedMode {
+		case ModeNVIDIA:
 			if err := detector.ValidateNVIDIASetup(); err != nil {
 				return nil, fmt.Errorf("NVIDIA GPU detected but setup incomplete: %w", err)
+			}
+		case ModeIntel:
+			if err := detector.ValidateIntelSetup(); err != nil {
+				return nil, fmt.Errorf("Intel GPU detected but setup incomplete: %w", err)
 			}
 		}
 
@@ -184,12 +324,20 @@ func GetGPUConfig(ctx context.Context, requestedMode string) (*Config, error) {
 	switch requestedMode {
 	case "nvidia":
 		if err := detector.ValidateNVIDIASetup(); err != nil {
-			return nil, fmt.Errorf("NVIDIA mode requested but validation failed: %w", err)
+			return nil, fmt.Errorf("NVIDIA mode requested but validation failed: %w\n\nTo fix:\n  1. Install NVIDIA drivers: sudo apt install nvidia-driver-550\n  2. Install NVIDIA Container Toolkit\n  3. Restart Docker: sudo systemctl restart docker\n\nOr use: nova start --gpu=intel (for Intel integrated/discrete GPU)", err)
 		}
 		cfg.Mode = ModeNVIDIA
 		cfg.Enabled = true
+
+	case "intel":
+		if err := detector.ValidateIntelSetup(); err != nil {
+			return nil, fmt.Errorf("Intel mode requested but validation failed: %w\n\nTo fix:\n  Ensure i915 or xe kernel module is loaded:\n  - lsmod | grep -E 'i915|xe'\n\nOr use: nova start --gpu=nvidia (for NVIDIA GPU)", err)
+		}
+		cfg.Mode = ModeIntel
+		cfg.Enabled = true
+
 	default:
-		return nil, fmt.Errorf("unsupported GPU mode: %s (supported: auto, nvidia, none)", requestedMode)
+		return nil, fmt.Errorf("unsupported GPU mode: %s (supported: auto, nvidia, intel)", requestedMode)
 	}
 
 	return cfg, nil

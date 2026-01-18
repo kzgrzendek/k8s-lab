@@ -21,8 +21,10 @@ func newStartCmd() *cobra.Command {
 	var tier int
 	var hfToken string
 	var model string
-	var cpuMode bool
+	var gpuMode string
 	var nodes int
+	var cpus int
+	var memory int
 	var k8sVersion string
 
 	cmd := &cobra.Command{
@@ -36,7 +38,7 @@ func newStartCmd() *cobra.Command {
     • Control-plane taints and GPU configuration
 
   Tier 1 - Infrastructure:
-    • Cilium CNI, Falco, NVIDIA GPU Operator
+    • Cilium CNI, Falco, GPU Operator (NVIDIA or Intel)
     • Cert-Manager, Trust-Manager
     • Envoy Gateway, Envoy AI Gateway
 
@@ -48,23 +50,29 @@ func newStartCmd() *cobra.Command {
     • llm-d (LLM serving), Open WebUI, HELIX
 
 Tiers are cumulative: --tier=2 deploys Tier 0, 1, and 2.
-Use --tier=0 to deploy only the Minikube cluster.`,
+Use --tier=0 to deploy only the Minikube cluster.
+
+Resource recommendations:
+  • Multi-node (3 nodes): 4 CPUs, 4GB RAM per node
+  • Single-node: 6+ CPUs, 8+ GB RAM (everything runs on one node)`,
 		RunE: func(cmd *cobra.Command, args []string) error {
-			return runStart(cmd, tier, hfToken, model, cpuMode, nodes, k8sVersion)
+			return runStart(cmd, tier, hfToken, model, gpuMode, nodes, cpus, memory, k8sVersion)
 		},
 	}
 
 	cmd.Flags().IntVar(&tier, "tier", 3, "deploy up to this tier (0, 1, 2, or 3)")
 	cmd.Flags().StringVar(&hfToken, "hf-token", "", "Hugging Face token for faster model downloads (optional)")
 	cmd.Flags().StringVar(&model, "model", "", "Hugging Face model to serve (e.g., google/gemma-3-4b-it, default: use config)")
-	cmd.Flags().BoolVar(&cpuMode, "cpu-mode", false, "force CPU mode (disable GPU even if available)")
+	cmd.Flags().StringVar(&gpuMode, "gpu", "", "GPU mode: auto (detect), nvidia, intel, or cpu (default: use config)")
 	cmd.Flags().IntVar(&nodes, "nodes", -1, "number of total nodes (1 master + N-1 workers, -1 = use config)")
+	cmd.Flags().IntVar(&cpus, "cpus", -1, "CPUs per node (-1 = use config, recommend 6+ for single-node)")
+	cmd.Flags().IntVar(&memory, "memory", -1, "memory in MB per node (-1 = use config, recommend 8192+ for single-node)")
 	cmd.Flags().StringVar(&k8sVersion, "k8s-version", "", "Kubernetes version for minikube (e.g., v1.33.5, default: use config)")
 
 	return cmd
 }
 
-func runStart(cmd *cobra.Command, targetTier int, hfToken string, model string, cpuMode bool, nodes int, k8sVersion string) error {
+func runStart(cmd *cobra.Command, targetTier int, hfToken string, model string, gpuMode string, nodes int, cpus int, memory int, k8sVersion string) error {
 	if targetTier < 0 || targetTier > 3 {
 		return fmt.Errorf("tier must be 0, 1, 2, or 3 (got %d)", targetTier)
 	}
@@ -82,13 +90,35 @@ func runStart(cmd *cobra.Command, targetTier int, hfToken string, model string, 
 	if model != "" {
 		cfg.LLM.Model = model
 	}
-	if cpuMode {
-		cfg.Minikube.CPUModeForced = true
-		ui.Info("CPU mode forced via --cpu-mode flag")
+	if gpuMode != "" {
+		switch gpuMode {
+		case "nvidia":
+			cfg.Minikube.GPUMode = config.GPUModeNVIDIA
+			ui.Info("GPU mode set to NVIDIA via --gpu flag")
+		case "intel":
+			cfg.Minikube.GPUMode = config.GPUModeIntel
+			ui.Info("GPU mode set to Intel via --gpu flag")
+		case "cpu":
+			cfg.Minikube.GPUMode = config.GPUModeCPU
+			ui.Info("GPU mode set to CPU-only via --gpu flag")
+		case "auto":
+			cfg.Minikube.GPUMode = config.GPUModeAuto
+			ui.Info("GPU mode set to auto-detect via --gpu flag")
+		default:
+			return fmt.Errorf("invalid GPU mode: %s (use: auto, nvidia, intel, or cpu)", gpuMode)
+		}
 	}
 	if nodes > 0 {
 		cfg.Minikube.Nodes = nodes
 		ui.Info("Using %d total nodes (%d master + %d workers)", nodes, 1, nodes-1)
+	}
+	if cpus > 0 {
+		cfg.Minikube.CPUs = cpus
+		ui.Info("Using %d CPUs per node", cpus)
+	}
+	if memory > 0 {
+		cfg.Minikube.Memory = memory
+		ui.Info("Using %dMB RAM per node", memory)
 	}
 	if k8sVersion != "" {
 		cfg.Versions.Kubernetes = k8sVersion
@@ -107,6 +137,16 @@ func runStart(cmd *cobra.Command, targetTier int, hfToken string, model string, 
 	}
 	if !installed {
 		return fmt.Errorf("mkcert CA not found - run 'nova setup' again to reinstall")
+	}
+
+	// Check for resource warnings (especially important for single-node mode)
+	if warnings := cfg.ValidateResourcesForMode(); len(warnings) > 0 {
+		ui.Warn("Resource configuration warnings:")
+		for _, w := range warnings {
+			ui.Warn("  • %s", w)
+		}
+		ui.Info("Edit ~/.nova/config.yaml to adjust cpus/memory, then run 'minikube -p nova delete' and restart")
+		ui.Info("")
 	}
 
 	ui.Header("Starting NOVA (Tier 0-%d)", targetTier)

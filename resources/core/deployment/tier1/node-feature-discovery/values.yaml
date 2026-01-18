@@ -1,0 +1,58 @@
+# Node Feature Discovery Configuration
+# Documentation: https://kubernetes-sigs.github.io/node-feature-discovery/
+
+# NFD Master configuration
+master:
+  # No node restrictions - run on any schedulable node
+  nodeSelector: {}
+  # Tolerate control-plane nodes for single-node clusters
+  tolerations:
+    - operator: Exists
+
+# NFD Worker configuration (DaemonSet that runs on all nodes)
+worker:
+  # No node restrictions - run on ALL nodes to discover hardware features
+  nodeSelector: {}
+  # Tolerate all taints to run on every node (including control-plane)
+  tolerations:
+    - operator: Exists
+
+  # Config for the NFD worker
+  config:
+    core:
+      # Sleep interval between feature re-discovery (default: 60s)
+      sleepInterval: 60s
+    # Enable PCI device detection (required for GPU detection)
+    sources:
+      pci:
+        deviceClassWhitelist:
+          - "03"    # Display controller (GPU)
+          - "0300"  # VGA compatible controller
+          - "0302"  # 3D controller
+          - "0380"  # Display controller (other)
+        deviceLabelFields:
+          - vendor
+          - device
+          - class
+      # Enable USB device detection
+      usb:
+        deviceClassWhitelist:
+          - "0e"    # Video class
+        deviceLabelFields:
+          - vendor
+          - device
+          - class
+      # Enable kernel module detection
+      kernel:
+        configOpts:
+          - "DRM_I915"  # Intel integrated graphics
+          - "DRM_XE"    # Intel discrete graphics (Xe driver)
+
+# Topology Updater (optional - for NUMA topology awareness)
+topologyUpdater:
+  enable: false
+
+# Garbage collector for stale labels
+gc:
+  enable: true
+  interval: 1h

@@ -103,6 +103,8 @@ func init() {
 					"BIND9_USER=bind",
 				},
 				RestartPolicy: "unless-stopped",
+				CPULimit:      0.25,             // Limit to 0.25 CPU core (DNS is lightweight)
+				MemoryLimit:   128 * 1024 * 1024, // Limit to 128MB RAM
 			}
 		},
 	})

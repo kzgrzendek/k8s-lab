@@ -1,0 +1,561 @@
+apiVersion: v1
+kind: ConfigMap
+metadata:
+  name: grafana-dashboard-vllm-inference
+  namespace: victoriametrics
+  labels:
+    grafana_dashboard: "1"
+data:
+  vllm-inference.json: |
+    {
+      "id": null,
+      "uid": "vllm-inference",
+      "title": "vLLM Inference",
+      "tags": ["vllm", "llm", "inference"],
+      "timezone": "browser",
+      "schemaVersion": 39,
+      "version": 1,
+      "editable": true,
+      "refresh": "10s",
+      "time": {
+        "from": "now-15m",
+        "to": "now"
+      },
+      "templating": {
+        "list": [
+          {
+            "type": "query",
+            "name": "model_name",
+            "label": "Model",
+            "datasource": "VictoriaMetrics",
+            "refresh": 2,
+            "includeAll": true,
+            "multi": false,
+            "options": [],
+            "current": {},
+            "query": "label_values(vllm:num_requests_running, model_name)",
+            "regex": "",
+            "sort": 1
+          }
+        ]
+      },
+      "annotations": {
+        "list": []
+      },
+      "panels": [
+        {
+          "id": 1,
+          "type": "stat",
+          "title": "Running Requests",
+          "datasource": "VictoriaMetrics",
+          "gridPos": { "h": 4, "w": 4, "x": 0, "y": 0 },
+          "fieldConfig": {
+            "defaults": {
+              "thresholds": {
+                "mode": "absolute",
+                "steps": [
+                  { "color": "green", "value": null },
+                  { "color": "yellow", "value": 5 },
+                  { "color": "red", "value": 10 }
+                ]
+              }
+            }
+          },
+          "options": {
+            "colorMode": "value",
+            "graphMode": "area",
+            "justifyMode": "auto",
+            "textMode": "auto",
+            "reduceOptions": {
+              "calcs": ["lastNotNull"],
+              "fields": "",
+              "values": false
+            }
+          },
+          "targets": [
+            {
+              "refId": "A",
+              "expr": "sum(vllm:num_requests_running{model_name=~\"$model_name\"})",
+              "legendFormat": ""
+            }
+          ]
+        },
+        {
+          "id": 2,
+          "type": "stat",
+          "title": "Waiting Requests",
+          "datasource": "VictoriaMetrics",
+          "gridPos": { "h": 4, "w": 4, "x": 4, "y": 0 },
+          "fieldConfig": {
+            "defaults": {
+              "thresholds": {
+                "mode": "absolute",
+                "steps": [
+                  { "color": "green", "value": null },
+                  { "color": "yellow", "value": 3 },
+                  { "color": "red", "value": 10 }
+                ]
+              }
+            }
+          },
+          "options": {
+            "colorMode": "value",
+            "graphMode": "area",
+            "justifyMode": "auto",
+            "textMode": "auto",
+            "reduceOptions": {
+              "calcs": ["lastNotNull"],
+              "fields": "",
+              "values": false
+            }
+          },
+          "targets": [
+            {
+              "refId": "A",
+              "expr": "sum(vllm:num_requests_waiting{model_name=~\"$model_name\"})",
+              "legendFormat": ""
+            }
+          ]
+        },
+        {
+          "id": 3,
+          "type": "stat",
+          "title": "KV Cache Usage",
+          "datasource": "VictoriaMetrics",
+          "gridPos": { "h": 4, "w": 4, "x": 8, "y": 0 },
+          "fieldConfig": {
+            "defaults": {
+              "unit": "percentunit",
+              "thresholds": {
+                "mode": "absolute",
+                "steps": [
+                  { "color": "green", "value": null },
+                  { "color": "yellow", "value": 0.7 },
+                  { "color": "red", "value": 0.9 }
+                ]
+              }
+            }
+          },
+          "options": {
+            "colorMode": "value",
+            "graphMode": "area",
+            "justifyMode": "auto",
+            "textMode": "auto",
+            "reduceOptions": {
+              "calcs": ["lastNotNull"],
+              "fields": "",
+              "values": false
+            }
+          },
+          "targets": [
+            {
+              "refId": "A",
+              "expr": "avg(vllm:gpu_cache_usage_perc{model_name=~\"$model_name\"})",
+              "legendFormat": ""
+            }
+          ]
+        },
+        {
+          "id": 4,
+          "type": "stat",
+          "title": "Tokens/sec",
+          "datasource": "VictoriaMetrics",
+          "gridPos": { "h": 4, "w": 4, "x": 12, "y": 0 },
+          "fieldConfig": {
+            "defaults": {
+              "unit": "short",
+              "thresholds": {
+                "mode": "absolute",
+                "steps": [
+                  { "color": "red", "value": null },
+                  { "color": "yellow", "value": 10 },
+                  { "color": "green", "value": 50 }
+                ]
+              }
+            }
+          },
+          "options": {
+            "colorMode": "value",
+            "graphMode": "area",
+            "justifyMode": "auto",
+            "textMode": "auto",
+            "reduceOptions": {
+              "calcs": ["lastNotNull"],
+              "fields": "",
+              "values": false
+            }
+          },
+          "targets": [
+            {
+              "refId": "A",
+              "expr": "sum(rate(vllm:generation_tokens_total{model_name=~\"$model_name\"}[1m]))",
+              "legendFormat": ""
+            }
+          ]
+        },
+        {
+          "id": 5,
+          "type": "stat",
+          "title": "Avg Latency (P50)",
+          "datasource": "VictoriaMetrics",
+          "gridPos": { "h": 4, "w": 4, "x": 16, "y": 0 },
+          "fieldConfig": {
+            "defaults": {
+              "unit": "s",
+              "thresholds": {
+                "mode": "absolute",
+                "steps": [
+                  { "color": "green", "value": null },
+                  { "color": "yellow", "value": 1 },
+                  { "color": "red", "value": 5 }
+                ]
+              }
+            }
+          },
+          "options": {
+            "colorMode": "value",
+            "graphMode": "none",
+            "justifyMode": "auto",
+            "textMode": "auto",
+            "reduceOptions": {
+              "calcs": ["lastNotNull"],
+              "fields": "",
+              "values": false
+            }
+          },
+          "targets": [
+            {
+              "refId": "A",
+              "expr": "histogram_quantile(0.50, sum(rate(vllm:e2e_request_latency_seconds_bucket{model_name=~\"$model_name\"}[5m])) by (le))",
+              "legendFormat": ""
+            }
+          ]
+        },
+        {
+          "id": 6,
+          "type": "stat",
+          "title": "Avg TTFT (P50)",
+          "datasource": "VictoriaMetrics",
+          "gridPos": { "h": 4, "w": 4, "x": 20, "y": 0 },
+          "fieldConfig": {
+            "defaults": {
+              "unit": "s",
+              "thresholds": {
+                "mode": "absolute",
+                "steps": [
+                  { "color": "green", "value": null },
+                  { "color": "yellow", "value": 0.5 },
+                  { "color": "red", "value": 2 }
+                ]
+              }
+            }
+          },
+          "options": {
+            "colorMode": "value",
+            "graphMode": "none",
+            "justifyMode": "auto",
+            "textMode": "auto",
+            "reduceOptions": {
+              "calcs": ["lastNotNull"],
+              "fields": "",
+              "values": false
+            }
+          },
+          "targets": [
+            {
+              "refId": "A",
+              "expr": "histogram_quantile(0.50, sum(rate(vllm:time_to_first_token_seconds_bucket{model_name=~\"$model_name\"}[5m])) by (le))",
+              "legendFormat": ""
+            }
+          ]
+        },
+        {
+          "id": 7,
+          "type": "timeseries",
+          "title": "Request Latency Percentiles",
+          "datasource": "VictoriaMetrics",
+          "gridPos": { "h": 8, "w": 12, "x": 0, "y": 4 },
+          "fieldConfig": {
+            "defaults": {
+              "unit": "s"
+            }
+          },
+          "options": {
+            "legend": {
+              "displayMode": "table",
+              "placement": "bottom"
+            },
+            "tooltip": {
+              "mode": "multi"
+            }
+          },
+          "targets": [
+            {
+              "refId": "A",
+              "expr": "histogram_quantile(0.50, sum(rate(vllm:e2e_request_latency_seconds_bucket{model_name=~\"$model_name\"}[5m])) by (le))",
+              "legendFormat": "P50"
+            },
+            {
+              "refId": "B",
+              "expr": "histogram_quantile(0.90, sum(rate(vllm:e2e_request_latency_seconds_bucket{model_name=~\"$model_name\"}[5m])) by (le))",
+              "legendFormat": "P90"
+            },
+            {
+              "refId": "C",
+              "expr": "histogram_quantile(0.99, sum(rate(vllm:e2e_request_latency_seconds_bucket{model_name=~\"$model_name\"}[5m])) by (le))",
+              "legendFormat": "P99"
+            }
+          ]
+        },
+        {
+          "id": 8,
+          "type": "timeseries",
+          "title": "Time to First Token (TTFT)",
+          "datasource": "VictoriaMetrics",
+          "gridPos": { "h": 8, "w": 12, "x": 12, "y": 4 },
+          "fieldConfig": {
+            "defaults": {
+              "unit": "s"
+            }
+          },
+          "options": {
+            "legend": {
+              "displayMode": "table",
+              "placement": "bottom"
+            },
+            "tooltip": {
+              "mode": "multi"
+            }
+          },
+          "targets": [
+            {
+              "refId": "A",
+              "expr": "histogram_quantile(0.50, sum(rate(vllm:time_to_first_token_seconds_bucket{model_name=~\"$model_name\"}[5m])) by (le))",
+              "legendFormat": "P50"
+            },
+            {
+              "refId": "B",
+              "expr": "histogram_quantile(0.90, sum(rate(vllm:time_to_first_token_seconds_bucket{model_name=~\"$model_name\"}[5m])) by (le))",
+              "legendFormat": "P90"
+            },
+            {
+              "refId": "C",
+              "expr": "histogram_quantile(0.99, sum(rate(vllm:time_to_first_token_seconds_bucket{model_name=~\"$model_name\"}[5m])) by (le))",
+              "legendFormat": "P99"
+            }
+          ]
+        },
+        {
+          "id": 9,
+          "type": "timeseries",
+          "title": "Token Throughput",
+          "datasource": "VictoriaMetrics",
+          "gridPos": { "h": 8, "w": 12, "x": 0, "y": 12 },
+          "fieldConfig": {
+            "defaults": {
+              "unit": "short",
+              "custom": {
+                "fillOpacity": 20
+              }
+            }
+          },
+          "options": {
+            "legend": {
+              "displayMode": "table",
+              "placement": "bottom"
+            },
+            "tooltip": {
+              "mode": "multi"
+            }
+          },
+          "targets": [
+            {
+              "refId": "A",
+              "expr": "sum(rate(vllm:prompt_tokens_total{model_name=~\"$model_name\"}[1m]))",
+              "legendFormat": "Prompt tokens/s"
+            },
+            {
+              "refId": "B",
+              "expr": "sum(rate(vllm:generation_tokens_total{model_name=~\"$model_name\"}[1m]))",
+              "legendFormat": "Generation tokens/s"
+            }
+          ]
+        },
+        {
+          "id": 10,
+          "type": "timeseries",
+          "title": "Scheduler State",
+          "datasource": "VictoriaMetrics",
+          "gridPos": { "h": 8, "w": 12, "x": 12, "y": 12 },
+          "fieldConfig": {
+            "defaults": {
+              "unit": "short",
+              "custom": {
+                "fillOpacity": 20
+              }
+            }
+          },
+          "options": {
+            "legend": {
+              "displayMode": "table",
+              "placement": "bottom"
+            },
+            "tooltip": {
+              "mode": "multi"
+            }
+          },
+          "targets": [
+            {
+              "refId": "A",
+              "expr": "sum(vllm:num_requests_running{model_name=~\"$model_name\"})",
+              "legendFormat": "Running"
+            },
+            {
+              "refId": "B",
+              "expr": "sum(vllm:num_requests_waiting{model_name=~\"$model_name\"})",
+              "legendFormat": "Waiting"
+            },
+            {
+              "refId": "C",
+              "expr": "sum(vllm:num_requests_swapped{model_name=~\"$model_name\"})",
+              "legendFormat": "Swapped"
+            }
+          ]
+        },
+        {
+          "id": 11,
+          "type": "timeseries",
+          "title": "KV Cache Usage",
+          "datasource": "VictoriaMetrics",
+          "gridPos": { "h": 8, "w": 12, "x": 0, "y": 20 },
+          "fieldConfig": {
+            "defaults": {
+              "unit": "percentunit",
+              "min": 0,
+              "max": 1,
+              "custom": {
+                "fillOpacity": 30
+              }
+            }
+          },
+          "options": {
+            "legend": {
+              "displayMode": "table",
+              "placement": "bottom"
+            },
+            "tooltip": {
+              "mode": "multi"
+            }
+          },
+          "targets": [
+            {
+              "refId": "A",
+              "expr": "vllm:gpu_cache_usage_perc{model_name=~\"$model_name\"}",
+              "legendFormat": "GPU Cache {{instance}}"
+            },
+            {
+              "refId": "B",
+              "expr": "vllm:cpu_cache_usage_perc{model_name=~\"$model_name\"}",
+              "legendFormat": "CPU Cache {{instance}}"
+            }
+          ]
+        },
+        {
+          "id": 12,
+          "type": "timeseries",
+          "title": "Inter-Token Latency (ITL)",
+          "datasource": "VictoriaMetrics",
+          "gridPos": { "h": 8, "w": 12, "x": 12, "y": 20 },
+          "fieldConfig": {
+            "defaults": {
+              "unit": "ms"
+            }
+          },
+          "options": {
+            "legend": {
+              "displayMode": "table",
+              "placement": "bottom"
+            },
+            "tooltip": {
+              "mode": "multi"
+            }
+          },
+          "targets": [
+            {
+              "refId": "A",
+              "expr": "histogram_quantile(0.50, sum(rate(vllm:time_per_output_token_seconds_bucket{model_name=~\"$model_name\"}[5m])) by (le)) * 1000",
+              "legendFormat": "P50"
+            },
+            {
+              "refId": "B",
+              "expr": "histogram_quantile(0.90, sum(rate(vllm:time_per_output_token_seconds_bucket{model_name=~\"$model_name\"}[5m])) by (le)) * 1000",
+              "legendFormat": "P90"
+            },
+            {
+              "refId": "C",
+              "expr": "histogram_quantile(0.99, sum(rate(vllm:time_per_output_token_seconds_bucket{model_name=~\"$model_name\"}[5m])) by (le)) * 1000",
+              "legendFormat": "P99"
+            }
+          ]
+        },
+        {
+          "id": 13,
+          "type": "piechart",
+          "title": "Request Finish Reasons",
+          "datasource": "VictoriaMetrics",
+          "gridPos": { "h": 8, "w": 8, "x": 0, "y": 28 },
+          "options": {
+            "legend": {
+              "displayMode": "table",
+              "placement": "right"
+            },
+            "tooltip": {
+              "mode": "multi"
+            },
+            "pieType": "pie"
+          },
+          "targets": [
+            {
+              "refId": "A",
+              "expr": "sum(increase(vllm:request_success_total{model_name=~\"$model_name\"}[1h])) by (finished_reason)",
+              "legendFormat": "{{finished_reason}}"
+            }
+          ]
+        },
+        {
+          "id": 14,
+          "type": "table",
+          "title": "Model Instances",
+          "datasource": "VictoriaMetrics",
+          "gridPos": { "h": 8, "w": 16, "x": 8, "y": 28 },
+          "options": {
+            "showHeader": true
+          },
+          "targets": [
+            {
+              "refId": "A",
+              "expr": "vllm:num_requests_running{model_name=~\"$model_name\"}",
+              "format": "table",
+              "instant": true
+            }
+          ],
+          "transformations": [
+            {
+              "id": "organize",
+              "options": {
+                "excludeByName": {
+                  "Time": true,
+                  "__name__": true
+                },
+                "renameByName": {
+                  "Value": "Running Requests",
+                  "instance": "Instance",
+                  "model_name": "Model",
+                  "pod": "Pod"
+                }
+              }
+            }
+          ]
+        }
+      ]
+    }

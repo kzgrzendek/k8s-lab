@@ -79,6 +79,8 @@ func init() {
 				},
 				RestartPolicy:      "unless-stopped",
 				AdditionalNetworks: []string{"nova"}, // Connect to nova network for TLS passthrough
+				CPULimit:           0.5,              // Limit to 0.5 CPU core (NGINX is efficient)
+				MemoryLimit:        256 * 1024 * 1024, // Limit to 256MB RAM
 			}
 		},
 	})

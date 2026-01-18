@@ -1,8 +1,8 @@
 multinode: false
 
-# Enable Intel GPU accelerator (i915 for integrated/older GPUs, xe for Arc)
+# Disable GPU accelerator for CPU mode
 accelerator:
-  type: "intel-i915"
+  type: ""
 
 modelArtifacts:
   name: "{{.ModelName}}"
@@ -30,11 +30,11 @@ decode:
   replicas: 1
 
   nodeSelector:
-    nova.local/node-type: gpu-intel
+    nova.local/node-type: cpu
 
   containers:
     - name: vllm
-      image: "{{.LLMDXpuImage}}"
+      image: "{{.LLMDCpuImage}}"
       modelCommand: vllmServe
       args:
         - --max-model-len
@@ -47,9 +47,6 @@ decode:
               name: huggingface-token
               key: token
               optional: true
-        # Intel XPU specific: target device for vLLM
-        - name: VLLM_TARGET_DEVICE
-          value: "xpu"
 
       ports:
         - containerPort: 8200
@@ -60,13 +57,10 @@ decode:
       resources:
         limits:
           cpu: "8"
-          memory: "16Gi"
-          # Intel GPU resource (i915 driver for integrated/older, xe for Arc)
-          gpu.intel.com/i915: "1"
+          memory: "8Gi"
         requests:
           cpu: "4"
-          memory: "8Gi"
-          gpu.intel.com/i915: "1"
+          memory: "4Gi"
 
       startupProbe:
         httpGet:

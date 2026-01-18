@@ -1,0 +1,33 @@
+# Intel GPU Device Plugin values for NOVA
+# Documentation: https://intel.github.io/intel-device-plugins-for-kubernetes/
+
+name: intel-gpu-plugin
+
+image:
+  hub: intel
+  tag: ""
+
+# Enable monitoring to expose GPU metrics
+enableMonitoring: true
+
+# Shared device number (allow multiple pods to share GPU)
+sharedDevNum: 1
+
+# Log level (0=info, 1=debug, 2=trace)
+logLevel: 2
+
+# Allocation policy: "none", "balanced", "packed"
+allocationPolicy: "none"
+
+# Deploy only on the elected GPU node (labeled in tier0)
+# This mirrors NVIDIA GPU Operator behavior - only one node gets the GPU plugin
+nodeSelector:
+  nova.local/node-type: gpu-intel
+
+# Tolerate any node taints (including control-plane for single-node clusters)
+tolerations:
+  - operator: Exists
+
+# Enable Node Feature Rule for NFD integration
+# NFD provides additional hardware feature labels for the elected node
+nodeFeatureRule: true

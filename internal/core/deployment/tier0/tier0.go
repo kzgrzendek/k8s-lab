@@ -189,22 +189,22 @@ func classifyNodes(ctx context.Context, allNodes []string) (string, []string) {
 	return masterNode, workerNodes
 }
 
-// configureNodeLabelsAndTaints configures node labels and taints based on GPU/CPU mode.
+// configureNodeLabelsAndTaints configures node labels and taints based on GPU mode.
 func configureNodeLabelsAndTaints(ctx context.Context, cfg *config.Config, allNodes []string) error {
 	masterNode, workerNodes := classifyNodes(ctx, allNodes)
 
 	if cfg.IsGPUMode() {
-		return configureGPUMode(ctx, masterNode, workerNodes)
+		return configureGPUMode(ctx, cfg, masterNode, workerNodes)
 	}
 	return configureCPUMode(ctx, masterNode, workerNodes)
 }
 
 // configureGPUMode configures nodes for GPU mode.
-func configureGPUMode(ctx context.Context, masterNode string, workerNodes []string) error {
+func configureGPUMode(ctx context.Context, cfg *config.Config, masterNode string, workerNodes []string) error {
 	if len(workerNodes) > 0 {
-		return configureMultiNodeGPU(ctx, workerNodes)
+		return configureMultiNodeGPU(ctx, cfg, workerNodes)
 	}
-	return configureSingleNodeGPU(ctx, masterNode)
+	return configureSingleNodeGPU(ctx, cfg, masterNode)
 }
 
 // configureCPUMode configures nodes for CPU mode.
@@ -216,23 +216,30 @@ func configureCPUMode(ctx context.Context, masterNode string, workerNodes []stri
 }
 
 // configureMultiNodeGPU configures a multi-node cluster in GPU mode.
-func configureMultiNodeGPU(ctx context.Context, workerNodes []string) error {
-	ui.Info("GPU mode: multi-node cluster")
+func configureMultiNodeGPU(ctx context.Context, cfg *config.Config, workerNodes []string) error {
+	gpuMode := cfg.GetGPUMode()
+	gpuLabel := gpuMode.NodeLabel()
+	ui.Info("GPU mode: multi-node cluster (%s)", gpuMode)
 
-	// Disable GPU operands on all nodes first
-	if err := k8s.LabelAllNodes(ctx, constants.LabelGPUOperands+"=false"); err != nil {
-		ui.Warn("Failed to disable GPU operands cluster-wide: %v", err)
+	// Disable GPU operands on all nodes first (only needed for NVIDIA)
+	if gpuMode == config.GPUModeNVIDIA {
+		if err := k8s.LabelAllNodes(ctx, constants.LabelGPUOperands+"=false"); err != nil {
+			ui.Warn("Failed to disable GPU operands cluster-wide: %v", err)
+		}
 	}
 
 	// First worker is GPU node
 	gpuNode := workerNodes[0]
-	if err := k8s.LabelNode(ctx, gpuNode, constants.LabelNodeTypeGPU+"=gpu-nvidia", false); err != nil {
+	if err := k8s.LabelNode(ctx, gpuNode, constants.LabelNodeTypeGPU+"="+gpuLabel, false); err != nil {
 		return fmt.Errorf("failed to label GPU node: %w", err)
 	}
-	ui.Info("Labeled %s as GPU node", gpuNode)
+	ui.Info("Labeled %s as GPU node (%s)", gpuNode, gpuLabel)
 
-	if err := k8s.LabelNode(ctx, gpuNode, constants.LabelGPUOperands+"=true", false); err != nil {
-		ui.Warn("Failed to enable GPU operands: %v", err)
+	// Enable GPU operands only for NVIDIA
+	if gpuMode == config.GPUModeNVIDIA {
+		if err := k8s.LabelNode(ctx, gpuNode, constants.LabelGPUOperands+"=true", false); err != nil {
+			ui.Warn("Failed to enable GPU operands: %v", err)
+		}
 	}
 
 	// Remaining workers are CPU nodes
@@ -249,20 +256,25 @@ func configureMultiNodeGPU(ctx context.Context, workerNodes []string) error {
 }
 
 // configureSingleNodeGPU configures a single-node cluster in GPU mode.
-func configureSingleNodeGPU(ctx context.Context, masterNode string) error {
-	ui.Info("GPU mode: single-node cluster")
+func configureSingleNodeGPU(ctx context.Context, cfg *config.Config, masterNode string) error {
+	gpuMode := cfg.GetGPUMode()
+	gpuLabel := gpuMode.NodeLabel()
+	ui.Info("GPU mode: single-node cluster (%s)", gpuMode)
 
 	if masterNode == "" {
 		return fmt.Errorf("no master node found")
 	}
 
-	if err := k8s.LabelNode(ctx, masterNode, constants.LabelNodeTypeGPU+"=gpu-nvidia", false); err != nil {
+	if err := k8s.LabelNode(ctx, masterNode, constants.LabelNodeTypeGPU+"="+gpuLabel, false); err != nil {
 		return fmt.Errorf("failed to label GPU node: %w", err)
 	}
-	ui.Info("Labeled %s as GPU node", masterNode)
+	ui.Info("Labeled %s as GPU node (%s)", masterNode, gpuLabel)
 
-	if err := k8s.LabelNode(ctx, masterNode, constants.LabelGPUOperands+"=true", false); err != nil {
-		ui.Warn("Failed to enable GPU operands: %v", err)
+	// Enable GPU operands only for NVIDIA
+	if gpuMode == config.GPUModeNVIDIA {
+		if err := k8s.LabelNode(ctx, masterNode, constants.LabelGPUOperands+"=true", false); err != nil {
+			ui.Warn("Failed to enable GPU operands: %v", err)
+		}
 	}
 
 	if err := removeMasterTaints(ctx, masterNode); err != nil {

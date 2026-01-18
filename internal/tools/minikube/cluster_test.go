@@ -102,7 +102,7 @@ func TestMinikubeStartArgs(t *testing.T) {
 					Memory:            8192,
 					Nodes:             3,
 					KubernetesVersion: "v1.28.0",
-					GPUs:              "",
+					GPUMode:           config.GPUModeIntel,
 				},
 			},
 			expectedArgs: map[string]string{
@@ -115,7 +115,7 @@ func TestMinikubeStartArgs(t *testing.T) {
 				"--network-plugin":     "cni",
 				"--cni":                "false",
 			},
-			shouldHaveGPU: false,
+			shouldHaveGPU: false, // Intel mode doesn't need --gpus flag
 		},
 		{
 			name: "Configuration with NVIDIA GPU",
@@ -126,7 +126,7 @@ func TestMinikubeStartArgs(t *testing.T) {
 					Memory:            16384,
 					Nodes:             1,
 					KubernetesVersion: "v1.29.0",
-					GPUs:              "all",
+					GPUMode:           config.GPUModeNVIDIA,
 				},
 			},
 			expectedArgs: map[string]string{
@@ -148,7 +148,7 @@ func TestMinikubeStartArgs(t *testing.T) {
 					Memory:            4096,
 					Nodes:             1,
 					KubernetesVersion: "v1.27.0",
-					GPUs:              "",
+					GPUMode:           config.GPUModeIntel,
 				},
 			},
 			expectedArgs: map[string]string{
@@ -176,9 +176,9 @@ func TestMinikubeStartArgs(t *testing.T) {
 				"--extra-config", "kube-proxy.skip-headers=true",
 			}
 
-			// Add GPU support if configured
-			if tc.cfg.Minikube.GPUs != "" {
-				args = append(args, "--gpus", tc.cfg.Minikube.GPUs)
+			// Add GPU support if configured (NVIDIA mode requires --gpus flag)
+			if tc.cfg.Minikube.GPUMode == config.GPUModeNVIDIA {
+				args = append(args, "--gpus", "all")
 			}
 
 			// Verify start command is present
@@ -193,8 +193,8 @@ func TestMinikubeStartArgs(t *testing.T) {
 					hasGPUFlag = true
 					if i+1 >= len(args) {
 						t.Error("--gpus flag without value")
-					} else if args[i+1] != tc.cfg.Minikube.GPUs {
-						t.Errorf("Expected GPU value %s, got %s", tc.cfg.Minikube.GPUs, args[i+1])
+					} else if args[i+1] != "all" {
+						t.Errorf("Expected GPU value 'all', got %s", args[i+1])
 					}
 				}
 			}
@@ -293,7 +293,7 @@ func TestMinikubeConfigValidation(t *testing.T) {
 					Memory:            16384,
 					Nodes:             1,
 					KubernetesVersion: "v1.28.0",
-					GPUs:              "all",
+					GPUMode:           config.GPUModeNVIDIA,
 				},
 			},
 			isValid: true,

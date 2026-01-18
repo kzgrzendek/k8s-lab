@@ -89,8 +89,8 @@ func (c *Client) Close() error {
 
 // ContainerConfig represents container configuration.
 type ContainerConfig struct {
-	Name               string
-	Image              string
+	Name                    string
+	Image                   string
 	User                    string            // User and group to run container as (e.g., "1000:1000")
 	Ports                   map[string]string // hostPort:containerPort, e.g. "30053:53" or "80:80/tcp"
 	Volumes                 map[string]string // host:container
@@ -102,6 +102,8 @@ type ContainerConfig struct {
 	StaticIP                string            // optional static IP for the primary network
 	AdditionalNetworks      []string          // additional networks to connect to (e.g., ["minikube"])
 	AdditionalNetworksIPs   map[string]string // optional static IPs for additional networks (network name -> IP)
+	CPULimit                float64           // CPU limit in cores (e.g., 2.0 for 2 cores). 0 = unlimited
+	MemoryLimit             int64             // Memory limit in bytes (e.g., 2*1024*1024*1024 for 2GB). 0 = unlimited
 }
 
 // CreateAndStart creates and starts a container.
@@ -175,6 +177,18 @@ func (c *Client) CreateAndStart(ctx context.Context, cfg ContainerConfig) error 
 		CapAdd:        cfg.Capabilities,
 		Privileged:    cfg.Privileged,
 		NetworkMode:   container.NetworkMode(cfg.Network),
+	}
+
+	// Apply resource limits if specified (prevents system saturation)
+	if cfg.CPULimit > 0 || cfg.MemoryLimit > 0 {
+		hostConfig.Resources = container.Resources{}
+		if cfg.CPULimit > 0 {
+			// NanoCPUs: 1 CPU = 1e9 nanoseconds
+			hostConfig.Resources.NanoCPUs = int64(cfg.CPULimit * 1e9)
+		}
+		if cfg.MemoryLimit > 0 {
+			hostConfig.Resources.Memory = cfg.MemoryLimit
+		}
 	}
 
 	// Configure network settings (static IP if specified)

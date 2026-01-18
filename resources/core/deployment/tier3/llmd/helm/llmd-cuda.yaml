@@ -26,7 +26,7 @@ decode:
   replicas: 1
 
   nodeSelector:
-    nova.local/llmd-node: "true"
+    nova.local/node-type: gpu-nvidia
 
   containers:
     - name: vllm

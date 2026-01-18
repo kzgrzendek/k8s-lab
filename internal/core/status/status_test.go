@@ -28,10 +28,10 @@ func TestGetSystemStatus(t *testing.T) {
 	ctx := context.Background()
 	cfg := &config.Config{
 		Minikube: config.MinikubeConfig{
-			Nodes:  3,
-			CPUs:   4,
-			Memory: 8192,
-			GPUs:   "none",
+			Nodes:   3,
+			CPUs:    4,
+			Memory:  8192,
+			GPUMode: config.GPUModeIntel,
 		},
 		DNS: config.DNSConfig{
 			Domain:     "k8s.test",
@@ -130,7 +130,7 @@ func TestClusterStatusNotRunning(t *testing.T) {
 	ctx := context.Background()
 	cfg := &config.Config{
 		Minikube: config.MinikubeConfig{
-			GPUs: "nvidia",
+			GPUMode: config.GPUModeNVIDIA,
 		},
 	}
 

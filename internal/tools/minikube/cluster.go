@@ -59,9 +59,10 @@ func StartCluster(ctx context.Context, cfg *config.Config) error {
 		"--extra-config", "kube-proxy.skip-headers=true",
 	}
 
-	// Add GPU support only in GPU mode (not in forced CPU mode)
-	if cfg.IsGPUMode() && cfg.Minikube.GPUs != "" {
-		args = append(args, "--gpus", cfg.Minikube.GPUs)
+	// Add GPU passthrough for NVIDIA mode only
+	// Intel GPUs don't need minikube --gpus flag (they use device plugins)
+	if cfg.IsNVIDIAMode() {
+		args = append(args, "--gpus", "all")
 	}
 
 	// Configure Docker daemon for optimized image pulls
@@ -425,7 +426,7 @@ func GetNodesByLabel(ctx context.Context, cfg *config.Config, labelSelector stri
 
 // ElectLLMDNode elects a node for llm-d deployment and labels it with nova.local/llmd-node=true.
 // Election strategy:
-//   - Multi-node GPU mode: elect a GPU node (nova.local/node-type=gpu-nvidia)
+//   - Multi-node GPU mode: elect a GPU node (nova.local/node-type=gpu-nvidia or gpu-intel)
 //   - Multi-node CPU mode: randomly elect a CPU worker node (nova.local/node-type=cpu)
 //   - Single-node mode: use master node (remove NoSchedule taint if present)
 //
@@ -461,16 +462,17 @@ func ElectLLMDNode(ctx context.Context, cfg *config.Config) (string, error) {
 			ui.Debug("Failed to remove control-plane taint: %v (may not exist)", err)
 		}
 	} else {
-		// Multi-node mode: elect based on GPU/CPU mode
+		// Multi-node mode: elect based on GPU mode
 		if cfg.IsGPUMode() {
-			// GPU mode: elect a GPU node
-			ui.Info("Multi-node GPU mode: electing GPU node for llm-d")
-			gpuNodes, err := GetNodesByLabel(ctx, cfg, "nova.local/node-type=gpu-nvidia")
+			// GPU mode: elect a GPU node based on GPU type
+			gpuLabel := cfg.GetGPUMode().NodeLabel()
+			ui.Info("Multi-node GPU mode: electing GPU node for llm-d (%s)", gpuLabel)
+			gpuNodes, err := GetNodesByLabel(ctx, cfg, "nova.local/node-type="+gpuLabel)
 			if err != nil {
 				return "", fmt.Errorf("failed to get GPU nodes: %w", err)
 			}
 			if len(gpuNodes) == 0 {
-				return "", fmt.Errorf("no GPU nodes found with label nova.local/node-type=gpu-nvidia")
+				return "", fmt.Errorf("no GPU nodes found with label nova.local/node-type=%s", gpuLabel)
 			}
 			// Use first GPU node
 			electedNode = gpuNodes[0]

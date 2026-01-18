@@ -20,8 +20,8 @@ func newKubectlCmd() *cobra.Command {
 }
 
 func runKubectl(cmd *cobra.Command, args []string) error {
-	// Build minikube kubectl command
-	minikubeArgs := append([]string{"kubectl", "--"}, args...)
+	// Build minikube kubectl command with nova profile
+	minikubeArgs := append([]string{"-p", "nova", "kubectl", "--"}, args...)
 
 	// Find minikube binary
 	minikubePath, err := exec.LookPath("minikube")

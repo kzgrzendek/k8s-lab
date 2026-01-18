@@ -114,6 +114,7 @@ func Start(ctx context.Context, cfg *config.Config) error {
 	// Create and start registry container with persistent storage
 	// Storage is persisted on host, survives container deletion and minikube cluster rebuilds
 	// We pre-created the directory structure above, so non-root user can write to it
+	// Resource limits prevent system saturation during large image uploads
 	containerCfg := docker.ContainerConfig{
 		Name:  constants.ContainerRegistry,
 		Image: constants.ImageRegistry,
@@ -133,6 +134,8 @@ func Start(ctx context.Context, cfg *config.Config) error {
 		},
 		Network:       "nova",
 		RestartPolicy: "unless-stopped",
+		CPULimit:      1.0,               // Limit to 1 CPU core (registry is I/O bound)
+		MemoryLimit:   512 * 1024 * 1024, // Limit to 512MB RAM
 	}
 
 	if err := dockerClient.CreateAndStart(ctx, containerCfg); err != nil {

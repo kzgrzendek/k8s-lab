@@ -101,10 +101,14 @@ func (c *Client) CopyToRegistry(ctx context.Context, opts CopyToRegistryOptions)
 
 	// Run skopeo inside a Docker container on the nova network
 	// Add DNS mapping for registry.local to resolve to the registry container IP
+	// Resource limits prevent system saturation during large image copies (e.g., llm-d-xpu ~15GB)
 	dockerArgs := []string{
 		"run",
 		"--rm",              // Remove container after completion
 		"--network", "nova", // Connect to nova network
+		"--cpus", "2",       // Limit to 2 CPU cores to prevent system saturation
+		"--memory", "2g",    // Limit to 2GB RAM (skopeo streams layers, shouldn't need more)
+		"--pids-limit", "50", // Prevent runaway processes
 		"--add-host", fmt.Sprintf("registry.local:%s", registryIP), // Map domain to container IP
 	}
 

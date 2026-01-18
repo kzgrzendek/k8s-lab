@@ -142,6 +142,7 @@ func deployLLMD(ctx context.Context, cfg *config.Config) error {
 		"ModelPVCName":  pvcName, // Empty if no warmup, otherwise PVC name
 		"LLMDCudaImage": fmt.Sprintf("ghcr.io/llm-d/llm-d-cuda:%s", cfg.GetLLMDImageTag()),
 		"LLMDCpuImage":  fmt.Sprintf("ghcr.io/llm-d/llm-d-cpu:%s", cfg.GetLLMDImageTag()),
+		"LLMDXpuImage":  fmt.Sprintf("ghcr.io/llm-d/llm-d-xpu:%s", cfg.GetLLMDImageTag()),
 	}
 
 	// Deploy llm-d via Helm

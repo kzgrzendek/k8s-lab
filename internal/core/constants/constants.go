@@ -11,6 +11,8 @@ import (
 const (
 	HelmRepoCilium          = "https://helm.cilium.io/"
 	HelmRepoNvidia          = "https://helm.ngc.nvidia.com/nvidia"
+	HelmRepoIntel           = "https://intel.github.io/helm-charts/"
+	HelmRepoNFD             = "https://kubernetes-sigs.github.io/node-feature-discovery/charts"
 	HelmRepoFalco           = "https://falcosecurity.github.io/charts"
 	HelmRepoJetstack        = "https://charts.jetstack.io"
 	HelmRepoDandyDev        = "https://dandydeveloper.github.io/charts"

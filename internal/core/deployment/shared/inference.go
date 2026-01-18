@@ -7,12 +7,19 @@ import (
 	"sigs.k8s.io/yaml"
 )
 
-// GetLLMDValuesPath returns the appropriate llm-d values file path based on GPU/CPU mode.
+// GetLLMDValuesPath returns the appropriate llm-d values file path based on GPU mode.
 func GetLLMDValuesPath(cfg *config.Config) string {
-	if cfg.IsGPUMode() {
+	switch cfg.GetGPUMode() {
+	case config.GPUModeNVIDIA:
 		return "resources/core/deployment/tier3/llmd/helm/llmd-cuda.yaml"
+	case config.GPUModeIntel:
+		return "resources/core/deployment/tier3/llmd/helm/llmd-intel.yaml"
+	case config.GPUModeCPU:
+		return "resources/core/deployment/tier3/llmd/helm/llmd-cpu.yaml"
+	default:
+		// Default to Intel for auto mode (should be resolved before reaching here)
+		return "resources/core/deployment/tier3/llmd/helm/llmd-intel.yaml"
 	}
-	return "resources/core/deployment/tier3/llmd/helm/llmd-cpu.yaml"
 }
 
 // LLMDValues represents the structure of llm-d Helm values (partial, only what we need).

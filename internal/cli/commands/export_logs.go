@@ -199,14 +199,14 @@ func collectMinikubeLogs(ctx context.Context, outputDir string) error {
 	}
 
 	// Minikube status
-	if status, err := exec.Output(ctx, "minikube", "status"); err == nil {
+	if status, err := exec.Output(ctx, "minikube", "-p", "nova", "status"); err == nil {
 		if err := os.WriteFile(filepath.Join(logsDir, "status.txt"), []byte(status), 0644); err != nil {
 			ui.Warn("Failed to write minikube status: %v", err)
 		}
 	}
 
 	// Minikube logs
-	if logs, err := exec.Output(ctx, "minikube", "logs", "--length=1000"); err == nil {
+	if logs, err := exec.Output(ctx, "minikube", "-p", "nova", "logs", "--length=1000"); err == nil {
 		if err := os.WriteFile(filepath.Join(logsDir, "minikube.log"), []byte(logs), 0644); err != nil {
 			ui.Warn("Failed to write minikube logs: %v", err)
 		}

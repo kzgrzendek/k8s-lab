@@ -350,39 +350,37 @@ func TestConfigValidation(t *testing.T) {
 		expectGPU bool
 	}{
 		{
-			name: "Config with GPU enabled",
+			name: "Config with NVIDIA GPU",
 			cfg: &config.Config{
 				Minikube: config.MinikubeConfig{
-					GPUs: "all",
+					GPUMode: config.GPUModeNVIDIA,
 				},
 			},
 			expectGPU: true,
 		},
 		{
-			name: "Config with GPU disabled",
+			name: "Config with Intel GPU",
 			cfg: &config.Config{
 				Minikube: config.MinikubeConfig{
-					GPUs: "",
+					GPUMode: config.GPUModeIntel,
 				},
 			},
-			expectGPU: false,
+			expectGPU: true,
 		},
 		{
-			name: "Config with GPU none",
+			name: "Config with auto GPU mode",
 			cfg: &config.Config{
 				Minikube: config.MinikubeConfig{
-					GPUs: "none",
+					GPUMode: config.GPUModeAuto,
 				},
 			},
-			expectGPU: false,
+			expectGPU: false, // Auto mode returns false until resolved
 		},
 	}
 
 	for _, tc := range testCases {
 		t.Run(tc.name, func(t *testing.T) {
-			hasGPU := tc.cfg.Minikube.GPUs != "" &&
-				tc.cfg.Minikube.GPUs != "none" &&
-				tc.cfg.Minikube.GPUs != "disabled"
+			hasGPU := tc.cfg.IsGPUMode()
 
 			if hasGPU != tc.expectGPU {
 				t.Errorf("Expected GPU enabled=%v, got %v", tc.expectGPU, hasGPU)

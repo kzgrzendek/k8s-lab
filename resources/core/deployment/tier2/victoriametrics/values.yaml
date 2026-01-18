@@ -211,7 +211,8 @@ extraObjects:
         - source_labels: [__meta_kubernetes_node_name]
           target_label: kubernetes_node
 
-{{- if .IsGPUMode }}
+{{- if .IsNVIDIAMode }}
+  # NVIDIA GPU metrics via DCGM Exporter (NVIDIA mode only)
   - apiVersion: operator.victoriametrics.com/v1beta1
     kind: VMPodScrape
     metadata:
@@ -235,3 +236,27 @@ extraObjects:
             - targetLabel: job
               replacement: nvidia-dcgm-exporter
 {{- end }}
+
+  # vLLM inference metrics (works with all GPU backends: NVIDIA, Intel, CPU)
+  - apiVersion: operator.victoriametrics.com/v1beta1
+    kind: VMPodScrape
+    metadata:
+      name: vllm-metrics
+      namespace: victoriametrics
+    spec:
+      namespaceSelector:
+        matchNames:
+          - llmd
+      selector:
+        matchLabels:
+          llm-d.ai/inferenceServing: "true"
+      podMetricsEndpoints:
+        - targetPort: 8200
+          path: /metrics
+          interval: 15s
+          scrapeTimeout: 10s
+          honorLabels: true
+          honorTimestamps: false
+          relabelConfigs:
+            - targetLabel: job
+              replacement: vllm

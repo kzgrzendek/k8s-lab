@@ -6,6 +6,7 @@ import (
 
 	"github.com/kzgrzendek/nova/internal/cli/ui"
 	"github.com/kzgrzendek/nova/internal/core/config"
+	"github.com/kzgrzendek/nova/internal/core/deployment/shared"
 	"github.com/kzgrzendek/nova/internal/setup/certificates"
 	"github.com/kzgrzendek/nova/internal/setup/preflight"
 	"github.com/kzgrzendek/nova/internal/setup/system/dns"
@@ -126,13 +127,15 @@ func runSetup(cmd *cobra.Command, skipDNS bool, rootless bool) error {
 
 	// Step 5: Check GPU configuration
 	progress.StartStep(currentStep)
-	gpuCfg, err := checker.CheckGPU(cmd.Context(), cfg.Minikube.GPUs)
+	gpuCfg, err := checker.CheckGPU(cmd.Context(), string(cfg.Minikube.GPUMode))
 	if err != nil {
-		ui.Warn("GPU check failed: %v", err)
-		ui.Info("Continuing with CPU-only mode...")
-		cfg.Minikube.GPUs = "none"
-	} else if !gpuCfg.Enabled {
-		ui.Info("Proceeding in CPU-only mode")
+		return fmt.Errorf("GPU detection failed: %w (a GPU is required for LLM inference)", err)
+	}
+	// Store detected GPU mode in config
+	if gpuCfg.Mode == shared.ModeNVIDIA {
+		cfg.Minikube.GPUMode = config.GPUModeNVIDIA
+	} else if gpuCfg.Mode == shared.ModeIntel {
+		cfg.Minikube.GPUMode = config.GPUModeIntel
 	}
 	progress.CompleteStep(currentStep)
 	currentStep++

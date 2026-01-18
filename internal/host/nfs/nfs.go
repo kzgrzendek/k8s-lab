@@ -90,6 +90,8 @@ func Start(ctx context.Context, cfg *config.Config) error {
 		Privileged:    true,
 		Network:       "nova",
 		RestartPolicy: "unless-stopped",
+		CPULimit:      0.5,              // Limit to 0.5 CPU core (NFS is I/O bound)
+		MemoryLimit:   256 * 1024 * 1024, // Limit to 256MB RAM
 	}
 
 	if err := dockerClient.CreateAndStart(ctx, containerCfg); err != nil {

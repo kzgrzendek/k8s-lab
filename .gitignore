@@ -32,3 +32,6 @@ Thumbs.db
 coverage.out
 coverage.html
 coverage/
+
+# Notes and documentation (not tracked)
+CLAUDE.md
