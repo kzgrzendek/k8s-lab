@@ -1,0 +1,43 @@
+# Qdrant vector database values for Nova
+# Chart: qdrant/qdrant
+# Docs: https://qdrant.tech/documentation/
+
+# Single replica for lab environment
+replicaCount: 1
+
+# Persistence configuration
+persistence:
+  size: 1Gi
+  storageClassName: local-path
+
+# Resource limits (conservative for lab)
+resources:
+  requests:
+    cpu: "50m"
+    memory: "256Mi"
+  limits:
+    cpu: "500m"
+    memory: "1Gi"
+
+# Service configuration
+service:
+  type: ClusterIP
+  port: 6333
+  grpcPort: 6334
+
+# Qdrant configuration
+config:
+  cluster:
+    enabled: false
+  storage:
+    performance:
+      optimizers_config:
+        default_segment_number: 2
+
+# Security - API key disabled for lab environment
+apiKey:
+  enabled: false
+
+# Metrics disabled for minimal footprint
+metrics:
+  enabled: false

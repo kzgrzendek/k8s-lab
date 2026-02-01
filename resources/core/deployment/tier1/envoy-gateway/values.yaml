@@ -1,5 +1,12 @@
 deployment:
   name: "envoy-control-plane"
+  resources:
+    requests:
+      cpu: "50m"
+      memory: "128Mi"
+    limits:
+      cpu: "200m"
+      memory: "256Mi"
 
 service:
   type: "NodePort"
@@ -23,4 +30,4 @@ config:
       backend:
         type: Redis
         redis:
-          url: redis-redis-ha.envoy-gateway-system.svc.cluster.local:6379
+          url: envoy-redis.envoy-gateway-system.svc.cluster.local:6379

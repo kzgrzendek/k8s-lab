@@ -1,0 +1,50 @@
+# Garage S3-compatible storage values for Nova
+# Chart: garage/garage
+# Docs: https://garagehq.deuxfleurs.fr/
+
+# Single-node configuration for lab environment
+garage:
+  # Replication factor (1 for single node)
+  replicationFactor: 1
+
+  # S3 API configuration
+  s3:
+    api:
+      rootDomain: ".s3.garage.svc.cluster.local"
+
+  # Web UI disabled for minimal footprint
+  admin:
+    api:
+      adminToken: ""
+
+# Persistence configuration
+persistence:
+  enabled: true
+  meta:
+    size: 100Mi
+    storageClass: local-path
+  data:
+    size: 5Gi
+    storageClass: local-path
+
+# Resource limits (conservative for lab)
+resources:
+  requests:
+    cpu: "50m"
+    memory: "128Mi"
+  limits:
+    cpu: "500m"
+    memory: "512Mi"
+
+# Single replica for lab environment
+replicaCount: 1
+
+# Service configuration
+service:
+  type: ClusterIP
+  s3:
+    port: 3900
+  web:
+    port: 3902
+  admin:
+    port: 3903

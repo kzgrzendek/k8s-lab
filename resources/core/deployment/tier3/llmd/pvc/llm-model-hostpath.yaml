@@ -5,19 +5,18 @@ metadata:
   namespace: llmd
   labels:
     app: llm-model-cache
-    storage-type: nfs
+    storage-type: hostpath
     model-slug: {{.ModelSlug}}
 spec:
   accessModes:
-    - ReadWriteMany
-  storageClassName: nfs-models
+    - ReadOnlyMany
+  # No storageClassName - we use selector-based binding to specific PV
+  storageClassName: ""
   resources:
     requests:
-      storage: 20Gi
-  # Selector to bind to the model-specific NFS PV
-  # Each model has its own PV pointing to /models/{model-slug} (NFSv4 root)
+      storage: 100Gi
+  # Selector to bind to the model-specific hostPath PV
   selector:
     matchLabels:
-      type: nfs
       storage-tier: models
       model-slug: {{.ModelSlug}}

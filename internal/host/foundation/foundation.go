@@ -6,7 +6,7 @@
 //   - Minikube cluster (started first, gets automatic IPs from Docker)
 //   - NGINX Gateway (reverse proxy to cluster, discovers minikube IP)
 //   - Bind9 DNS (local DNS for *.nova.local domains)
-//   - NFS Server (persistent storage for models, tier 3 only)
+//   - Minikube Mount (host models directory mounted to nodes, tier 3 only)
 //   - Registry (local container registry, tier 3 only)
 //
 // All services use Docker's automatic IP allocation to avoid conflicts.
@@ -20,7 +20,7 @@ import (
 	"github.com/kzgrzendek/nova/internal/core/config"
 	"github.com/kzgrzendek/nova/internal/host/dns/bind9"
 	"github.com/kzgrzendek/nova/internal/host/gateway/nginx"
-	"github.com/kzgrzendek/nova/internal/host/nfs"
+	"github.com/kzgrzendek/nova/internal/host/mount"
 	"github.com/kzgrzendek/nova/internal/host/registry"
 	"github.com/kzgrzendek/nova/internal/tools/docker"
 	"github.com/kzgrzendek/nova/internal/tools/minikube"
@@ -46,7 +46,7 @@ func New(cfg *config.Config) *Foundation {
 //  2. Start Minikube cluster (gets automatic IPs from Docker)
 //  3. Start NGINX Gateway (discovers minikube IP after it's running)
 //  4. Start Bind9 DNS
-//  5. Start NFS Server (tier >= 3 only)
+//  5. Start Minikube Mount (tier >= 3 only)
 //  6. Start Registry (tier >= 3 only, needs Bind9 for DNS)
 //
 // Error handling: Fails fast with clear errors, no automatic rollback.
@@ -99,12 +99,12 @@ func (f *Foundation) Start(ctx context.Context, tier int) error {
 
 	// Steps 5-6: Optional services for tier 3
 	if tier >= 3 {
-		// Step 5: Start NFS Server
-		ui.Step("Starting NFS server...")
-		if err := nfs.Start(ctx, f.cfg); err != nil {
-			return fmt.Errorf("failed to start NFS: %w", err)
+		// Step 5: Start Minikube Mount (models directory)
+		ui.Step("Starting minikube mount...")
+		if err := mount.Start(ctx, f.cfg); err != nil {
+			return fmt.Errorf("failed to start minikube mount: %w", err)
 		}
-		ui.Success("NFS server started")
+		ui.Success("Minikube mount started")
 
 		// Step 6: Start Registry (needs Bind9 for registry.local resolution)
 		ui.Step("Starting local registry...")
@@ -121,7 +121,7 @@ func (f *Foundation) Start(ctx context.Context, tier int) error {
 // Stop stops host services in reverse order (LIFO).
 // This preserves the nova network and minikube for faster restarts.
 //
-// Stop order: Registry → NFS → Bind9 → NGINX
+// Stop order: Registry → Mount → Bind9 → NGINX
 // Minikube and network are NOT stopped (must be stopped separately).
 func (f *Foundation) Stop(ctx context.Context) error {
 	ui.Header("Stopping Foundation Stack")
@@ -137,13 +137,13 @@ func (f *Foundation) Stop(ctx context.Context) error {
 		ui.Success("Registry stopped")
 	}
 
-	// Stop NFS
-	ui.Step("Stopping NFS...")
-	if err := nfs.Stop(ctx); err != nil {
-		ui.Warn("Failed to stop NFS: %v", err)
+	// Stop Minikube Mount
+	ui.Step("Stopping minikube mount...")
+	if err := mount.Stop(ctx); err != nil {
+		ui.Warn("Failed to stop minikube mount: %v", err)
 		errors = append(errors, err)
 	} else {
-		ui.Success("NFS stopped")
+		ui.Success("Minikube mount stopped")
 	}
 
 	// Stop Bind9
@@ -177,7 +177,7 @@ func (f *Foundation) Stop(ctx context.Context) error {
 // Delete removes host services and the nova network.
 // This is a destructive operation that removes all state.
 //
-// Delete order: Registry → NFS → Bind9 → NGINX → Nova Network
+// Delete order: Registry → Mount → Bind9 → NGINX → Nova Network
 // Note: Minikube must be deleted separately before calling this.
 func (f *Foundation) Delete(ctx context.Context) error {
 	ui.Header("Deleting Foundation Stack")
@@ -185,7 +185,7 @@ func (f *Foundation) Delete(ctx context.Context) error {
 	// Delete services (best effort, ignore errors)
 	ui.Step("Removing services...")
 	registry.Delete(ctx)
-	nfs.Delete(ctx)
+	mount.Delete(ctx)
 	bind9.Delete(ctx)
 	nginx.Delete(ctx)
 	ui.Success("Services removed")

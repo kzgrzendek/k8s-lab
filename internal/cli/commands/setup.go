@@ -2,21 +2,27 @@ package commands
 
 import (
 	"fmt"
+	"os"
 	"os/exec"
+	"strings"
 
 	"github.com/kzgrzendek/nova/internal/cli/ui"
 	"github.com/kzgrzendek/nova/internal/core/config"
 	"github.com/kzgrzendek/nova/internal/core/deployment/shared"
-	"github.com/kzgrzendek/nova/internal/setup/certificates"
+	pki "github.com/kzgrzendek/nova/internal/setup/certificates"
 	"github.com/kzgrzendek/nova/internal/setup/preflight"
 	"github.com/kzgrzendek/nova/internal/setup/system/dns"
 	"github.com/kzgrzendek/nova/internal/setup/system/sysctl"
+	"github.com/kzgrzendek/nova/internal/setup/system/systemd"
 	"github.com/spf13/cobra"
 )
 
 func newSetupCmd() *cobra.Command {
 	var skipDNS bool
 	var rootless bool
+	var gpuMode string
+	var profile string
+	var appProfiles string
 
 	cmd := &cobra.Command{
 		Use:   "setup",
@@ -29,19 +35,37 @@ func newSetupCmd() *cobra.Command {
   • Generating mkcert Root CA (requires sudo)
   • Creating initial configuration file
 
-This command should be run once before using 'nova start'.`,
+Resource profiles:
+  • minimal: 1 node, 6 CPUs, 12GB RAM (default, supports CPU and GPU modes)
+  • cluster: 3 nodes, 4 CPUs/node, 4GB RAM/node (GPU mode only)
+
+GPU modes:
+  • (none): CPU inference (default, slower but no GPU required)
+  • nvidia: NVIDIA GPU acceleration via CUDA
+
+App profiles (Tier 3 applications):
+  • openwebui: Chat interface with Open WebUI (default)
+  • lasuite: French government AI stack (OpenGateLLM + Conversations)
+  • lab: JupyterHub for ML development (default)
+  Multiple profiles can be combined: --app-profiles=openwebui,lab
+
+This command should be run once before using 'nova start'.
+Re-running setup with different --gpu or --profile requires 'nova delete' first.`,
 		RunE: func(cmd *cobra.Command, args []string) error {
-			return runSetup(cmd, skipDNS, rootless)
+			return runSetup(cmd, skipDNS, rootless, gpuMode, profile, appProfiles)
 		},
 	}
 
 	cmd.Flags().BoolVar(&skipDNS, "skip-dns", false, "skip DNS configuration (fail if resolvconf unavailable)")
 	cmd.Flags().BoolVar(&rootless, "rootless", false, "rootless mode - skip DNS and warn instead of failing")
+	cmd.Flags().StringVar(&gpuMode, "gpu", "", "GPU mode: nvidia (omit for CPU mode)")
+	cmd.Flags().StringVar(&profile, "profile", "", "resource profile: minimal (1 node) or cluster (3 nodes)")
+	cmd.Flags().StringVar(&appProfiles, "app-profiles", "", "app profiles to activate (comma-separated): openwebui,lasuite,lab")
 
 	return cmd
 }
 
-func runSetup(cmd *cobra.Command, skipDNS bool, rootless bool) error {
+func runSetup(cmd *cobra.Command, skipDNS bool, rootless bool, gpuMode string, profile string, appProfiles string) error {
 	ui.Header("NOVA Setup")
 
 	// Define setup steps
@@ -54,6 +78,7 @@ func runSetup(cmd *cobra.Command, skipDNS bool, rootless bool) error {
 		"Configure DNS",
 		"Install mkcert CA",
 		"Generate CA secret",
+		"Install shutdown hook",
 		"Save configuration",
 	}
 
@@ -122,6 +147,65 @@ func runSetup(cmd *cobra.Command, skipDNS bool, rootless bool) error {
 	// Step 4: Load or create config
 	progress.StartStep(currentStep)
 	cfg := config.LoadOrDefault()
+
+	// Determine requested profile (CLI flag or existing config)
+	requestedProfile := cfg.GetEffectiveResourceProfile()
+	if profile != "" {
+		switch profile {
+		case "minimal":
+			requestedProfile = config.ResourceProfileMinimal
+		case "cluster":
+			requestedProfile = config.ResourceProfileCluster
+		default:
+			progress.FailStep(currentStep, fmt.Errorf("invalid profile: %s", profile))
+			return fmt.Errorf("invalid profile: %s (use: minimal or cluster)", profile)
+		}
+	}
+
+	// Determine requested GPU mode (CLI flag or existing config)
+	requestedGPUMode := cfg.Minikube.GPUMode
+	if gpuMode != "" {
+		switch gpuMode {
+		case "nvidia":
+			requestedGPUMode = config.GPUModeNVIDIA
+		default:
+			progress.FailStep(currentStep, fmt.Errorf("invalid GPU mode: %s", gpuMode))
+			return fmt.Errorf("invalid GPU mode: %s (use: nvidia, or omit for CPU mode)", gpuMode)
+		}
+	}
+
+	// Check if cluster was deployed with different settings
+	if err := cfg.ValidateConfigChange(requestedProfile, requestedGPUMode); err != nil {
+		progress.FailStep(currentStep, err)
+		return err
+	}
+
+	// Apply requested settings
+	cfg.ResourceProfile = requestedProfile
+	cfg.Minikube.GPUMode = requestedGPUMode
+
+	// Parse and apply app profiles (CLI flag or use defaults)
+	if appProfiles != "" {
+		profiles := strings.Split(appProfiles, ",")
+		var validProfiles []config.AppProfileType
+		for _, p := range profiles {
+			p = strings.TrimSpace(p)
+			if p == "" {
+				continue
+			}
+			profileType := config.AppProfileType(p)
+			if err := cfg.ValidateAppProfile(profileType); err != nil {
+				progress.FailStep(currentStep, err)
+				return fmt.Errorf("invalid app profile '%s': %w", p, err)
+			}
+			validProfiles = append(validProfiles, profileType)
+		}
+		if len(validProfiles) > 0 {
+			cfg.SetActiveAppProfiles(validProfiles)
+			ui.Info("App profiles: %v", validProfiles)
+		}
+	}
+
 	progress.CompleteStep(currentStep)
 	currentStep++
 
@@ -129,13 +213,15 @@ func runSetup(cmd *cobra.Command, skipDNS bool, rootless bool) error {
 	progress.StartStep(currentStep)
 	gpuCfg, err := checker.CheckGPU(cmd.Context(), string(cfg.Minikube.GPUMode))
 	if err != nil {
-		return fmt.Errorf("GPU detection failed: %w (a GPU is required for LLM inference)", err)
+		// GPU check failed - this could be an unsupported mode or validation error
+		progress.FailStep(currentStep, err)
+		return fmt.Errorf("GPU configuration failed: %w", err)
 	}
-	// Store detected GPU mode in config
+	// Display detected/configured GPU mode
 	if gpuCfg.Mode == shared.ModeNVIDIA {
-		cfg.Minikube.GPUMode = config.GPUModeNVIDIA
-	} else if gpuCfg.Mode == shared.ModeIntel {
-		cfg.Minikube.GPUMode = config.GPUModeIntel
+		ui.Info("GPU mode: NVIDIA (CUDA acceleration enabled)")
+	} else {
+		ui.Info("GPU mode: CPU (inference will use CPU)")
 	}
 	progress.CompleteStep(currentStep)
 	currentStep++
@@ -228,9 +314,35 @@ func runSetup(cmd *cobra.Command, skipDNS bool, rootless bool) error {
 	progress.CompleteStep(currentStep)
 	currentStep++
 
-	// Step 9: Save config
+	// Step 9: Install shutdown hook (systemd user service)
+	progress.StartStep(currentStep)
+	if systemd.IsInstalled() {
+		ui.Info("Shutdown hook already installed")
+	} else {
+		// Get the current executable path for the systemd service
+		novaBinary, err := os.Executable()
+		if err != nil {
+			ui.Warn("Could not determine nova binary path: %v", err)
+			ui.Info("Skipping shutdown hook installation")
+		} else {
+			if err := systemd.Install(novaBinary); err != nil {
+				ui.Warn("Failed to install shutdown hook: %v", err)
+				ui.Info("Nova will not automatically stop on system shutdown/suspend")
+				ui.Info("You can manually run 'nova stop' before shutting down")
+			} else {
+				ui.Success("Shutdown hook installed (nova will stop on shutdown/suspend)")
+			}
+		}
+	}
+	progress.CompleteStep(currentStep)
+	currentStep++
+
+	// Step 10: Save config
 	progress.StartStep(currentStep)
 	cfg.State.Initialized = true
+	// Save deployed profile and GPU mode for change detection on re-setup
+	cfg.State.DeployedProfile = cfg.GetEffectiveResourceProfile()
+	cfg.State.DeployedGPUMode = cfg.Minikube.GPUMode
 	if err := cfg.Save(); err != nil {
 		progress.FailStep(currentStep, err)
 		return err
@@ -247,10 +359,12 @@ func runSetup(cmd *cobra.Command, skipDNS bool, rootless bool) error {
 	ui.Info("Configuration:")
 	ui.Info("DNS domains: %s, %s", cfg.DNS.Domain, cfg.DNS.AuthDomain)
 	ui.Info("Bind9 port: %d", cfg.DNS.Bind9Port)
-	totalCPUs := cfg.Minikube.Nodes * cfg.Minikube.CPUs
-	totalRAM := cfg.Minikube.Nodes * cfg.Minikube.Memory
-	ui.Info("Minikube: %d nodes, %d CPUs/node (%d total), %dMB RAM/node (%dMB total)",
-		cfg.Minikube.Nodes, cfg.Minikube.CPUs, totalCPUs, cfg.Minikube.Memory, totalRAM)
+	nodes, cpus, mem := config.ProfileTopology(cfg.GetEffectiveResourceProfile())
+	totalCPUs := nodes * cpus
+	totalRAM := nodes * mem
+	ui.Info("Profile: %s (%d nodes, %d CPUs/node [%d total], %dMB RAM/node [%dMB total])",
+		cfg.GetEffectiveResourceProfile(), nodes, cpus, totalCPUs, mem, totalRAM)
+	ui.Info("App profiles: %v", cfg.GetActiveAppProfiles())
 
 	return nil
 }

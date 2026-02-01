@@ -1,0 +1,115 @@
+# Conversations Helm values for Nova
+# Chart: suitenumerique/conversations
+# Docs: https://github.com/suitenumerique/conversations
+#
+# NOTE: This configuration is a placeholder. The actual chart structure
+# needs to be validated against the published conversations chart.
+# TODO: Validate and update when the chart is available.
+
+# Database configuration (CNPG-managed PostgreSQL - shared with OpenGateLLM)
+database:
+  host: lasuite-db-rw.conversations.svc.cluster.local
+  port: 5432
+  name: conversations
+  user: lasuite
+  existingSecret: lasuite-db-secret
+  secretKey: password
+
+# Redis configuration (Operator-managed Redis - shared with OpenGateLLM)
+redis:
+  host: lasuite-redis.conversations.svc.cluster.local
+  port: 6379
+
+# S3 storage configuration (Garage S3)
+s3:
+  endpoint: http://garage.garage.svc.cluster.local:3900
+  bucket: conversations
+  existingSecret: s3-credentials
+  accessKeyField: access-key
+  secretKeyField: secret-key
+
+# Backend configuration
+backend:
+  replicaCount: 1
+  image:
+    repository: lasuite/conversations-backend
+    tag: latest
+    pullPolicy: IfNotPresent
+
+  service:
+    type: ClusterIP
+    port: 80
+
+  # Environment variables
+  extraEnvVars:
+    - name: SSL_CERT_FILE
+      value: /etc/ssl/certs/nova-ca.pem
+    - name: REQUESTS_CA_BUNDLE
+      value: /etc/ssl/certs/nova-ca.pem
+
+  # CA Trust for internal HTTPS
+  extraVolumes:
+    - name: trusted-ca
+      secret:
+        secretName: nova-ca-secret
+        items:
+          - key: cert.pem
+            path: ca-bundle.pem
+
+  extraVolumeMounts:
+    - name: trusted-ca
+      mountPath: /etc/ssl/certs/nova-ca.pem
+      subPath: ca-bundle.pem
+      readOnly: true
+
+  resources:
+    requests:
+      cpu: "100m"
+      memory: "256Mi"
+    limits:
+      cpu: "500m"
+      memory: "512Mi"
+
+# Frontend configuration
+frontend:
+  replicaCount: 1
+  image:
+    repository: lasuite/conversations-frontend
+    tag: latest
+    pullPolicy: IfNotPresent
+
+  service:
+    type: ClusterIP
+    port: 80
+
+  resources:
+    requests:
+      cpu: "50m"
+      memory: "128Mi"
+    limits:
+      cpu: "200m"
+      memory: "256Mi"
+
+# LLM configuration - point to OpenGateLLM (which proxies to llm-d)
+llmConfiguration:
+  enabled: true
+  # Backend URL - uses OpenGateLLM as the gateway
+  backendUrl: "https://opengatellm.{{.Domain}}/v1"
+
+# OIDC/Authentication configuration
+auth:
+  enabled: true
+  oidc:
+    enabled: true
+    clientId: "conversations"
+    clientExistingSecret: "oidc"
+    clientExistingSecretKey: "client-secret"
+    providerUrl: "https://{{.AuthDomain}}/realms/nova/.well-known/openid-configuration"
+
+# Ingress disabled - using Envoy Gateway HTTPRoute instead
+ingress:
+  enabled: false
+  admin:
+    enabled: false
+  media:
+    enabled: false

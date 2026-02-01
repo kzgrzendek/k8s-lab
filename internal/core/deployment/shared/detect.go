@@ -3,10 +3,18 @@
 // This package contains code that is used across multiple deployment tiers,
 // such as GPU detection and validation:
 //   - Tier 0: GPU configuration and node labels during Minikube cluster creation
-//   - Tier 1: Determines whether to deploy NVIDIA GPU Operator or Intel Device Plugin
+//   - Tier 1: Determines whether to deploy NVIDIA GPU Operator (Intel/AMD support planned)
 //
-// GPU detection uses ghw to identify available GPU hardware (NVIDIA, Intel) and validates
+// GPU detection uses ghw to identify available GPU hardware and validates
 // that required drivers and container runtimes are properly configured.
+//
+// Currently supported GPU modes:
+//   - NVIDIA: Full support via GPU Operator
+//   - CPU: Fallback mode without GPU acceleration
+//
+// Planned GPU support (architecture in place):
+//   - Intel: Arc/integrated GPUs via Intel Device Plugins
+//   - AMD: ROCm support via AMD GPU Operator
 package shared
 
 import (
@@ -135,23 +143,20 @@ func (d *Detector) DetectGPUsWithGHW() ([]GPUInfo, error) {
 }
 
 // DetectMode detects the GPU mode based on available hardware and drivers.
-// Priority: NVIDIA first, then Intel.
+// Currently only NVIDIA GPUs are fully supported. Intel/AMD detection is preserved
+// for future implementation but returns ModeDisabled (falls back to CPU mode).
 func (d *Detector) DetectMode() (Mode, error) {
 	// Try ghw-based detection first
 	gpus, err := d.DetectGPUsWithGHW()
 	if err == nil && len(gpus) > 0 {
-		// Check for NVIDIA first (higher priority)
+		// Check for NVIDIA (currently the only fully supported GPU)
 		for _, gpu := range gpus {
 			if gpu.Vendor == VendorNVIDIA {
 				return ModeNVIDIA, nil
 			}
 		}
-		// Check for Intel
-		for _, gpu := range gpus {
-			if gpu.Vendor == VendorIntel {
-				return ModeIntel, nil
-			}
-		}
+		// Note: Intel/AMD detection preserved for future support
+		// Currently these fall through to CPU mode
 	}
 
 	// Fallback to nvidia-smi check if ghw didn't find anything
@@ -159,11 +164,7 @@ func (d *Detector) DetectMode() (Mode, error) {
 		return ModeNVIDIA, nil
 	}
 
-	// Fallback to Intel driver check
-	if hasIntel, err := d.HasIntelGPU(); err == nil && hasIntel {
-		return ModeIntel, nil
-	}
-
+	// No supported GPU found - will use CPU mode
 	return ModeDisabled, nil
 }
 
@@ -282,7 +283,7 @@ func (d *Detector) GetIntelGPUInfo() ([]string, error) {
 }
 
 // GetGPUConfig determines the GPU configuration based on user preference and system capabilities.
-// A GPU (NVIDIA or Intel) is required for LLM inference.
+// Supports NVIDIA GPU mode and CPU fallback. Intel/AMD support is planned for future releases.
 func GetGPUConfig(ctx context.Context, requestedMode string) (*Config, error) {
 	detector := NewDetector(ctx)
 
@@ -297,23 +298,21 @@ func GetGPUConfig(ctx context.Context, requestedMode string) (*Config, error) {
 		return nil, fmt.Errorf("failed to detect GPU: %w", err)
 	}
 
-	// If auto mode (default), use detected mode
+	// If auto mode (default), use detected mode or fall back to CPU
 	if requestedMode == "" || requestedMode == "auto" || requestedMode == "all" {
 		if detectedMode == ModeDisabled {
-			return nil, fmt.Errorf("no GPU detected. A GPU is required for LLM inference.\n\nChecked for:\n  - NVIDIA GPU: nvidia-smi not found or no GPU detected\n  - Intel GPU: i915/xe kernel modules not loaded\n\nTo fix:\n  - For NVIDIA: Install NVIDIA drivers and Container Toolkit\n  - For Intel: Ensure i915 or xe kernel module is loaded")
+			// No GPU detected - fall back to CPU mode (no longer an error)
+			cfg.Mode = ModeDisabled
+			cfg.Enabled = false
+			return cfg, nil
 		}
 		cfg.Mode = detectedMode
 		cfg.Enabled = true
 
-		// Validate the setup
-		switch detectedMode {
-		case ModeNVIDIA:
+		// Validate the setup for NVIDIA
+		if detectedMode == ModeNVIDIA {
 			if err := detector.ValidateNVIDIASetup(); err != nil {
 				return nil, fmt.Errorf("NVIDIA GPU detected but setup incomplete: %w", err)
-			}
-		case ModeIntel:
-			if err := detector.ValidateIntelSetup(); err != nil {
-				return nil, fmt.Errorf("Intel GPU detected but setup incomplete: %w", err)
 			}
 		}
 
@@ -324,20 +323,22 @@ func GetGPUConfig(ctx context.Context, requestedMode string) (*Config, error) {
 	switch requestedMode {
 	case "nvidia":
 		if err := detector.ValidateNVIDIASetup(); err != nil {
-			return nil, fmt.Errorf("NVIDIA mode requested but validation failed: %w\n\nTo fix:\n  1. Install NVIDIA drivers: sudo apt install nvidia-driver-550\n  2. Install NVIDIA Container Toolkit\n  3. Restart Docker: sudo systemctl restart docker\n\nOr use: nova start --gpu=intel (for Intel integrated/discrete GPU)", err)
+			return nil, fmt.Errorf("NVIDIA mode requested but validation failed: %w\n\nTo fix:\n  1. Install NVIDIA drivers: sudo apt install nvidia-driver-550\n  2. Install NVIDIA Container Toolkit\n  3. Restart Docker: sudo systemctl restart docker\n\nOr use: nova start --gpu=cpu (for CPU-only mode)", err)
 		}
 		cfg.Mode = ModeNVIDIA
 		cfg.Enabled = true
 
-	case "intel":
-		if err := detector.ValidateIntelSetup(); err != nil {
-			return nil, fmt.Errorf("Intel mode requested but validation failed: %w\n\nTo fix:\n  Ensure i915 or xe kernel module is loaded:\n  - lsmod | grep -E 'i915|xe'\n\nOr use: nova start --gpu=nvidia (for NVIDIA GPU)", err)
-		}
-		cfg.Mode = ModeIntel
-		cfg.Enabled = true
+	case "cpu":
+		// Explicit CPU mode - no GPU required
+		cfg.Mode = ModeDisabled
+		cfg.Enabled = false
+
+	case "intel", "amd":
+		// Intel/AMD support is planned but not yet implemented
+		return nil, fmt.Errorf("%s GPU mode is not yet supported.\n\nCurrently supported modes:\n  - nvidia: NVIDIA GPU with CUDA\n  - cpu: CPU-only inference (slower but works everywhere)\n  - auto: Auto-detect (NVIDIA if available, otherwise CPU)\n\nIntel/AMD GPU support is planned for a future release.", requestedMode)
 
 	default:
-		return nil, fmt.Errorf("unsupported GPU mode: %s (supported: auto, nvidia, intel)", requestedMode)
+		return nil, fmt.Errorf("unsupported GPU mode: %s (supported: auto, nvidia, cpu)", requestedMode)
 	}
 
 	return cfg, nil

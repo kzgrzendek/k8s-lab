@@ -1,0 +1,28 @@
+apiVersion: v1
+kind: PersistentVolume
+metadata:
+  name: pv-model-{{.ModelSlug}}
+  labels:
+    storage-tier: models
+    model-slug: {{.ModelSlug}}
+spec:
+  capacity:
+    storage: 100Gi
+  accessModes:
+    - ReadOnlyMany
+  persistentVolumeReclaimPolicy: Retain
+  # No storageClassName - we use selector-based binding
+  storageClassName: ""
+  hostPath:
+    # Path where minikube mount exposes host models directory
+    path: /mnt/nova/models/{{.ModelSlug}}
+    type: Directory
+  # Bind to the node elected for llm-d workloads
+  nodeAffinity:
+    required:
+      nodeSelectorTerms:
+        - matchExpressions:
+            - key: nova.local/llmd-node
+              operator: In
+              values:
+                - "true"

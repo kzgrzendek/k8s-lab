@@ -16,3 +16,6 @@ spec:
     backendRefs:
     - name: llmd-discovery
       port: 8200
+    # Increase timeout for slow CPU inference (default ~15s is too short)
+    timeouts:
+      request: 300s

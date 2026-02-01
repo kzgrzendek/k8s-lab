@@ -1,3 +1,22 @@
+# =============================================================================
+# PLANNED: Intel GPU Support (NOT YET IMPLEMENTED)
+# =============================================================================
+# This configuration file is preserved for future Intel GPU support.
+# It is NOT currently used by Nova. When attempting to use Intel GPU mode,
+# the system will fall back to CPU mode.
+#
+# To enable Intel GPU support in a future release:
+# 1. Implement deployIntelDevicePlugin() in tier1/tier1.go
+# 2. Move this file to the parent directory (helm/)
+# 3. Update inference.go to route to this file for GPUModeIntel
+# 4. Test with Intel Arc and integrated GPUs
+#
+# Hardware requirements:
+# - Intel Arc discrete GPU (A770, A750, etc.) or
+# - Intel integrated GPU with i915/xe driver
+# - Intel oneAPI Base Toolkit installed on host
+# =============================================================================
+
 multinode: false
 
 # Enable Intel GPU accelerator (i915 for integrated/older GPUs, xe for Arc)
@@ -34,11 +53,28 @@ decode:
 
   containers:
     - name: vllm
+      # IPEX-LLM: supports Intel iGPUs (UHD) + Arc discrete GPUs
       image: "{{.LLMDXpuImage}}"
-      modelCommand: vllmServe
+      # Use IPEX-LLM vLLM entrypoint instead of standard vllmServe
+      command:
+        - python
+        - -m
+        - ipex_llm.vllm.xpu.entrypoints.openai.api_server
       args:
+        - --model
+        - /model-cache/
+        - --served-model-name
+        - "{{.ModelName}}"
+        - --port
+        - "8200"
+        - --device
+        - xpu
+        - --load-in-low-bit
+        - fp8
         - --max-model-len
-        - "32768"
+        - "4096"
+        - --gpu-memory-utilization
+        - "0.8"
 
       env:
         - name: HF_TOKEN
@@ -47,9 +83,17 @@ decode:
               name: huggingface-token
               key: token
               optional: true
-        # Intel XPU specific: target device for vLLM
-        - name: VLLM_TARGET_DEVICE
-          value: "xpu"
+        # IPEX-LLM Intel XPU environment variables
+        - name: USE_XETLA
+          value: "OFF"
+        - name: SYCL_CACHE_PERSISTENT
+          value: "1"
+        - name: SYCL_PI_LEVEL_ZERO_USE_IMMEDIATE_COMMANDLISTS
+          value: "2"
+        - name: FI_PROVIDER
+          value: "shm"
+        - name: CCL_WORKER_COUNT
+          value: "1"
 
       ports:
         - containerPort: 8200

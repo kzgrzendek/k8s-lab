@@ -343,11 +343,14 @@ func ApplyURL(ctx context.Context, url string) error {
 // ApplyURLWithNamespace applies a Kubernetes manifest from a URL to a specific namespace.
 // This is useful when the manifest doesn't specify a namespace but needs to be deployed
 // to a particular namespace (e.g., operators that don't hardcode their namespace).
+// Uses server-side apply to handle large CRDs that exceed annotation size limits.
 func ApplyURLWithNamespace(ctx context.Context, url, namespace string) error {
 	ephemeralWriter := ui.PipeWriter()
 	defer ephemeralWriter.Done()
 
-	if err := exec.New(ctx, "kubectl", "apply", "-f", url, "-n", namespace).
+	// Use server-side apply with force-conflicts to handle large CRDs
+	// (e.g., CNPG operator has CRDs that exceed client-side annotation limits)
+	if err := exec.New(ctx, "kubectl", "apply", "--server-side", "--force-conflicts", "-f", url, "-n", namespace).
 		RunWithEphemeralOutput(ephemeralWriter); err != nil {
 		ephemeralWriter.KeepOnDone()
 		return fmt.Errorf("failed to apply manifest from %s to namespace %s: %w", url, namespace, err)

@@ -52,8 +52,12 @@ decode:
 
       resources:
         limits:
+          cpu: "2000m"
+          memory: "8Gi"
           nvidia.com/gpu: "1"
         requests:
+          cpu: "500m"
+          memory: "4Gi"
           nvidia.com/gpu: "1"
 
       startupProbe:

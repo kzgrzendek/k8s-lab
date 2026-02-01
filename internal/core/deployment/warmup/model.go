@@ -7,13 +7,11 @@ import (
 	"fmt"
 	"os"
 	"os/exec"
-	"path/filepath"
 	"strings"
 	"sync"
 
 	"github.com/kzgrzendek/nova/internal/cli/ui"
 	"github.com/kzgrzendek/nova/internal/core/config"
-	"github.com/kzgrzendek/nova/internal/host/nfs"
 )
 
 // ModelDownloadResult contains the result of a model download operation.
@@ -62,16 +60,10 @@ func StartModelDownloadAsync(ctx context.Context, cancelFunc context.CancelFunc,
 	}
 
 	// Prepare model directory
-	// Download to ~/.nova/share/nfs/models/{model-slug}/ for multi-model caching
-	// This path will be accessible via NFS as /nfs-export/models/{model-slug}
+	// Download to ~/.nova/share/models/{model-slug}/ for multi-model caching
+	// This path will be mounted into minikube nodes via minikube mount
 	modelSlug := cfg.GetModelSlug()
-	modelsPath, err := nfs.GetModelsPath(cfg)
-	if err != nil {
-		ui.Warn("Failed to get models path: %v", err)
-		return nil
-	}
-
-	d.modelPath = filepath.Join(modelsPath, modelSlug)
+	d.modelPath = cfg.GetModelPath(modelSlug)
 
 	// Check if model already exists and is complete
 	if isModelComplete(d.modelPath) {

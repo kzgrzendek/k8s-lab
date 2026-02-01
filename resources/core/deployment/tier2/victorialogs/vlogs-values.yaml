@@ -8,3 +8,11 @@ server:
   # Storage size for ingested logs
   persistentVolume:
     size: 10Gi
+
+  resources:
+    requests:
+      cpu: "25m"
+      memory: "64Mi"
+    limits:
+      cpu: "100m"
+      memory: "128Mi"

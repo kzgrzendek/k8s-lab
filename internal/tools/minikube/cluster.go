@@ -48,13 +48,13 @@ func StartCluster(ctx context.Context, cfg *config.Config) error {
 		"--install-addons=false",
 		"--driver", cfg.Minikube.Driver,
 		"--network", "nova", // Use nova network (created before cluster start)
-		"--cpus", fmt.Sprintf("%d", cfg.Minikube.CPUs),
-		"--memory", fmt.Sprintf("%d", cfg.Minikube.Memory),
+		"--cpus", fmt.Sprintf("%d", cfg.GetCPUs()),
+		"--memory", fmt.Sprintf("%d", cfg.GetMemory()),
 		"--container-runtime", "docker",
 		"--kubernetes-version", cfg.Minikube.KubernetesVersion,
 		"--network-plugin", "cni",
 		"--cni", "false",
-		"--nodes", fmt.Sprintf("%d", cfg.Minikube.Nodes),
+		"--nodes", fmt.Sprintf("%d", cfg.GetNodes()),
 		"--extra-config", "kubelet.node-ip=0.0.0.0",
 		"--extra-config", "kube-proxy.skip-headers=true",
 	}
@@ -63,6 +63,9 @@ func StartCluster(ctx context.Context, cfg *config.Config) error {
 	// Intel GPUs don't need minikube --gpus flag (they use device plugins)
 	if cfg.IsNVIDIAMode() {
 		args = append(args, "--gpus", "all")
+		ui.Info("NVIDIA GPU mode enabled - passing --gpus=all to minikube")
+	} else {
+		ui.Debug("GPU mode: %s (not NVIDIA, skipping --gpus flag)", cfg.Minikube.GPUMode)
 	}
 
 	// Configure Docker daemon for optimized image pulls
@@ -116,13 +119,15 @@ func Stop(ctx context.Context) error {
 	return nil
 }
 
-// Delete deletes the Minikube cluster.
+// Delete deletes the Minikube cluster with full purge.
+// The --purge flag ensures Docker volumes are deleted, preventing
+// old etcd data (Helm releases, secrets) from persisting across deletes.
 func Delete(ctx context.Context) error {
 	// Use ephemeral output for minikube delete
 	ephemeralWriter := ui.PipeWriter()
 	defer ephemeralWriter.Done()
 
-	if err := exec.New(ctx, "minikube", "-p", "nova", "delete").
+	if err := exec.New(ctx, "minikube", "-p", "nova", "delete", "--purge").
 		WithEnv(getEnglishLocale()).
 		RunWithEphemeralOutput(ephemeralWriter); err != nil {
 		ephemeralWriter.KeepOnDone()
@@ -220,64 +225,6 @@ func ConfigureRegistryDNS(ctx context.Context, cfg *config.Config) error {
 	}
 
 	ui.Success("✓ Configured registry DNS on all %d minikube nodes", len(nodes))
-	return nil
-}
-
-// InstallNFSClient installs NFS client utilities on all minikube nodes.
-// This allows nodes to mount NFS volumes for persistent storage.
-func InstallNFSClient(ctx context.Context, cfg *config.Config) error {
-	// Verify minikube is running
-	running, err := IsRunning(ctx)
-	if err != nil {
-		return fmt.Errorf("failed to check minikube status: %w", err)
-	}
-	if !running {
-		return fmt.Errorf("minikube is not running")
-	}
-
-	// Get all node names
-	nodes, err := GetNodeNames(ctx, cfg)
-	if err != nil {
-		return fmt.Errorf("failed to get node names: %w", err)
-	}
-
-	ui.Debug("Installing NFS client on minikube nodes...")
-
-	// Track success/failure for each node
-	successCount := 0
-	var lastError error
-
-	for _, node := range nodes {
-		ui.Debug("Installing NFS client on node %s...", node)
-
-		// Install nfs-common package (Debian/Ubuntu) - required for kernel NFS mounting
-		// Minikube uses Ubuntu, so we use apt-get
-		// Note: The entire command must be a single string for bash -c
-		installCmd := execCmd.CommandContext(ctx, "minikube", "-p", "nova", "ssh", "-n", node, "--",
-			"sudo", "bash", "-c", "'apt-get update -qq && apt-get install -y -qq nfs-common'")
-		setEnglishLocale(installCmd)
-
-		if output, err := installCmd.CombinedOutput(); err != nil {
-			lastError = fmt.Errorf("failed to install NFS client on node %s: %w", node, err)
-			ui.Error("✗ Failed to install NFS client on node %s: %v", node, err)
-			ui.Debug("Output: %s", string(output))
-			continue
-		}
-
-		ui.Info("✓ Installed NFS client on node %s", node)
-		successCount++
-	}
-
-	// Check if any nodes were successful
-	if successCount == 0 {
-		return fmt.Errorf("failed to install NFS client on any node: %w", lastError)
-	}
-	if successCount < len(nodes) {
-		ui.Warn("NFS client installed on %d/%d nodes", successCount, len(nodes))
-		return fmt.Errorf("NFS client installation incomplete (%d/%d nodes)", successCount, len(nodes))
-	}
-
-	ui.Success("✓ Installed NFS client on all %d minikube nodes", len(nodes))
 	return nil
 }
 
@@ -439,7 +386,7 @@ func ElectLLMDNode(ctx context.Context, cfg *config.Config) (string, error) {
 		return existingNodes[0], nil
 	}
 
-	nodeCount := cfg.Minikube.Nodes
+	nodeCount := cfg.GetNodes()
 	var electedNode string
 
 	if nodeCount == 1 {

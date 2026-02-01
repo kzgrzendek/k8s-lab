@@ -1,8 +1,9 @@
 multinode: false
 
 # Disable GPU accelerator for CPU mode
+# IMPORTANT: Must be "cpu", not "" - empty string defaults to "nvidia" in the chart
 accelerator:
-  type: ""
+  type: "cpu"
 
 modelArtifacts:
   name: "{{.ModelName}}"
@@ -28,6 +29,14 @@ routing:
 decode:
   create: true
   replicas: 1
+
+  # Parallelism settings for CPU mode (tensor=0 means no GPU tensor parallelism)
+  # Note: GPU resources are controlled by accelerator.type above, not tensor
+  parallelism:
+    tensor: 0
+    data: 1
+    dataLocal: 1
+    workers: 1
 
   nodeSelector:
     nova.local/node-type: cpu
@@ -57,10 +66,10 @@ decode:
       resources:
         limits:
           cpu: "8"
-          memory: "8Gi"
+          memory: "24Gi"
         requests:
           cpu: "4"
-          memory: "4Gi"
+          memory: "12Gi"
 
       startupProbe:
         httpGet:

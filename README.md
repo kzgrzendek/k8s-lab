@@ -411,6 +411,105 @@ replicaCount: 2
 
 This gives you **full flexibility** to customize Tier 3 applications without modifying NOVA's default files!
 
+### App Profiles
+
+NOVA supports **App Profiles** to select which Tier 3 applications to deploy. Profiles are cumulative and can be combined.
+
+#### Built-in Profiles
+
+| Profile     | Apps                           | Description                                  |
+|-------------|--------------------------------|----------------------------------------------|
+| `openwebui` | Open WebUI                     | Chat interface for LLM conversations         |
+| `lasuite`   | OpenGateLLM, Conversations     | French government AI stack (La Suite)        |
+| `lab`       | HELIX                          | JupyterHub for ML development                |
+
+**Note:** The llm-d inference engine is **always deployed** regardless of selected profiles.
+
+#### Default Profiles
+
+When no profiles are specified, NOVA activates: `openwebui` + `lab`
+
+#### CLI Usage
+
+```bash
+# Use default profiles (openwebui + lab)
+nova start
+
+# Deploy only Open WebUI
+nova start --app-profiles=openwebui
+
+# Deploy La Suite stack (French government AI)
+nova start --app-profiles=lasuite
+
+# Deploy all applications
+nova start --app-profiles=openwebui,lasuite,lab
+
+# Configure profiles during setup (persisted to config)
+nova setup --app-profiles=lasuite,lab
+```
+
+#### Configuration File
+
+Profiles can also be configured in `~/.nova/config.yaml`:
+
+```yaml
+appProfiles:
+  activeProfiles:
+    - openwebui
+    - lab
+
+  # Built-in profiles (do not modify)
+  profiles:
+    openwebui:
+      name: openwebui
+      description: Chat interface with Open WebUI
+      apps: [openwebui]
+    lasuite:
+      name: lasuite
+      description: French government AI stack
+      apps: [opengatellm, conversations]
+    lab:
+      name: lab
+      description: JupyterHub for ML development
+      apps: [helix]
+
+  # App definitions
+  apps:
+    openwebui:
+      name: openwebui
+      enabled: true
+      namespace: openwebui
+    helix:
+      name: helix
+      enabled: true
+      namespace: helix
+    opengatellm:
+      name: opengatellm
+      enabled: true
+      namespace: opengatellm
+    conversations:
+      name: conversations
+      enabled: true
+      namespace: conversations
+      dependencies: [opengatellm]  # Deployed after opengatellm
+```
+
+#### Custom Profiles
+
+You can define custom profiles in your configuration:
+
+```yaml
+appProfiles:
+  activeProfiles:
+    - myprofile
+
+  profiles:
+    myprofile:
+      name: myprofile
+      description: My custom application stack
+      apps: [openwebui, helix]
+```
+
 ## Debugging and Troubleshooting
 
 ### Export Logs

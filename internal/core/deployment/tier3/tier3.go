@@ -13,15 +13,40 @@ import (
 	k8s "github.com/kzgrzendek/nova/internal/tools/kubectl"
 )
 
-// DeployTier3 deploys tier 3: Application layer (llm-d, Open WebUI, HELIX).
+// DeployTier3 deploys tier 3: Application layer based on active app profiles.
+// llm-d (inference engine) is always deployed. Other apps depend on profiles.
 func DeployTier3(ctx context.Context, cfg *config.Config) error {
 	ui.Header("Tier 3: Application Layer")
 
-	// Add Helm repos
+	// Get apps to deploy from active profiles
+	apps, err := cfg.GetAppsToDeployFromProfiles()
+	if err != nil {
+		return fmt.Errorf("failed to resolve app profiles: %w", err)
+	}
+
+	// Display active profiles and apps
+	ui.Info("Active app profiles: %v", cfg.GetActiveAppProfiles())
+	appNames := make([]string, len(apps))
+	for i, app := range apps {
+		appNames[i] = app.Name
+	}
+	ui.Info("Apps to deploy: %v", appNames)
+
+	// Add Helm repos dynamically based on apps to deploy
 	repos := map[string]string{
-		"aphp-helix":         constants.HelmRepoAPHPHelix,
-		"llm-d-modelservice": constants.HelmRepoLLMD,
-		"open-webui":         constants.HelmRepoOpenWebUI,
+		"llm-d-modelservice": constants.HelmRepoLLMD, // Always needed
+	}
+	for _, app := range apps {
+		switch app.Name {
+		case "openwebui":
+			repos["open-webui"] = constants.HelmRepoOpenWebUI
+		case "helix":
+			repos["aphp-helix"] = constants.HelmRepoAPHPHelix
+		case "opengatellm":
+			repos["etalab-ia"] = constants.HelmRepoOpenGateLLM
+		case "conversations":
+			repos["suitenumerique"] = constants.HelmRepoConversations
+		}
 	}
 	if err := shared.AddHelmRepositories(ctx, repos); err != nil {
 		return fmt.Errorf("failed to add Tier 3 Helm repositories: %w", err)
@@ -30,48 +55,47 @@ func DeployTier3(ctx context.Context, cfg *config.Config) error {
 	// Note: llm-d node election now happens in Tier 0 (after node labeling)
 	// This ensures warmup can distribute images to the elected node during background operations
 
+	// Build dynamic step list: llm-d always + profile apps
 	steps := []string{
 		"llm-d Model Service",
 		"llm-d Inference Pool",
 		"llm-d Gateway & Routing",
-		"Open WebUI",
-		"HELIX JupyterHub",
+	}
+	for _, app := range apps {
+		steps = append(steps, fmt.Sprintf("Deploy %s", app.Name))
 	}
 	runner := shared.NewStepRunner(steps)
 
-	// 1. Deploy llm-d Model Service
+	// 1. Deploy llm-d Model Service (always)
 	if err := runner.RunStep("llm-d Model Service", func() error {
 		return deployLLMD(ctx, cfg)
 	}); err != nil {
 		return err
 	}
 
-	// 2. Deploy llm-d Inference Pool
+	// 2. Deploy llm-d Inference Pool (always)
 	if err := runner.RunStep("llm-d Inference Pool", func() error {
 		return deployLLMDInferencePool(ctx, cfg)
 	}); err != nil {
 		return err
 	}
 
-	// 3. Deploy llm-d Gateway & Routing
+	// 3. Deploy llm-d Gateway & Routing (always)
 	if err := runner.RunStep("llm-d Gateway & Routing", func() error {
 		return deployLLMDGatewayAndRouting(ctx, cfg)
 	}); err != nil {
 		return err
 	}
 
-	// 4. Deploy Open WebUI
-	if err := runner.RunStep("Open WebUI", func() error {
-		return deployOpenWebUI(ctx, cfg)
-	}); err != nil {
-		return err
-	}
-
-	// 5. Deploy HELIX
-	if err := runner.RunStep("HELIX JupyterHub", func() error {
-		return deployHelix(ctx, cfg)
-	}); err != nil {
-		return err
+	// 4+. Deploy profile apps conditionally
+	for _, app := range apps {
+		stepName := fmt.Sprintf("Deploy %s", app.Name)
+		appCopy := app // Capture for closure
+		if err := runner.RunStep(stepName, func() error {
+			return deployApp(ctx, cfg, appCopy)
+		}); err != nil {
+			return err
+		}
 	}
 
 	runner.Complete()
@@ -79,6 +103,22 @@ func DeployTier3(ctx context.Context, cfg *config.Config) error {
 	ui.Success("Application services are running")
 
 	return nil
+}
+
+// deployApp dispatches to the appropriate deployer based on app name.
+func deployApp(ctx context.Context, cfg *config.Config, app config.AppDefinition) error {
+	switch app.Name {
+	case "openwebui":
+		return deployOpenWebUI(ctx, cfg)
+	case "helix":
+		return deployHelix(ctx, cfg)
+	case "opengatellm":
+		return deployOpenGateLLM(ctx, cfg)
+	case "conversations":
+		return deployConversations(ctx, cfg)
+	default:
+		return fmt.Errorf("unknown app: %s", app.Name)
+	}
 }
 
 // deployLLMD deploys the llm-d model service with vLLM.
@@ -91,9 +131,9 @@ func deployLLMD(ctx context.Context, cfg *config.Config) error {
 		return err
 	}
 
-	// Create NFS-backed PV and PVC for the pre-downloaded model
-	// The model was downloaded to ~/.nova/share/nfs/models/{model-slug}/ during pre-warmup phase
-	// and is accessible via NFS mount from all nodes
+	// Create hostPath-backed PV and PVC for the pre-downloaded model
+	// The model was downloaded to ~/.nova/share/models/{model-slug}/ during pre-warmup phase
+	// and is accessible via minikube mount at /mnt/nova/models/{model-slug}
 	pvcName := "llm-model"
 	modelSlug := cfg.GetModelSlug()
 
@@ -101,18 +141,18 @@ func deployLLMD(ctx context.Context, cfg *config.Config) error {
 		"ModelSlug": modelSlug,
 	}
 
-	// Create model-specific PV (points to /nfs-export/models/{model-slug})
-	ui.Info("Creating NFS PersistentVolume for model: %s", modelSlug)
-	if err := shared.ApplyTemplate(ctx, "resources/core/deployment/tier1/nfs/pv-nfs-models.yaml", modelData); err != nil {
+	// Create model-specific PV (points to /mnt/nova/models/{model-slug})
+	ui.Info("Creating hostPath PersistentVolume for model: %s", modelSlug)
+	if err := shared.ApplyTemplate(ctx, "resources/core/deployment/tier3/llmd/pv/pv-model-hostpath.yaml", modelData); err != nil {
 		return fmt.Errorf("failed to create model PV: %w", err)
 	}
 
 	// Create PVC that binds to the model-specific PV
-	ui.Info("Creating NFS-backed PVC for model storage...")
-	if err := shared.ApplyTemplate(ctx, "resources/core/deployment/tier3/llmd/pvc/llm-model-nfs.yaml", modelData); err != nil {
+	ui.Info("Creating hostPath-backed PVC for model storage...")
+	if err := shared.ApplyTemplate(ctx, "resources/core/deployment/tier3/llmd/pvc/llm-model-hostpath.yaml", modelData); err != nil {
 		return fmt.Errorf("failed to create model PVC: %w", err)
 	}
-	ui.Success("NFS storage configured for model: %s", modelSlug)
+	ui.Success("Model storage configured: %s", modelSlug)
 
 	// Choose default values file based on GPU/CPU mode
 	defaultValuesPath := shared.GetLLMDValuesPath(cfg)
@@ -140,9 +180,9 @@ func deployLLMD(ctx context.Context, cfg *config.Config) error {
 		"ModelSlug":     modelSlug,
 		"ModelURI":      cfg.GetModelURI(),
 		"ModelPVCName":  pvcName, // Empty if no warmup, otherwise PVC name
-		"LLMDCudaImage": fmt.Sprintf("ghcr.io/llm-d/llm-d-cuda:%s", cfg.GetLLMDImageTag()),
-		"LLMDCpuImage":  fmt.Sprintf("ghcr.io/llm-d/llm-d-cpu:%s", cfg.GetLLMDImageTag()),
-		"LLMDXpuImage":  fmt.Sprintf("ghcr.io/llm-d/llm-d-xpu:%s", cfg.GetLLMDImageTag()),
+		"LLMDCudaImage": cfg.GetLLMDImage("nvidia"),
+		"LLMDCpuImage":  cfg.GetLLMDImage("cpu"),
+		"LLMDXpuImage":  cfg.GetLLMDImage("intel"),
 	}
 
 	// Deploy llm-d via Helm

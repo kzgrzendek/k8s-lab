@@ -12,7 +12,6 @@ import (
 	"github.com/kzgrzendek/nova/internal/core/deployment/shared"
 	"github.com/kzgrzendek/nova/internal/core/errors"
 	pki "github.com/kzgrzendek/nova/internal/setup/certificates"
-	"github.com/kzgrzendek/nova/internal/tools/crypto"
 	"github.com/kzgrzendek/nova/internal/tools/exec"
 	"github.com/kzgrzendek/nova/internal/tools/helm"
 	k8s "github.com/kzgrzendek/nova/internal/tools/kubectl"
@@ -28,6 +27,8 @@ func DeployTier1(ctx context.Context, cfg *config.Config) error {
 		"Cert Manager",
 		"Trust Manager",
 		"GPU Support",
+		"CNPG Operator",
+		"Redis Operator",
 		"Envoy AI Gateway",
 		"Envoy Gateway",
 		"Nova Namespace & RBAC",
@@ -86,7 +87,21 @@ func DeployTier1(ctx context.Context, cfg *config.Config) error {
 		return err
 	}
 
-	// Step 7: Envoy AI Gateway
+	// Step 7: CNPG Operator (CloudNative PostgreSQL - shared by Keycloak and LaSuite apps)
+	if err := runner.RunStep("CNPG Operator", func() error {
+		return deployCNPGOperator(ctx, cfg)
+	}); err != nil {
+		return err
+	}
+
+	// Step 8: Redis Operator (OT-CONTAINER-KIT - shared by Envoy Gateway and LaSuite apps)
+	if err := runner.RunStep("Redis Operator", func() error {
+		return deployRedisOperator(ctx, cfg)
+	}); err != nil {
+		return err
+	}
+
+	// Step 9: Envoy AI Gateway
 	if err := runner.RunStep("Envoy AI Gateway", func() error {
 		return deployEnvoyAIGateway(ctx, cfg)
 	}); err != nil {
@@ -223,7 +238,7 @@ func deployTrustManager(ctx context.Context, cfg *config.Config) error {
 	}
 
 	// Wait for Cilium to fully propagate network routing for the webhook
-	// The webhook endpoint is ready but iptables rules may not be fully in place
+	// The webhook endpoint is ready but eBPF datapath may not be fully in place
 	ui.Info("Waiting for webhook network routing to stabilize...")
 	select {
 	case <-ctx.Done():
@@ -328,30 +343,9 @@ func deployEnvoyGateway(ctx context.Context, cfg *config.Config) error {
 		return fmt.Errorf("failed to label envoy-gateway-system namespace: %w", err)
 	}
 
-	// Create Redis secret with a generated password
-	ui.Info("Creating Redis authentication secret...")
-	redisPassword, err := crypto.GenerateRandomPassword(32)
-	if err != nil {
-		return fmt.Errorf("failed to generate Redis password: %w", err)
-	}
-	if err := k8s.CreateSecret(ctx, "envoy-gateway-system", "redis", map[string]string{
-		"redis-password": redisPassword,
-	}); err != nil {
-		return fmt.Errorf("failed to create Redis secret: %w", err)
-	}
-
-	// Install Redis for rate limiting
-	if err := shared.DeployHelmChart(ctx, shared.HelmDeploymentOptions{
-		ReleaseName:    "redis-ha",
-		ChartRef:       cfg.Versions.Tier1.Redis.ChartRef(),
-		Version:        cfg.Versions.Tier1.Redis.GetVersion(),
-		Namespace:      "envoy-gateway-system",
-		ValuesPath:     "resources/core/deployment/tier1/redis/values.yaml",
-		Wait:           true,
-		TimeoutSeconds: 600,
-		InfoMessage:    "Installing Redis backend...",
-	}); err != nil {
-		return err
+	// Deploy Redis using the operator (mutualized infrastructure)
+	if err := deployEnvoyRedisCluster(ctx); err != nil {
+		return fmt.Errorf("failed to deploy Envoy Redis cluster: %w", err)
 	}
 
 	// Install Envoy Gateway using OCI
@@ -477,18 +471,14 @@ func setupNovaNamespace(ctx context.Context) error {
 }
 
 // deployGPUSupport deploys the appropriate GPU support based on GPU mode.
+// Currently supports NVIDIA via GPU Operator.
 func deployGPUSupport(ctx context.Context, cfg *config.Config) error {
-	gpuMode := cfg.GetGPUMode()
-
-	switch gpuMode {
-	case config.GPUModeNVIDIA:
+	if cfg.IsNVIDIAMode() {
 		return deployNVIDIAGPUOperator(ctx, cfg)
-	case config.GPUModeIntel:
-		return deployIntelDevicePlugin(ctx, cfg)
-	default:
-		ui.Info("GPU mode: auto (should be resolved during setup)")
-		return nil
 	}
+	// CPU mode - no GPU operator needed
+	ui.Info("GPU mode: CPU (no GPU operator needed)")
+	return nil
 }
 
 // deployNVIDIAGPUOperator deploys the NVIDIA GPU Operator.
@@ -516,10 +506,18 @@ func deployNVIDIAGPUOperator(ctx context.Context, cfg *config.Config) error {
 	})
 }
 
+// =============================================================================
+// PLANNED GPU SUPPORT (Not Yet Implemented)
+// =============================================================================
+// The following functions are preserved for future Intel/AMD GPU support.
+// They are currently not called but kept for reference and future implementation.
+
 // deployNodeFeatureDiscovery deploys Node Feature Discovery (NFD) for automatic hardware detection.
 // NFD labels nodes with hardware features like GPU vendor, model, and capabilities.
-// This is required for Intel Device Plugins to discover Intel GPUs.
+// This will be required for Intel/AMD Device Plugins to discover GPUs.
 // Reference: https://kubernetes-sigs.github.io/node-feature-discovery/
+//
+// TODO: Enable when Intel/AMD GPU support is implemented
 func deployNodeFeatureDiscovery(ctx context.Context, cfg *config.Config) error {
 	const nfdNamespace = "node-feature-discovery"
 
@@ -573,6 +571,8 @@ func deployNodeFeatureDiscovery(ctx context.Context, cfg *config.Config) error {
 // deployIntelDevicePlugin deploys the Intel GPU Device Plugin for Intel integrated/discrete GPUs.
 // This requires Node Feature Discovery (NFD) and Intel Device Plugins Operator to be installed first.
 // Reference: https://github.com/intel/intel-device-plugins-for-kubernetes/blob/main/INSTALL.md
+//
+// TODO: Enable when Intel GPU support is implemented
 func deployIntelDevicePlugin(ctx context.Context, cfg *config.Config) error {
 	ui.Info("GPU mode: Intel")
 
@@ -693,3 +693,11 @@ func isWebhookConnectivityError(err error) bool {
 		strings.Contains(errStr, "connection refused") ||
 		strings.Contains(errStr, "i/o timeout")
 }
+
+// deployAMDGPUPlugin would deploy the AMD GPU Device Plugin for AMD GPUs.
+// This is a placeholder for future AMD ROCm support.
+//
+// TODO: Implement when AMD GPU support is added
+// func deployAMDGPUPlugin(ctx context.Context, cfg *config.Config) error {
+// 	return fmt.Errorf("AMD GPU support not yet implemented")
+// }

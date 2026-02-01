@@ -211,9 +211,10 @@ func displayConfigSummary(cfg *config.Config, verbose bool) {
 	ui.Header("Configuration")
 
 	ui.Info("Cluster:")
-	ui.Info("Nodes: %d", cfg.Minikube.Nodes)
-	ui.Info("CPUs per node: %d", cfg.Minikube.CPUs)
-	ui.Info("Memory per node: %dMB", cfg.Minikube.Memory)
+	ui.Info("Profile: %s", cfg.GetEffectiveResourceProfile())
+	ui.Info("Nodes: %d", cfg.GetNodes())
+	ui.Info("CPUs per node: %d", cfg.GetCPUs())
+	ui.Info("Memory per node: %dMB", cfg.GetMemory())
 
 	if verbose {
 		ui.Info("")

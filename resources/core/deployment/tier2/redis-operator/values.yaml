@@ -1,0 +1,29 @@
+# OT-CONTAINER-KIT Redis Operator values for Nova
+# Chart: ot-helm/redis-operator
+# Docs: https://ot-container-kit.github.io/redis-operator/
+
+# Operator configuration
+redisOperator:
+  # Number of replicas (single instance for lab env)
+  replicas: 1
+
+  # Resource limits (conservative for lab)
+  resources:
+    requests:
+      cpu: "50m"
+      memory: "64Mi"
+    limits:
+      cpu: "200m"
+      memory: "256Mi"
+
+  # Webhook disabled for simplicity in lab env
+  webhook:
+    enabled: false
+
+# Monitoring disabled for minimal footprint
+monitoring:
+  enabled: false
+
+# Security context for lab environment
+securityContext:
+  runAsNonRoot: true

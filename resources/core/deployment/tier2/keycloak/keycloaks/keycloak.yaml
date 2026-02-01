@@ -7,7 +7,7 @@ spec:
   instances: 1
   db:
     vendor: postgres
-    host: postgres-db.keycloak.svc.cluster.local
+    host: keycloak-db-rw.keycloak.svc.cluster.local
     usernameSecret:
       name: keycloak-db-secret
       key: username
@@ -43,6 +43,13 @@ spec:
               claimName: keycloak-theme-pvc
         containers:
           - name: keycloak
+            resources:
+              requests:
+                cpu: "100m"
+                memory: "256Mi"
+              limits:
+                cpu: "500m"
+                memory: "768Mi"
             volumeMounts:
               - name: nova-theme
                 mountPath: /opt/keycloak/providers

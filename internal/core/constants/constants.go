@@ -23,6 +23,15 @@ const (
 	HelmRepoAPHPHelix       = "https://aphp.github.io/HELIX"
 	HelmRepoLLMD            = "https://llm-d-incubation.github.io/llm-d-modelservice"
 	HelmRepoOpenWebUI       = "https://helm.openwebui.com/"
+
+	// LaSuite repos (French government AI stack)
+	HelmRepoOpenGateLLM   = "https://etalab-ia.github.io/opengatellm-helm"
+	HelmRepoConversations = "https://suitenumerique.github.io/conversations"
+
+	// Infrastructure operators repos
+	HelmRepoOTRedis = "https://ot-container-kit.github.io/helm-charts/" // OT-CONTAINER-KIT Redis Operator
+	HelmRepoGarage  = "https://garagehq.deuxfleurs.fr/helm-charts/"     // Garage S3-compatible storage
+	HelmRepoQdrant  = "https://qdrant.github.io/qdrant-helm"            // Qdrant vector database
 )
 
 // --- Kubernetes Manifest URLs ---
@@ -65,7 +74,6 @@ const (
 	ImageBind9    = "ubuntu/bind9:latest"
 	ImageNginx    = "nginx:stable-alpine3.21-perl"
 	ImageRegistry = "registry:2.8.3"
-	ImageNFS      = "itsthenetwork/nfs-server-alpine:12"
 )
 
 // --- Container Names ---
@@ -73,7 +81,6 @@ const (
 	ContainerBind9    = "nova-bind9-dns"
 	ContainerNginx    = "nova-nginx-gateway"
 	ContainerRegistry = "nova-registry"
-	ContainerNFS      = "nova-nfs-server"
 )
 
 // --- Registry Configuration ---
@@ -83,11 +90,11 @@ const (
 	RegistryHost   = "registry.local:5000"
 )
 
-// --- NFS Configuration ---
+// --- Mount Configuration ---
 const (
-	NFSPort           = 2049
-	NFSStorageClass   = "nfs-models"
-	NFSProvisionerKey = "nfs.kubernetes.io/provisioner"
+	// MountPointModels is the path where models are mounted inside minikube nodes.
+	// This path is used by minikube mount to expose host models to the cluster.
+	MountPointModels = "/mnt/nova/models"
 )
 
 // --- Namespaces ---
@@ -106,16 +113,27 @@ const (
 	NamespaceVictoriaLogs    = "victorialogs"
 	NamespaceVictoriaMetrics = "victoriametrics"
 
+	// Infrastructure operator namespaces
+	NamespaceCNPG          = "cnpg-system"     // CloudNative PG operator
+	NamespaceRedisOperator = "redis-operator"  // OT-CONTAINER-KIT Redis operator
+	NamespaceGarage        = "garage"          // Garage S3-compatible storage
+
 	// Tier 3 namespaces
 	NamespaceLLMD      = "llmd"
 	NamespaceOpenWebUI = "openwebui"
 	NamespaceHelix     = "helix"
+
+	// LaSuite namespaces (French government AI stack)
+	NamespaceOpenGateLLM   = "opengatellm"
+	NamespaceConversations = "conversations"
+
+	// Vector database namespaces
+	NamespaceQdrant = "qdrant" // Qdrant vector database
 )
 
 // --- Storage Classes ---
 const (
 	StorageClassLocalPath = "local-path"
-	StorageClassNFS       = NFSStorageClass // Alias for consistency
 )
 
 // --- Installation Hints (URLs for documentation) ---
@@ -183,10 +201,12 @@ type OIDCClient struct {
 // OIDC client configurations for lab applications.
 // Secrets are generated once at program startup and remain constant for the session.
 var (
-	OIDCHubble    OIDCClient
-	OIDCGrafana   OIDCClient
-	OIDCHelix     OIDCClient
-	OIDCOpenWebUI OIDCClient
+	OIDCHubble        OIDCClient
+	OIDCGrafana       OIDCClient
+	OIDCHelix         OIDCClient
+	OIDCOpenWebUI     OIDCClient
+	OIDCOpenGateLLM   OIDCClient
+	OIDCConversations OIDCClient
 )
 
 func init() {
@@ -194,6 +214,8 @@ func init() {
 	OIDCGrafana = OIDCClient{ID: "grafana", Secret: mustGenerateSecret()}
 	OIDCHelix = OIDCClient{ID: "helix", Secret: mustGenerateSecret()}
 	OIDCOpenWebUI = OIDCClient{ID: "open-webui", Secret: mustGenerateSecret()}
+	OIDCOpenGateLLM = OIDCClient{ID: "opengatellm", Secret: mustGenerateSecret()}
+	OIDCConversations = OIDCClient{ID: "conversations", Secret: mustGenerateSecret()}
 }
 
 // mustGenerateSecret generates a random secret or panics on failure.

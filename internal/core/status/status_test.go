@@ -27,11 +27,9 @@ func TestNewChecker(t *testing.T) {
 func TestGetSystemStatus(t *testing.T) {
 	ctx := context.Background()
 	cfg := &config.Config{
+		ResourceProfile: config.ResourceProfileCluster,
 		Minikube: config.MinikubeConfig{
-			Nodes:   3,
-			CPUs:    4,
-			Memory:  8192,
-			GPUMode: config.GPUModeIntel,
+			GPUMode: config.GPUModeNVIDIA,
 		},
 		DNS: config.DNSConfig{
 			Domain:     "k8s.test",

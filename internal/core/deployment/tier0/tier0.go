@@ -35,13 +35,6 @@ func DeployTier0(ctx context.Context, cfg *config.Config) error {
 		ui.Info("Registry TLS verification may fail")
 	}
 
-	// Install NFS client on all nodes for persistent storage
-	ui.Step("Installing NFS client on nodes...")
-	if err := minikube.InstallNFSClient(ctx, cfg); err != nil {
-		ui.Warn("Failed to install NFS client: %v", err)
-		ui.Info("NFS-based storage may not work")
-	}
-
 	// Rename nova context to cluster-admin for consistency
 	// With --profile=nova, minikube creates a context named "nova" instead of "minikube"
 	if k8s.ContextExists(ctx, "nova") && !k8s.ContextExists(ctx, "cluster-admin") {
@@ -62,10 +55,11 @@ func DeployTier0(ctx context.Context, cfg *config.Config) error {
 	}
 
 	clusterMode := "multi-node"
-	if cfg.Minikube.Nodes == 1 {
+	nodeCount := cfg.GetNodes()
+	if nodeCount == 1 {
 		clusterMode = "single-node"
 	}
-	ui.Info("Cluster mode: %s (%d node%s)", clusterMode, cfg.Minikube.Nodes, plural(cfg.Minikube.Nodes))
+	ui.Info("Cluster mode: %s (%d node%s)", clusterMode, nodeCount, plural(nodeCount))
 
 	for _, node := range nodes {
 		if err := minikube.MountBPFFS(ctx, node); err != nil {
@@ -391,12 +385,6 @@ func deployLocalPathStorage(ctx context.Context, cfg *config.Config) error {
 	ui.Info("Applying standard storage class...")
 	if err := k8s.ApplyYAML(ctx, "resources/core/deployment/tier1/local-path-provisioner/storageclasses/standard.yaml"); err != nil {
 		return fmt.Errorf("failed to apply standard storage class: %w", err)
-	}
-
-	// Apply NFS models storage class (for tier 3 LLM model storage)
-	ui.Info("Applying NFS models storage class...")
-	if err := k8s.ApplyYAML(ctx, "resources/core/deployment/tier1/nfs/sc-nfs-models.yaml"); err != nil {
-		return fmt.Errorf("failed to apply NFS models storage class: %w", err)
 	}
 
 	// Patch configmap for custom storage directory

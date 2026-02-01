@@ -1,0 +1,95 @@
+# OpenGateLLM Helm values for Nova
+# Chart: etalab-ia/opengatellm-stack
+# Docs: https://github.com/etalab-ia/opengatellm-helm
+#
+# NOTE: This configuration is a placeholder. The actual chart structure
+# needs to be validated against the published opengatellm-stack chart.
+# TODO: Validate and update when the chart is available.
+
+# Database configuration (CNPG-managed PostgreSQL)
+database:
+  host: lasuite-db-rw.opengatellm.svc.cluster.local
+  port: 5432
+  name: opengatellm
+  user: lasuite
+  existingSecret: lasuite-db-secret
+  secretKey: password
+
+# Redis configuration (Operator-managed Redis)
+redis:
+  host: lasuite-redis.opengatellm.svc.cluster.local
+  port: 6379
+
+# Qdrant vector database configuration
+qdrant:
+  host: qdrant.qdrant.svc.cluster.local
+  port: 6333
+
+# API Service configuration
+api:
+  replicaCount: 1
+  service:
+    type: ClusterIP
+    port: 8000
+
+# Playground (UI) configuration
+playground:
+  enabled: true
+  service:
+    type: ClusterIP
+    port: 80
+
+# Backend LLM configuration - use Nova's llm-d service
+modelProviders:
+  vllm:
+    # Point to Nova's llm-d inference endpoint
+    endpoint: "https://llmd.internal.{{.Domain}}/v1"
+    # API key will be injected from secret
+    apiKeySecret:
+      name: "vllm-api-key"
+      key: "api-key"
+
+# OIDC/Authentication configuration
+auth:
+  enabled: true
+  oidc:
+    enabled: true
+    clientId: "opengatellm"
+    clientExistingSecret: "oidc"
+    clientExistingSecretKey: "client-secret"
+    providerUrl: "https://{{.AuthDomain}}/realms/nova/.well-known/openid-configuration"
+
+# CA Trust for internal HTTPS
+volumes:
+  - name: trusted-ca
+    secret:
+      secretName: nova-ca-secret
+      items:
+        - key: cert.pem
+          path: ca-bundle.pem
+
+volumeMounts:
+  - name: trusted-ca
+    mountPath: /etc/ssl/certs/nova-ca.pem
+    subPath: ca-bundle.pem
+    readOnly: true
+
+# Environment variables
+extraEnvVars:
+  - name: SSL_CERT_FILE
+    value: /etc/ssl/certs/nova-ca.pem
+  - name: REQUESTS_CA_BUNDLE
+    value: /etc/ssl/certs/nova-ca.pem
+
+# Resource limits (conservative for lab environment)
+resources:
+  requests:
+    cpu: "100m"
+    memory: "256Mi"
+  limits:
+    cpu: "500m"
+    memory: "512Mi"
+
+# Ingress disabled - using Envoy Gateway HTTPRoute instead
+ingress:
+  enabled: false

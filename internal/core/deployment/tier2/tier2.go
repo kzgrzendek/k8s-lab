@@ -66,12 +66,13 @@ func DeployTier2(ctx context.Context, cfg *config.Config) (*DeployResult, error)
 		return nil, fmt.Errorf("failed to add Tier 2 Helm repositories: %w", err)
 	}
 
+	// Note: CNPG and Redis operators are deployed in Tier 1 for infrastructure consistency
 	steps := []string{
 		"Kyverno Policy Engine",
 		"Keycloak Operator",
 		"Keycloak PostgreSQL Database",
-		"Keycloak IAM Instance",
 		"Keycloak Theme",
+		"Keycloak IAM Instance",
 		"Hubble Network Observability",
 		"VictoriaLogs Server",
 		"VictoriaLogs Collector",
@@ -93,9 +94,9 @@ func DeployTier2(ctx context.Context, cfg *config.Config) (*DeployResult, error)
 		return nil, err
 	}
 
-	// 3. Keycloak PostgreSQL
+	// 3. Keycloak PostgreSQL (CNPG-managed cluster - operator deployed in tier1)
 	if err := runner.RunStep("Keycloak PostgreSQL", func() error {
-		return deployKeycloakPostgreSQL(ctx)
+		return deployKeycloakCNPGCluster(ctx)
 	}); err != nil {
 		return nil, err
 	}
@@ -199,42 +200,6 @@ func deployKeycloakOperator(ctx context.Context, cfg *config.Config) error {
 		DeploymentName: "keycloak-operator",
 		TimeoutSeconds: 300,
 	})
-}
-
-// deployKeycloakPostgreSQL deploys PostgreSQL database for Keycloak.
-func deployKeycloakPostgreSQL(ctx context.Context) error {
-	pwd, err := shared.GetOrGenerateSecret(ctx, keycloakNamespace, "keycloak-db-secret", "password", constants.DefaultPasswordLength)
-	if err != nil {
-		return fmt.Errorf("failed to get or generate database password: %w", err)
-	}
-
-	// Create/Update database secret
-	ui.Info("Creating database credentials...")
-	if err := k8s.CreateSecret(ctx, keycloakNamespace, "keycloak-db-secret", map[string]string{
-		"username": "admin",
-		"password": pwd,
-	}); err != nil {
-		return fmt.Errorf("failed to create keycloak db secret: %w", err)
-	}
-
-	resources := []string{
-		"resources/core/deployment/tier2/keycloak/postgresql/statefulset.yaml",
-		"resources/core/deployment/tier2/keycloak/postgresql/service.yaml",
-	}
-
-	ui.Info("Deploying PostgreSQL StatefulSet and Service...")
-	for _, res := range resources {
-		if err := shared.ApplyTemplate(ctx, res, nil); err != nil {
-			return fmt.Errorf("failed to apply %s: %w", res, err)
-		}
-	}
-
-	ui.Info("Waiting for PostgreSQL to be ready...")
-	if err := k8s.WaitForStatefulSetReady(ctx, keycloakNamespace, "postgresql-db", 300); err != nil {
-		return fmt.Errorf("postgresql not ready: %w", err)
-	}
-
-	return nil
 }
 
 // deployKeycloakTheme installs the NOVA Keycloak theme by copying it to the PVC.
@@ -536,7 +501,7 @@ func deployVictoriaMetricsStack(ctx context.Context, cfg *config.Config) error {
 			"AuthDomain":   cfg.DNS.AuthDomain,
 			"IsGPUMode":    cfg.IsGPUMode(),
 			"IsNVIDIAMode": cfg.IsNVIDIAMode(),
-			"IsIntelMode":  cfg.IsIntelMode(),
+			"IsCPUMode":    cfg.IsCPUMode(),
 		},
 		Wait:           true,
 		TimeoutSeconds: 1200, // Increased to 20min to account for large image pulls, plugin installation, and initial startup

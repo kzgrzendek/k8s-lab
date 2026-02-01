@@ -8,6 +8,7 @@ import (
 	"fmt"
 	"os"
 	"path/filepath"
+	"syscall"
 
 	"github.com/kzgrzendek/nova/internal/cli/ui"
 	"github.com/kzgrzendek/nova/internal/core/config"
@@ -39,6 +40,9 @@ func Start(ctx context.Context, cfg *config.Config) error {
 	if err := os.MkdirAll(certDir, 0755); err != nil {
 		return fmt.Errorf("failed to create registry cert directory: %w", err)
 	}
+	if err := ensureUserOwnership(certDir); err != nil {
+		return fmt.Errorf("failed to ensure cert directory ownership: %w", err)
+	}
 	certPath := filepath.Join(certDir, "registry.crt")
 	keyPath := filepath.Join(certDir, "registry.key")
 
@@ -50,6 +54,9 @@ func Start(ctx context.Context, cfg *config.Config) error {
 
 	if err := os.MkdirAll(dataDir, 0755); err != nil {
 		return fmt.Errorf("failed to create registry data directory: %w", err)
+	}
+	if err := ensureUserOwnership(dataDir); err != nil {
+		return fmt.Errorf("failed to ensure data directory ownership: %w", err)
 	}
 
 	// Pre-create registry directory structure that the registry expects
@@ -81,24 +88,14 @@ func Start(ctx context.Context, cfg *config.Config) error {
 		ui.Debug("Using existing registry TLS certificate")
 	}
 
-	running, err := dockerClient.IsRunning(ctx, constants.ContainerRegistry)
-	if err != nil {
-		return fmt.Errorf("failed to check registry status: %w", err)
-	}
-
-	if running {
-		ui.Debug("Registry already running")
-		return nil
-	}
-
-	// Check if container exists but is stopped
+	// Always recreate registry container for idempotency (ensures fresh bind mounts)
 	exists, err := dockerClient.Exists(ctx, constants.ContainerRegistry)
 	if err != nil {
 		return fmt.Errorf("failed to check if registry exists: %w", err)
 	}
 
 	if exists {
-		ui.Debug("Registry container exists but is stopped, removing it...")
+		ui.Debug("Recreating registry container for fresh mounts...")
 		if err := dockerClient.Remove(ctx, constants.ContainerRegistry, true); err != nil {
 			return fmt.Errorf("failed to remove existing registry container: %w", err)
 		}
@@ -218,4 +215,33 @@ func getRegistryDataPath(cfg *config.Config) (string, error) {
 	}
 
 	return filepath.Join(homeDir, ".nova", "registry-data"), nil
+}
+
+// ensureUserOwnership checks if a directory is owned by the current user.
+// If owned by root (UID 0), it returns an error with instructions to fix.
+// This detects cases where Docker daemon creates bind mount dirs as root.
+func ensureUserOwnership(path string) error {
+	info, err := os.Stat(path)
+	if err != nil {
+		return nil // Directory doesn't exist, nothing to check
+	}
+
+	stat, ok := info.Sys().(*syscall.Stat_t)
+	if !ok {
+		return nil // Can't get ownership info, skip check
+	}
+
+	currentUID := uint32(os.Getuid())
+	if stat.Uid == currentUID {
+		return nil // Already owned by current user
+	}
+
+	// Directory is owned by someone else (likely root)
+	if stat.Uid == 0 {
+		currentGID := os.Getgid()
+		return fmt.Errorf("%s is owned by root - run: sudo chown -R %d:%d %s",
+			path, currentUID, currentGID, path)
+	}
+
+	return nil
 }

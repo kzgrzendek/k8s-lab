@@ -9,7 +9,9 @@ import (
 	"github.com/kzgrzendek/nova/internal/cli/ui"
 	"github.com/kzgrzendek/nova/internal/core/config"
 	"github.com/kzgrzendek/nova/internal/host/foundation"
+	"github.com/kzgrzendek/nova/internal/host/mount"
 	"github.com/kzgrzendek/nova/internal/setup/system/dns"
+	"github.com/kzgrzendek/nova/internal/setup/system/systemd"
 	"github.com/kzgrzendek/nova/internal/tools/minikube"
 	"github.com/spf13/cobra"
 )
@@ -79,44 +81,56 @@ func runDelete(cmd *cobra.Command, purge, yes, rootless bool) error {
 
 	// Define delete steps
 	steps := []string{
-		"Minikube Cluster",
-		"Foundation Stack",
+		"Cluster & Foundation",
 	}
 	if purge {
-		steps = append(steps, "DNS Configuration", "Configuration Directory")
+		steps = append(steps, "DNS Configuration", "Shutdown Hook", "Configuration Directory")
 	}
 
 	// Create progress tracker
 	progress := ui.NewStepProgress(steps)
 	currentStep := 0
 
-	// Step 1: Delete Minikube cluster
+	// Step 1: Delete Minikube cluster and Foundation Stack
+	// Both are cleaned up together to ensure complete cleanup even if one fails
 	progress.StartStep(currentStep)
+
+	// Kill any orphaned mount processes FIRST
+	// This ensures cleanup happens even if minikube delete fails or was interrupted previously
+	ui.Info("Stopping minikube mount processes...")
+	_ = mount.Delete(cmd.Context()) // Best effort, ignore errors
+
+	// Delete foundation containers BEFORE minikube
+	// This ensures they're cleaned up even if minikube delete fails
+	if cfg != nil {
+		ui.Info("Deleting foundation containers...")
+		foundationStack := foundation.New(cfg)
+		_ = foundationStack.Delete(cmd.Context()) // Best effort, continue even if fails
+	}
+
 	ui.Info("Deleting Minikube cluster...")
 	if err := minikube.Delete(cmd.Context()); err != nil {
 		progress.FailStep(currentStep, err)
 		return fmt.Errorf("failed to delete Minikube cluster: %w", err)
 	}
-	progress.CompleteStep(currentStep)
-	currentStep++
 
-	// Step 2: Delete Foundation Stack (NGINX, Bind9, NFS, Registry, nova network)
-	progress.StartStep(currentStep)
+	// Reset deployment state (allows profile/GPU mode changes without --purge)
+	// This preserves config, cached images, and models while allowing reconfiguration
 	if cfg != nil {
-		foundationStack := foundation.New(cfg)
-		if err := foundationStack.Delete(cmd.Context()); err != nil {
-			progress.FailStep(currentStep, err)
-			return fmt.Errorf("failed to delete foundation stack: %w", err)
+		cfg.State.LastDeployedTier = 0
+		cfg.State.DeployedProfile = ""
+		cfg.State.DeployedGPUMode = ""
+		if err := cfg.Save(); err != nil {
+			ui.Warn("Failed to reset deployment state: %v", err)
 		}
-	} else {
-		ui.Warn("Skipping foundation stack cleanup (config not available)")
 	}
+
 	progress.CompleteStep(currentStep)
 	currentStep++
 
 	// Purge configuration if requested
 	if purge {
-		// Step 3: Remove DNS configuration
+		// Step 2: Remove DNS configuration
 		progress.StartStep(currentStep)
 		if rootless {
 			ui.Info("Skipping DNS cleanup (--rootless mode)")
@@ -133,6 +147,21 @@ func runDelete(cmd *cobra.Command, purge, yes, rootless bool) error {
 			}
 			progress.CompleteStep(currentStep)
 		}
+		currentStep++
+
+		// Step 3: Remove shutdown hook (systemd service)
+		progress.StartStep(currentStep)
+		if systemd.IsInstalled() {
+			ui.Info("Removing shutdown hook...")
+			if err := systemd.Uninstall(); err != nil {
+				ui.Warn("Failed to remove shutdown hook: %v", err)
+			} else {
+				ui.Success("Shutdown hook removed")
+			}
+		} else {
+			ui.Info("Shutdown hook not installed")
+		}
+		progress.CompleteStep(currentStep)
 		currentStep++
 
 		// Step 4: Remove config directory

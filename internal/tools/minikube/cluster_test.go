@@ -94,65 +94,60 @@ func TestMinikubeStartArgs(t *testing.T) {
 		shouldHaveGPU bool
 	}{
 		{
-			name: "Basic configuration without GPU",
+			name: "Cluster profile with NVIDIA GPU",
 			cfg: &config.Config{
+				ResourceProfile: config.ResourceProfileCluster,
 				Minikube: config.MinikubeConfig{
 					Driver:            "docker",
-					CPUs:              4,
-					Memory:            8192,
-					Nodes:             3,
 					KubernetesVersion: "v1.28.0",
-					GPUMode:           config.GPUModeIntel,
+					GPUMode:           config.GPUModeNVIDIA,
 				},
 			},
 			expectedArgs: map[string]string{
 				"--driver":             "docker",
-				"--cpus":               "4",
-				"--memory":             "8192",
-				"--nodes":              "3",
+				"--cpus":               "4",     // cluster profile: 4 CPUs/node
+				"--memory":             "4096",  // cluster profile: 4GB/node
+				"--nodes":              "3",     // cluster profile: 3 nodes
 				"--kubernetes-version": "v1.28.0",
 				"--container-runtime":  "docker",
 				"--network-plugin":     "cni",
 				"--cni":                "false",
+				"--gpus":               "all",
 			},
-			shouldHaveGPU: false, // Intel mode doesn't need --gpus flag
+			shouldHaveGPU: true,
 		},
 		{
-			name: "Configuration with NVIDIA GPU",
+			name: "Minimal profile with NVIDIA GPU",
 			cfg: &config.Config{
+				ResourceProfile: config.ResourceProfileMinimal,
 				Minikube: config.MinikubeConfig{
 					Driver:            "docker",
-					CPUs:              8,
-					Memory:            16384,
-					Nodes:             1,
 					KubernetesVersion: "v1.29.0",
 					GPUMode:           config.GPUModeNVIDIA,
 				},
 			},
 			expectedArgs: map[string]string{
 				"--driver":             "docker",
-				"--cpus":               "8",
-				"--memory":             "16384",
-				"--nodes":              "1",
+				"--cpus":               "6",      // minimal profile: 6 CPUs
+				"--memory":             "12288",  // minimal profile: 12GB
+				"--nodes":              "1",      // minimal profile: 1 node
 				"--kubernetes-version": "v1.29.0",
 				"--gpus":               "all",
 			},
 			shouldHaveGPU: true,
 		},
 		{
-			name: "Single node configuration",
+			name: "Minimal profile CPU mode",
 			cfg: &config.Config{
+				ResourceProfile: config.ResourceProfileMinimal,
 				Minikube: config.MinikubeConfig{
 					Driver:            "docker",
-					CPUs:              2,
-					Memory:            4096,
-					Nodes:             1,
 					KubernetesVersion: "v1.27.0",
-					GPUMode:           config.GPUModeIntel,
+					// Empty GPUMode = CPU mode
 				},
 			},
 			expectedArgs: map[string]string{
-				"--nodes": "1",
+				"--nodes": "1", // minimal profile: 1 node
 			},
 			shouldHaveGPU: false,
 		},
@@ -165,13 +160,13 @@ func TestMinikubeStartArgs(t *testing.T) {
 				"start",
 				"--install-addons=false",
 				"--driver", tc.cfg.Minikube.Driver,
-				"--cpus", fmt.Sprintf("%d", tc.cfg.Minikube.CPUs),
-				"--memory", fmt.Sprintf("%d", tc.cfg.Minikube.Memory),
+				"--cpus", fmt.Sprintf("%d", tc.cfg.GetCPUs()),
+				"--memory", fmt.Sprintf("%d", tc.cfg.GetMemory()),
 				"--container-runtime", "docker",
 				"--kubernetes-version", tc.cfg.Minikube.KubernetesVersion,
 				"--network-plugin", "cni",
 				"--cni", "false",
-				"--nodes", fmt.Sprintf("%d", tc.cfg.Minikube.Nodes),
+				"--nodes", fmt.Sprintf("%d", tc.cfg.GetNodes()),
 				"--extra-config", "kubelet.node-ip=0.0.0.0",
 				"--extra-config", "kube-proxy.skip-headers=true",
 			}
@@ -259,26 +254,22 @@ func TestMinikubeConfigValidation(t *testing.T) {
 		reason  string
 	}{
 		{
-			name: "Valid minimum configuration",
+			name: "Valid minimal profile",
 			cfg: &config.Config{
+				ResourceProfile: config.ResourceProfileMinimal,
 				Minikube: config.MinikubeConfig{
 					Driver:            "docker",
-					CPUs:              2,
-					Memory:            2048,
-					Nodes:             1,
 					KubernetesVersion: "v1.28.0",
 				},
 			},
 			isValid: true,
 		},
 		{
-			name: "Valid multi-node configuration",
+			name: "Valid cluster profile",
 			cfg: &config.Config{
+				ResourceProfile: config.ResourceProfileCluster,
 				Minikube: config.MinikubeConfig{
 					Driver:            "docker",
-					CPUs:              4,
-					Memory:            8192,
-					Nodes:             3,
 					KubernetesVersion: "v1.29.0",
 				},
 			},
@@ -287,11 +278,9 @@ func TestMinikubeConfigValidation(t *testing.T) {
 		{
 			name: "Configuration with GPU",
 			cfg: &config.Config{
+				ResourceProfile: config.ResourceProfileMinimal,
 				Minikube: config.MinikubeConfig{
 					Driver:            "docker",
-					CPUs:              8,
-					Memory:            16384,
-					Nodes:             1,
 					KubernetesVersion: "v1.28.0",
 					GPUMode:           config.GPUModeNVIDIA,
 				},
@@ -301,11 +290,9 @@ func TestMinikubeConfigValidation(t *testing.T) {
 		{
 			name: "Empty driver",
 			cfg: &config.Config{
+				ResourceProfile: config.ResourceProfileMinimal,
 				Minikube: config.MinikubeConfig{
 					Driver:            "",
-					CPUs:              4,
-					Memory:            8192,
-					Nodes:             1,
 					KubernetesVersion: "v1.28.0",
 				},
 			},
@@ -313,32 +300,16 @@ func TestMinikubeConfigValidation(t *testing.T) {
 			reason:  "driver is required",
 		},
 		{
-			name: "Zero CPUs",
+			name: "Empty kubernetes version",
 			cfg: &config.Config{
+				ResourceProfile: config.ResourceProfileMinimal,
 				Minikube: config.MinikubeConfig{
 					Driver:            "docker",
-					CPUs:              0,
-					Memory:            8192,
-					Nodes:             1,
-					KubernetesVersion: "v1.28.0",
+					KubernetesVersion: "",
 				},
 			},
 			isValid: false,
-			reason:  "CPUs must be greater than 0",
-		},
-		{
-			name: "Zero memory",
-			cfg: &config.Config{
-				Minikube: config.MinikubeConfig{
-					Driver:            "docker",
-					CPUs:              4,
-					Memory:            0,
-					Nodes:             1,
-					KubernetesVersion: "v1.28.0",
-				},
-			},
-			isValid: false,
-			reason:  "memory must be greater than 0",
+			reason:  "kubernetes version is required",
 		},
 	}
 
@@ -350,18 +321,10 @@ func TestMinikubeConfigValidation(t *testing.T) {
 			if tc.cfg.Minikube.Driver == "" {
 				isValid = false
 			}
-			if tc.cfg.Minikube.CPUs <= 0 {
-				isValid = false
-			}
-			if tc.cfg.Minikube.Memory <= 0 {
-				isValid = false
-			}
-			if tc.cfg.Minikube.Nodes <= 0 {
-				isValid = false
-			}
 			if tc.cfg.Minikube.KubernetesVersion == "" {
 				isValid = false
 			}
+			// CPUs, Memory, Nodes are derived from profile - always valid
 
 			if isValid != tc.isValid {
 				if tc.isValid {

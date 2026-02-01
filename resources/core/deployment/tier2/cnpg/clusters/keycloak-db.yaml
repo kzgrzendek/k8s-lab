@@ -1,0 +1,39 @@
+apiVersion: postgresql.cnpg.io/v1
+kind: Cluster
+metadata:
+  name: keycloak-db
+  namespace: keycloak
+spec:
+  instances: 1
+
+  # Use minimal PostgreSQL image for lab environment
+  imageName: ghcr.io/cloudnative-pg/postgresql:16.4
+
+  # Primary update strategy (unsupervised for single-node)
+  primaryUpdateStrategy: unsupervised
+
+  # Storage configuration
+  storage:
+    size: 1Gi
+    storageClass: local-path
+
+  # Bootstrap configuration - initialize database
+  bootstrap:
+    initdb:
+      database: keycloak
+      owner: keycloak
+      secret:
+        name: keycloak-db-secret
+
+  # Resource limits (conservative for lab)
+  resources:
+    requests:
+      cpu: "100m"
+      memory: "256Mi"
+    limits:
+      cpu: "500m"
+      memory: "512Mi"
+
+  # Monitoring disabled for minimal footprint
+  monitoring:
+    enablePodMonitor: false

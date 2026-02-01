@@ -68,18 +68,11 @@ func (o *Orchestrator) Start() error {
 
 	// Start image warmup in background
 	var warmupImage string
-	imageTag := o.cfg.GetLLMDImageTag()
-	gpuMode := o.cfg.GetGPUMode()
-	switch gpuMode {
-	case config.GPUModeNVIDIA:
-		warmupImage = fmt.Sprintf("ghcr.io/llm-d/llm-d-cuda:%s", imageTag)
+	if o.cfg.IsNVIDIAMode() {
+		warmupImage = o.cfg.GetLLMDImage("nvidia")
 		ui.Info("Starting image warmup in background (NVIDIA GPU)...")
-	case config.GPUModeIntel:
-		// Intel XPU uses vLLM with oneAPI for Intel GPU acceleration
-		warmupImage = fmt.Sprintf("ghcr.io/llm-d/llm-d-xpu:%s", imageTag)
-		ui.Info("Starting image warmup in background (Intel XPU)...")
-	default:
-		warmupImage = fmt.Sprintf("ghcr.io/llm-d/llm-d-cpu:%s", imageTag)
+	} else {
+		warmupImage = o.cfg.GetLLMDImage("cpu")
 		ui.Info("Starting image warmup in background (CPU mode)...")
 	}
 

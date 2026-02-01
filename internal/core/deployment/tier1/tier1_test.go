@@ -343,6 +343,7 @@ func TestErrorMessages(t *testing.T) {
 }
 
 // TestConfigValidation tests configuration validation for tier 1.
+// GPU mode: NVIDIA. CPU mode: empty GPUMode.
 func TestConfigValidation(t *testing.T) {
 	testCases := []struct {
 		name      string
@@ -359,22 +360,13 @@ func TestConfigValidation(t *testing.T) {
 			expectGPU: true,
 		},
 		{
-			name: "Config with Intel GPU",
+			name: "Config with CPU mode (empty)",
 			cfg: &config.Config{
 				Minikube: config.MinikubeConfig{
-					GPUMode: config.GPUModeIntel,
+					// Empty GPUMode = CPU mode
 				},
 			},
-			expectGPU: true,
-		},
-		{
-			name: "Config with auto GPU mode",
-			cfg: &config.Config{
-				Minikube: config.MinikubeConfig{
-					GPUMode: config.GPUModeAuto,
-				},
-			},
-			expectGPU: false, // Auto mode returns false until resolved
+			expectGPU: false,
 		},
 	}
 

@@ -30,6 +30,11 @@ volumeMounts:
       readOnly: true
 
 extraEnvVars:
+  # Increase timeout for slow CPU inference (default: 300s = 5min)
+  # CPU mode generates ~6 tokens/sec, long responses can take 10+ minutes
+  - name: AIOHTTP_CLIENT_TIMEOUT
+    value: "900"
+
   - name: ENABLE_FORWARD_USER_INFO_HEADERS
     value: "True"
 
@@ -107,4 +112,12 @@ readinessProbe:
     port: http
   periodSeconds: 30
   failureThreshold: 3
+
+resources:
+  requests:
+    cpu: "100m"
+    memory: "1Gi"
+  limits:
+    cpu: "2000m"
+    memory: "2Gi"
 

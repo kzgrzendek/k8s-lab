@@ -28,6 +28,13 @@ jupyterhub:
     image:
       pullPolicy: "Always"
     baseUrl: "/jupyter"
+    resources:
+      requests:
+        cpu: "100m"
+        memory: "256Mi"
+      limits:
+        cpu: "500m"
+        memory: "1Gi"
     db:
       type: "sqlite-pvc"
       upgrade:

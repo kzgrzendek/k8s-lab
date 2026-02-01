@@ -2,6 +2,9 @@ package commands
 
 import (
 	"fmt"
+	"os"
+	"os/exec"
+	"strings"
 
 	"github.com/kzgrzendek/nova/internal/cli/ui"
 	"github.com/kzgrzendek/nova/internal/core/config"
@@ -13,7 +16,6 @@ import (
 	"github.com/kzgrzendek/nova/internal/host/foundation"
 	pki "github.com/kzgrzendek/nova/internal/setup/certificates"
 	k8s "github.com/kzgrzendek/nova/internal/tools/kubectl"
-	"github.com/kzgrzendek/nova/internal/tools/minikube"
 	"github.com/spf13/cobra"
 )
 
@@ -22,10 +24,10 @@ func newStartCmd() *cobra.Command {
 	var hfToken string
 	var model string
 	var gpuMode string
-	var nodes int
-	var cpus int
-	var memory int
+	var profile string
 	var k8sVersion string
+	var background bool
+	var appProfiles string
 
 	cmd := &cobra.Command{
 		Use:   "start",
@@ -33,12 +35,12 @@ func newStartCmd() *cobra.Command {
 		Long: `Starts the NOVA lab environment up to the specified tier:
 
   Tier 0 - Minikube Cluster (prerequisite):
-    • 3-node Kubernetes cluster with GPU support
+    • Kubernetes cluster with GPU support
     • BPF filesystem for eBPF/Cilium
     • Control-plane taints and GPU configuration
 
   Tier 1 - Infrastructure:
-    • Cilium CNI, Falco, GPU Operator (NVIDIA or Intel)
+    • Cilium CNI, Falco, GPU Operator (NVIDIA)
     • Cert-Manager, Trust-Manager
     • Envoy Gateway, Envoy AI Gateway
 
@@ -46,33 +48,100 @@ func newStartCmd() *cobra.Command {
     • Kyverno, Keycloak (IAM)
     • Hubble, Victoria Metrics/Logs
 
-  Tier 3 - Applications:
-    • llm-d (LLM serving), Open WebUI, HELIX
+  Tier 3 - Applications (based on --app-profiles):
+    • llm-d (always deployed - inference engine)
+    • openwebui: Open WebUI (chat interface)
+    • lasuite: OpenGateLLM + Conversations
+    • lab: HELIX JupyterHub
 
 Tiers are cumulative: --tier=2 deploys Tier 0, 1, and 2.
 Use --tier=0 to deploy only the Minikube cluster.
 
-Resource recommendations:
-  • Multi-node (3 nodes): 4 CPUs, 4GB RAM per node
-  • Single-node: 6+ CPUs, 8+ GB RAM (everything runs on one node)`,
+Resource profiles:
+  • minimal: 1 node, 6 CPUs, 12GB RAM (CPU mode) or 6GB RAM (GPU mode)
+  • cluster: 3 nodes, 4 CPUs/node, 4GB RAM/node (GPU inference only)
+
+App profiles (Tier 3, default: openwebui,lab):
+  • openwebui: Chat interface with Open WebUI
+  • lasuite: French government AI stack (OpenGateLLM + Conversations)
+  • lab: JupyterHub for ML development (HELIX)`,
 		RunE: func(cmd *cobra.Command, args []string) error {
-			return runStart(cmd, tier, hfToken, model, gpuMode, nodes, cpus, memory, k8sVersion)
+			if background {
+				return runStartBackground(cmd, tier, hfToken, model, gpuMode, profile, k8sVersion, appProfiles)
+			}
+			return runStart(cmd, tier, hfToken, model, gpuMode, profile, k8sVersion, appProfiles)
 		},
 	}
 
 	cmd.Flags().IntVar(&tier, "tier", 3, "deploy up to this tier (0, 1, 2, or 3)")
 	cmd.Flags().StringVar(&hfToken, "hf-token", "", "Hugging Face token for faster model downloads (optional)")
 	cmd.Flags().StringVar(&model, "model", "", "Hugging Face model to serve (e.g., google/gemma-3-4b-it, default: use config)")
-	cmd.Flags().StringVar(&gpuMode, "gpu", "", "GPU mode: auto (detect), nvidia, intel, or cpu (default: use config)")
-	cmd.Flags().IntVar(&nodes, "nodes", -1, "number of total nodes (1 master + N-1 workers, -1 = use config)")
-	cmd.Flags().IntVar(&cpus, "cpus", -1, "CPUs per node (-1 = use config, recommend 6+ for single-node)")
-	cmd.Flags().IntVar(&memory, "memory", -1, "memory in MB per node (-1 = use config, recommend 8192+ for single-node)")
+	cmd.Flags().StringVar(&gpuMode, "gpu", "", "enable NVIDIA GPU acceleration (use: --gpu=nvidia)")
+	cmd.Flags().StringVar(&profile, "profile", "", "resource profile: minimal (1 node) or cluster (3 nodes), default: use config")
 	cmd.Flags().StringVar(&k8sVersion, "k8s-version", "", "Kubernetes version for minikube (e.g., v1.33.5, default: use config)")
+	cmd.Flags().BoolVar(&background, "background", false, "run start in the background (detached from terminal)")
+	cmd.Flags().StringVar(&appProfiles, "app-profiles", "", "app profiles to deploy (comma-separated): openwebui,lasuite,lab (default: openwebui,lab)")
 
 	return cmd
 }
 
-func runStart(cmd *cobra.Command, targetTier int, hfToken string, model string, gpuMode string, nodes int, cpus int, memory int, k8sVersion string) error {
+// runStartBackground spawns nova start as a detached background process.
+func runStartBackground(cmd *cobra.Command, targetTier int, hfToken string, model string, gpuMode string, profile string, k8sVersion string, appProfiles string) error {
+	// Get the current executable
+	executable, err := os.Executable()
+	if err != nil {
+		return fmt.Errorf("failed to get executable path: %w", err)
+	}
+
+	// Build arguments for the background process (without --background to avoid recursion)
+	args := []string{"start", fmt.Sprintf("--tier=%d", targetTier)}
+	if hfToken != "" {
+		args = append(args, fmt.Sprintf("--hf-token=%s", hfToken))
+	}
+	if model != "" {
+		args = append(args, fmt.Sprintf("--model=%s", model))
+	}
+	if gpuMode != "" {
+		args = append(args, fmt.Sprintf("--gpu=%s", gpuMode))
+	}
+	if profile != "" {
+		args = append(args, fmt.Sprintf("--profile=%s", profile))
+	}
+	if k8sVersion != "" {
+		args = append(args, fmt.Sprintf("--k8s-version=%s", k8sVersion))
+	}
+	if appProfiles != "" {
+		args = append(args, fmt.Sprintf("--app-profiles=%s", appProfiles))
+	}
+
+	// Create log file for background output
+	logFile := config.LogFilePath("nova-start")
+	f, err := os.Create(logFile)
+	if err != nil {
+		return fmt.Errorf("failed to create log file: %w", err)
+	}
+
+	// Start the process detached
+	bgCmd := exec.Command(executable, args...)
+	bgCmd.Stdout = f
+	bgCmd.Stderr = f
+	// Detach from parent process group
+	bgCmd.SysProcAttr = nil // Will be set by Start() to create new process group
+
+	if err := bgCmd.Start(); err != nil {
+		f.Close()
+		return fmt.Errorf("failed to start background process: %w", err)
+	}
+
+	ui.Success("NOVA starting in background (PID: %d)", bgCmd.Process.Pid)
+	ui.Info("Log file: %s", logFile)
+	ui.Info("Use 'nova status' to check progress")
+	ui.Info("Use 'tail -f %s' to follow logs", logFile)
+
+	return nil
+}
+
+func runStart(cmd *cobra.Command, targetTier int, hfToken string, model string, gpuMode string, profile string, k8sVersion string, appProfiles string) error {
 	if targetTier < 0 || targetTier > 3 {
 		return fmt.Errorf("tier must be 0, 1, 2, or 3 (got %d)", targetTier)
 	}
@@ -90,40 +159,51 @@ func runStart(cmd *cobra.Command, targetTier int, hfToken string, model string, 
 	if model != "" {
 		cfg.LLM.Model = model
 	}
+	if profile != "" {
+		switch profile {
+		case "minimal":
+			cfg.ResourceProfile = config.ResourceProfileMinimal
+			ui.Info("Using 'minimal' profile: 1 node, 6 CPUs, 12GB RAM")
+		case "cluster":
+			cfg.ResourceProfile = config.ResourceProfileCluster
+			ui.Info("Using 'cluster' profile: 3 nodes, 4 CPUs/node, 4GB RAM/node")
+		default:
+			return fmt.Errorf("invalid profile: %s (use: minimal or cluster)", profile)
+		}
+	}
 	if gpuMode != "" {
 		switch gpuMode {
 		case "nvidia":
 			cfg.Minikube.GPUMode = config.GPUModeNVIDIA
-			ui.Info("GPU mode set to NVIDIA via --gpu flag")
-		case "intel":
-			cfg.Minikube.GPUMode = config.GPUModeIntel
-			ui.Info("GPU mode set to Intel via --gpu flag")
-		case "cpu":
-			cfg.Minikube.GPUMode = config.GPUModeCPU
-			ui.Info("GPU mode set to CPU-only via --gpu flag")
-		case "auto":
-			cfg.Minikube.GPUMode = config.GPUModeAuto
-			ui.Info("GPU mode set to auto-detect via --gpu flag")
+			ui.Info("GPU mode: NVIDIA (CUDA acceleration enabled)")
 		default:
-			return fmt.Errorf("invalid GPU mode: %s (use: auto, nvidia, intel, or cpu)", gpuMode)
+			return fmt.Errorf("invalid GPU mode: %s (use: nvidia)", gpuMode)
 		}
-	}
-	if nodes > 0 {
-		cfg.Minikube.Nodes = nodes
-		ui.Info("Using %d total nodes (%d master + %d workers)", nodes, 1, nodes-1)
-	}
-	if cpus > 0 {
-		cfg.Minikube.CPUs = cpus
-		ui.Info("Using %d CPUs per node", cpus)
-	}
-	if memory > 0 {
-		cfg.Minikube.Memory = memory
-		ui.Info("Using %dMB RAM per node", memory)
 	}
 	if k8sVersion != "" {
 		cfg.Versions.Kubernetes = k8sVersion
 		cfg.Minikube.KubernetesVersion = k8sVersion
 		ui.Info("Using Kubernetes version %s", k8sVersion)
+	}
+
+	// Parse and apply app profiles (CLI flag overrides config)
+	if appProfiles != "" {
+		profiles := strings.Split(appProfiles, ",")
+		var validProfiles []config.AppProfileType
+		for _, p := range profiles {
+			p = strings.TrimSpace(p)
+			if p == "" {
+				continue
+			}
+			profileType := config.AppProfileType(p)
+			if err := cfg.ValidateAppProfile(profileType); err != nil {
+				return fmt.Errorf("invalid app profile '%s': %w", p, err)
+			}
+			validProfiles = append(validProfiles, profileType)
+		}
+		if len(validProfiles) > 0 {
+			cfg.SetActiveAppProfiles(validProfiles)
+		}
 	}
 
 	if !cfg.State.Initialized {
@@ -139,14 +219,10 @@ func runStart(cmd *cobra.Command, targetTier int, hfToken string, model string, 
 		return fmt.Errorf("mkcert CA not found - run 'nova setup' again to reinstall")
 	}
 
-	// Check for resource warnings (especially important for single-node mode)
-	if warnings := cfg.ValidateResourcesForMode(); len(warnings) > 0 {
-		ui.Warn("Resource configuration warnings:")
-		for _, w := range warnings {
-			ui.Warn("  • %s", w)
-		}
-		ui.Info("Edit ~/.nova/config.yaml to adjust cpus/memory, then run 'minikube -p nova delete' and restart")
-		ui.Info("")
+	// Show profile info if not already displayed via --profile flag
+	if profile == "" {
+		nodes, cpus, mem := config.ProfileTopology(cfg.GetEffectiveResourceProfile())
+		ui.Info("Using '%s' profile: %d node(s), %d CPUs, %dGB RAM", cfg.GetEffectiveResourceProfile(), nodes, cpus, mem/1024)
 	}
 
 	ui.Header("Starting NOVA (Tier 0-%d)", targetTier)
@@ -193,33 +269,20 @@ func runStart(cmd *cobra.Command, targetTier int, hfToken string, model string, 
 		deployCtx = warmupOrch.Context()
 	}
 
-	// Check if cluster is already running
-	running, err := minikube.IsRunning(deployCtx)
-	if err != nil {
-		ui.Warn("Failed to check cluster status: %v", err)
-	}
-
 	// Step 3: Tier 0: Configure Minikube cluster (already started by Foundation Stack)
 	progress.StartStep(currentStep)
-	if !running {
-		// Check if warmup failed and cancelled context
-		if deployCtx.Err() != nil {
-			progress.FailStep(currentStep, deployCtx.Err())
-			return fmt.Errorf("deployment cancelled due to warmup failure: %w", deployCtx.Err())
-		}
-		if err := tier0.DeployTier0(deployCtx, cfg); err != nil {
-			progress.FailStep(currentStep, err)
-			return fmt.Errorf("failed to deploy tier 0: %w", err)
-		}
-		progress.CompleteStep(currentStep)
-	} else {
-		ui.Info("Minikube cluster already running - applying configuration")
-		if err := tier0.DeployTier0(deployCtx, cfg); err != nil {
-			progress.FailStep(currentStep, err)
-			return fmt.Errorf("failed to deploy tier 0: %w", err)
-		}
-		progress.CompleteStep(currentStep)
+
+	// Check if warmup failed and cancelled context
+	if deployCtx.Err() != nil {
+		progress.FailStep(currentStep, deployCtx.Err())
+		return fmt.Errorf("deployment cancelled due to warmup failure: %w", deployCtx.Err())
 	}
+
+	if err := tier0.DeployTier0(deployCtx, cfg); err != nil {
+		progress.FailStep(currentStep, err)
+		return fmt.Errorf("failed to deploy tier 0: %w", err)
+	}
+	progress.CompleteStep(currentStep)
 	currentStep++
 
 	// Deploy higher tiers
@@ -319,11 +382,24 @@ func displayDeploymentSummary(cfg *config.Config, targetTier int, tier2Result *t
 		ui.Info("  Grafana: https://grafana.%s", cfg.DNS.Domain)
 	}
 
-	// Tier 3 URLs
+	// Tier 3 URLs (based on active app profiles)
 	if targetTier >= 3 {
 		ui.Info("  llm-d API: https://llmd.internal.%s/v1", cfg.DNS.Domain)
-		ui.Info("  Open WebUI: https://chat.%s", cfg.DNS.Domain)
-		ui.Info("  HELIX: https://helix.%s", cfg.DNS.Domain)
+		// Show URLs based on active app profiles
+		if cfg.IsAppEnabled("openwebui") {
+			ui.Info("  Open WebUI: https://chat.%s", cfg.DNS.Domain)
+		}
+		if cfg.IsAppEnabled("helix") {
+			ui.Info("  HELIX: https://helix.%s", cfg.DNS.Domain)
+		}
+		if cfg.IsAppEnabled("opengatellm") {
+			ui.Info("  OpenGateLLM: https://opengatellm.%s", cfg.DNS.Domain)
+		}
+		if cfg.IsAppEnabled("conversations") {
+			ui.Info("  Conversations: https://conversations.%s", cfg.DNS.Domain)
+		}
+		ui.Info("")
+		ui.Info("Active app profiles: %v", cfg.GetActiveAppProfiles())
 	}
 
 	// Display Keycloak credentials if Tier 2 was deployed
