@@ -211,7 +211,13 @@
       "Bash(helm pull:*)",
       "Bash(do wc -l \"$f\")",
       "Bash(minikube -p nova stop:*)",
-      "Bash(minikube -p nova start --driver=docker --container-runtime=containerd --cni=cilium)"
+      "Bash(minikube -p nova start --driver=docker --container-runtime=containerd --cni=cilium)",
+      "Bash(GOROOT=/usr/local/go PATH=/usr/local/go/bin:$PATH go build:*)",
+      "WebFetch(domain:artifacthub.io)",
+      "WebFetch(domain:raw.githubusercontent.com)",
+      "Bash(minikube mount:*)",
+      "Bash(minikube addons list:*)",
+      "Bash(pgrep:*)"
     ]
   }
 }

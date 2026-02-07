@@ -4,26 +4,36 @@
 
 # Operator configuration
 redisOperator:
-  # Number of replicas (single instance for lab env)
-  replicas: 1
+  # Webhook enabled for CR validation (prod-like)
+  webhook: true
 
-  # Resource limits (conservative for lab)
-  resources:
-    requests:
-      cpu: "50m"
-      memory: "64Mi"
-    limits:
-      cpu: "200m"
-      memory: "256Mi"
+# Number of replicas (single instance for lab env)
+replicas: 1
 
-  # Webhook disabled for simplicity in lab env
-  webhook:
-    enabled: false
+# Resource limits (conservative for lab)
+resources:
+  requests:
+    cpu: "50m"
+    memory: "64Mi"
+  limits:
+    cpu: "200m"
+    memory: "256Mi"
 
-# Monitoring disabled for minimal footprint
-monitoring:
+# Cert-manager subchart disabled - we use global cert-manager
+# Certificate is created separately in certificates/webhook-cert.yaml
+certmanager:
   enabled: false
 
+# Don't create issuer - we use external Certificate resource
+issuer:
+  create: false
+
+# Certificate secret name (must match our Certificate's secretName)
+certificate:
+  secretName: webhook-server-cert
+
 # Security context for lab environment
+podSecurityContext: {}
+
 securityContext:
   runAsNonRoot: true

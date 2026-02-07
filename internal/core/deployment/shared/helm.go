@@ -133,6 +133,22 @@ func ApplyTemplate(ctx context.Context, templatePath string, data any) error {
 	return nil
 }
 
+// ApplyTemplateServerSide processes a template file and applies it using server-side apply.
+// Use this for resources not originally created with kubectl apply (e.g., CoreDNS configmap
+// created by kubeadm) to avoid the "missing last-applied-configuration annotation" warning.
+func ApplyTemplateServerSide(ctx context.Context, templatePath string, data any) error {
+	rendered, err := RenderTemplate(templatePath, data)
+	if err != nil {
+		return err
+	}
+
+	if err := k8s.ApplyYAMLContentServerSide(ctx, rendered); err != nil {
+		return fmt.Errorf("failed to apply manifest: %w", err)
+	}
+
+	return nil
+}
+
 // ApplyTemplateWithRetry processes a template file and applies it to the cluster with retry logic.
 // This is useful when applying manifests that depend on webhooks that might not be fully ready
 // (e.g., trust-manager webhook after Cilium CNI setup).

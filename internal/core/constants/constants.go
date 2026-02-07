@@ -71,23 +71,14 @@ const (
 
 // --- Container Images ---
 const (
-	ImageBind9    = "ubuntu/bind9:latest"
-	ImageNginx    = "nginx:stable-alpine3.21-perl"
-	ImageRegistry = "registry:2.8.3"
+	ImageBind9 = "ubuntu/bind9:latest"
+	ImageNginx = "nginx:stable-alpine3.21-perl"
 )
 
 // --- Container Names ---
 const (
-	ContainerBind9    = "nova-bind9-dns"
-	ContainerNginx    = "nova-nginx-gateway"
-	ContainerRegistry = "nova-registry"
-)
-
-// --- Registry Configuration ---
-const (
-	RegistryPort   = 5000
-	RegistryDomain = "registry.local"
-	RegistryHost   = "registry.local:5000"
+	ContainerBind9 = "nova-bind9-dns"
+	ContainerNginx = "nova-nginx-gateway"
 )
 
 // --- Mount Configuration ---

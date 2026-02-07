@@ -92,7 +92,7 @@ func runDelete(cmd *cobra.Command, purge, yes, rootless bool) error {
 	currentStep := 0
 
 	// Step 1: Delete Minikube cluster and Foundation Stack
-	// Both are cleaned up together to ensure complete cleanup even if one fails
+	// Order: containers → minikube → network (network must be removed last)
 	progress.StartStep(currentStep)
 
 	// Kill any orphaned mount processes FIRST
@@ -100,18 +100,25 @@ func runDelete(cmd *cobra.Command, purge, yes, rootless bool) error {
 	ui.Info("Stopping minikube mount processes...")
 	_ = mount.Delete(cmd.Context()) // Best effort, ignore errors
 
-	// Delete foundation containers BEFORE minikube
+	// Delete foundation containers BEFORE minikube (but NOT the network yet)
 	// This ensures they're cleaned up even if minikube delete fails
+	var foundationStack *foundation.Foundation
 	if cfg != nil {
 		ui.Info("Deleting foundation containers...")
-		foundationStack := foundation.New(cfg)
-		_ = foundationStack.Delete(cmd.Context()) // Best effort, continue even if fails
+		foundationStack = foundation.New(cfg)
+		foundationStack.DeleteContainers(cmd.Context()) // Best effort
 	}
 
+	// Delete minikube cluster (this disconnects it from the nova network)
 	ui.Info("Deleting Minikube cluster...")
 	if err := minikube.Delete(cmd.Context()); err != nil {
 		progress.FailStep(currentStep, err)
 		return fmt.Errorf("failed to delete Minikube cluster: %w", err)
+	}
+
+	// Now remove the nova network (after minikube is deleted)
+	if foundationStack != nil {
+		_ = foundationStack.DeleteNetwork(cmd.Context()) // Best effort
 	}
 
 	// Reset deployment state (allows profile/GPU mode changes without --purge)
@@ -167,11 +174,16 @@ func runDelete(cmd *cobra.Command, purge, yes, rootless bool) error {
 		// Step 4: Remove config directory
 		progress.StartStep(currentStep)
 		ui.Info("Removing configuration directory...")
-		if err := os.RemoveAll(config.ConfigDir()); err != nil {
+		configDir := config.ConfigDir()
+		if err := os.RemoveAll(configDir); err != nil {
+			if os.IsPermission(err) {
+				progress.FailStep(currentStep, err)
+				return fmt.Errorf("failed to remove configuration directory (permission denied).\nFix with: sudo rm -rf %s", configDir)
+			}
 			progress.FailStep(currentStep, err)
 			return fmt.Errorf("failed to remove configuration directory: %w", err)
 		}
-		ui.Success("Removed %s", config.ConfigDir())
+		ui.Success("Removed %s", configDir)
 		progress.CompleteStep(currentStep)
 		currentStep++
 	}

@@ -2,7 +2,7 @@
 //
 // The warmup phase runs in parallel with tier 0-2 deployment to optimize startup time:
 //   - Model download: Downloads LLM models from Hugging Face to NFS storage
-//   - Image warmup: Pre-pulls heavy container images to minikube nodes (GPU mode only)
+//   - Image warmup: Pre-pulls heavy container images to minikube nodes
 //
 // Warmup operations use context cancellation for fail-fast behavior: if any warmup
 // operation fails, the entire deployment is cancelled immediately.
@@ -25,7 +25,7 @@ type Orchestrator struct {
 	cfg    *config.Config
 
 	waitForModelDownload func() (*ModelDownloadResult, error)
-	waitForImageWarmup   func() (*ImageWarmupResult, error)
+	waitForImageWarmups  []func() (*ImageWarmupResult, error)
 
 	mu      sync.Mutex
 	started bool
@@ -36,9 +36,10 @@ type Orchestrator struct {
 func New(ctx context.Context, cfg *config.Config) *Orchestrator {
 	warmupCtx, cancel := context.WithCancel(ctx)
 	return &Orchestrator{
-		ctx:    warmupCtx,
-		cancel: cancel,
-		cfg:    cfg,
+		ctx:                 warmupCtx,
+		cancel:              cancel,
+		cfg:                 cfg,
+		waitForImageWarmups: make([]func() (*ImageWarmupResult, error), 0),
 	}
 }
 
@@ -66,19 +67,21 @@ func (o *Orchestrator) Start() error {
 		ui.Info("Model download skipped (no model configured)")
 	}
 
-	// Start image warmup in background
-	var warmupImage string
-	if o.cfg.IsNVIDIAMode() {
-		warmupImage = o.cfg.GetLLMDImage("nvidia")
-		ui.Info("Starting image warmup in background (NVIDIA GPU)...")
-	} else {
-		warmupImage = o.cfg.GetLLMDImage("cpu")
-		ui.Info("Starting image warmup in background (CPU mode)...")
+	// Collect images to warmup based on active profiles
+	imagesToWarmup := o.getImagesToWarmup()
+
+	// Start image warmups in parallel
+	for _, img := range imagesToWarmup {
+		ui.Info("Starting image warmup: %s", img.name)
+		waitFn := StartImageWarmupAsync(o.ctx, o.cancel, o.cfg, img.image)
+		if waitFn != nil {
+			o.waitForImageWarmups = append(o.waitForImageWarmups, waitFn)
+			ui.Success("Image warmup started: %s", img.name)
+		}
 	}
 
-	o.waitForImageWarmup = StartImageWarmupAsync(o.ctx, o.cancel, o.cfg, warmupImage)
-	if o.waitForImageWarmup != nil {
-		ui.Success("Image warmup started in background")
+	if len(o.waitForImageWarmups) == 0 {
+		ui.Info("No images to warmup")
 	}
 
 	ui.Success("Warmup operations running in background")
@@ -86,6 +89,44 @@ func (o *Orchestrator) Start() error {
 
 	o.started = true
 	return nil
+}
+
+// imageWarmupSpec defines an image to warmup with a friendly name.
+type imageWarmupSpec struct {
+	name  string // Friendly name for logging (e.g., "llmd-cuda", "open-webui")
+	image string // Full image reference (e.g., "ghcr.io/llm-d/llm-d-cuda:v0.4.0")
+}
+
+// getImagesToWarmup returns the list of images to warmup based on config and active profiles.
+func (o *Orchestrator) getImagesToWarmup() []imageWarmupSpec {
+	var images []imageWarmupSpec
+
+	// Always warmup the llmd image
+	if o.cfg.IsNVIDIAMode() {
+		images = append(images, imageWarmupSpec{
+			name:  "llmd-cuda",
+			image: o.cfg.GetLLMDImage("nvidia"),
+		})
+	} else {
+		images = append(images, imageWarmupSpec{
+			name:  "llmd-cpu",
+			image: o.cfg.GetLLMDImage("cpu"),
+		})
+	}
+
+	// Warmup Open WebUI if it's in the active profiles
+	if o.cfg.IsAppEnabled("openwebui") {
+		// Get version from config
+		openwebuiImage := o.cfg.GetOpenWebUIImage()
+		if openwebuiImage != "" {
+			images = append(images, imageWarmupSpec{
+				name:  "open-webui",
+				image: openwebuiImage,
+			})
+		}
+	}
+
+	return images
 }
 
 // Wait blocks until all warmup operations complete.
@@ -113,10 +154,10 @@ func (o *Orchestrator) Wait() error {
 		}
 	}
 
-	// Wait for image warmup
-	if o.waitForImageWarmup != nil {
-		ui.Step("Waiting for image warmup to complete...")
-		imageResult, err := o.waitForImageWarmup()
+	// Wait for all image warmups
+	for i, waitFn := range o.waitForImageWarmups {
+		ui.Step("Waiting for image warmup %d/%d to complete...", i+1, len(o.waitForImageWarmups))
+		imageResult, err := waitFn()
 		if err != nil {
 			ui.Error("Image warmup failed: %v", err)
 			return fmt.Errorf("image warmup failed: %w", err)

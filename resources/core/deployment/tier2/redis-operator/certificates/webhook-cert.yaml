@@ -1,0 +1,32 @@
+# Certificate for Redis Operator webhook
+# Uses the global cert-manager with nova-issuer ClusterIssuer
+apiVersion: cert-manager.io/v1
+kind: Certificate
+metadata:
+  name: redis-operator-webhook
+  namespace: redis-operator
+spec:
+  secretName: webhook-server-cert
+  duration: 8760h  # 1 year
+  renewBefore: 720h  # 30 days
+  subject:
+    organizations:
+      - nova
+  isCA: false
+  privateKey:
+    algorithm: RSA
+    size: 2048
+    rotationPolicy: Always
+  usages:
+    - server auth
+    - digital signature
+    - key encipherment
+  dnsNames:
+    - redis-operator
+    - redis-operator.redis-operator
+    - redis-operator.redis-operator.svc
+    - redis-operator.redis-operator.svc.cluster.local
+  issuerRef:
+    name: nova-issuer
+    kind: ClusterIssuer
+    group: cert-manager.io

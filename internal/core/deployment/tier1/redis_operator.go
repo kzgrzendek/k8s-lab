@@ -4,6 +4,7 @@ package tier1
 import (
 	"context"
 	"fmt"
+	"time"
 
 	"github.com/kzgrzendek/nova/internal/cli/ui"
 	"github.com/kzgrzendek/nova/internal/core/config"
@@ -25,16 +26,54 @@ func deployRedisOperator(ctx context.Context, cfg *config.Config) error {
 		return fmt.Errorf("failed to add Redis Operator Helm repository: %w", err)
 	}
 
-	return shared.DeployHelmChart(ctx, shared.HelmDeploymentOptions{
-		ReleaseName:     "redis-operator",
-		ChartRef:        cfg.Versions.Tier2.RedisOperator.ChartRef(),
-		Version:         cfg.Versions.Tier2.RedisOperator.GetVersion(),
-		Namespace:       constants.NamespaceRedisOperator,
-		ValuesPath:      "resources/core/deployment/tier2/redis-operator/values.yaml",
-		Wait:            true,
-		TimeoutSeconds:  300,
-		CreateNamespace: true,
-	})
+	// Pre-create namespace to ensure it exists before Helm install
+	if err := k8s.CreateNamespace(ctx, constants.NamespaceRedisOperator); err != nil {
+		return fmt.Errorf("failed to create redis-operator namespace: %w", err)
+	}
+
+	// Apply webhook certificate using global cert-manager
+	// This must be done before Helm install so the webhook secret exists
+	ui.Info("Creating webhook certificate...")
+	if err := k8s.ApplyYAML(ctx, "resources/core/deployment/tier2/redis-operator/certificates/webhook-cert.yaml"); err != nil {
+		return fmt.Errorf("failed to apply webhook certificate: %w", err)
+	}
+
+	// Wait for certificate to be ready (cert-manager will create the secret)
+	ui.Info("Waiting for webhook certificate to be issued...")
+	if err := k8s.WaitForCondition(ctx, constants.NamespaceRedisOperator, "certificate.cert-manager.io/redis-operator-webhook", "Ready", 60); err != nil {
+		return fmt.Errorf("webhook certificate not ready: %w", err)
+	}
+
+	// Deploy with retry - webhook may not be immediately ready
+	var lastErr error
+	for attempt := 1; attempt <= 3; attempt++ {
+		if attempt > 1 {
+			ui.Info("Retrying Redis Operator install (attempt %d/3)...", attempt)
+			// Wait before retry to allow webhook to become ready
+			select {
+			case <-ctx.Done():
+				return ctx.Err()
+			case <-time.After(10 * time.Second):
+			}
+		}
+
+		lastErr = shared.DeployHelmChart(ctx, shared.HelmDeploymentOptions{
+			ReleaseName:    "redis-operator",
+			ChartRef:       cfg.Versions.Tier2.RedisOperator.ChartRef(),
+			Version:        cfg.Versions.Tier2.RedisOperator.GetVersion(),
+			Namespace:      constants.NamespaceRedisOperator,
+			ValuesPath:     "resources/core/deployment/tier2/redis-operator/values.yaml",
+			Wait:           true,
+			TimeoutSeconds: 300,
+		})
+		if lastErr == nil {
+			return nil
+		}
+
+		ui.Warn("Redis Operator install failed: %v", lastErr)
+	}
+
+	return fmt.Errorf("failed to install redis-operator: %w", lastErr)
 }
 
 // deployEnvoyRedisCluster deploys a Redis instance for Envoy Gateway rate limiting.
@@ -62,14 +101,12 @@ func deployEnvoyRedisCluster(ctx context.Context) error {
 		return fmt.Errorf("failed to apply envoy-redis cluster: %w", err)
 	}
 
-	// Wait for Redis to be ready
+	// Wait for Redis StatefulSet to be ready
+	// Note: OT-Container-Kit Redis Operator doesn't set standard Kubernetes conditions,
+	// so we wait for the StatefulSet directly instead of using kubectl wait --for=condition
 	ui.Info("Waiting for Envoy Redis to be ready...")
-	if err := k8s.WaitForCondition(ctx, envoyNamespace, "redis.redis.redis.opstreelabs.in/envoy-redis", "Ready", 180); err != nil {
-		// If condition wait fails, try waiting for the statefulset as fallback
-		ui.Warn("Condition wait failed, trying StatefulSet wait...")
-		if err := k8s.WaitForStatefulSetReady(ctx, envoyNamespace, "envoy-redis", 180); err != nil {
-			return fmt.Errorf("Envoy Redis not ready: %w", err)
-		}
+	if err := k8s.WaitForStatefulSetReady(ctx, envoyNamespace, "envoy-redis", 180); err != nil {
+		return fmt.Errorf("Envoy Redis not ready: %w", err)
 	}
 
 	return nil

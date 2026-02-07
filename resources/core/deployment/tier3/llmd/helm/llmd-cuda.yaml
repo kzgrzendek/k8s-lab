@@ -16,6 +16,7 @@ routing:
 
   proxy:
     image: ghcr.io/llm-d/llm-d-routing-sidecar:v0.4.0-rc.1
+    imagePullPolicy: IfNotPresent
 
     targetPort: 8200
     secure: false
@@ -31,6 +32,7 @@ decode:
   containers:
     - name: vllm
       image: "{{.LLMDCudaImage}}"
+      imagePullPolicy: IfNotPresent
       modelCommand: vllmServe
       args:
         - --max-model-len

@@ -253,7 +253,18 @@ func runStart(cmd *cobra.Command, targetTier int, hfToken string, model string, 
 	progress.CompleteStep(currentStep)
 	currentStep++
 
-	// Step 2: Warmup operations (tier 3 only, runs in background)
+	// Step 2: Tier 0: Configure Minikube cluster (already started by Foundation Stack)
+	// Must run before warmup so node election happens first
+	progress.StartStep(currentStep)
+	if err := tier0.DeployTier0(cmd.Context(), cfg); err != nil {
+		progress.FailStep(currentStep, err)
+		return fmt.Errorf("failed to deploy tier 0: %w", err)
+	}
+	progress.CompleteStep(currentStep)
+	currentStep++
+
+	// Step 3: Warmup operations (tier 3 only, runs in background)
+	// Started after tier0 so node election has already happened
 	var warmupOrch *warmup.Orchestrator
 	if targetTier >= 3 {
 		warmupOrch = warmup.New(cmd.Context(), cfg)
@@ -268,22 +279,6 @@ func runStart(cmd *cobra.Command, targetTier int, hfToken string, model string, 
 	if warmupOrch != nil {
 		deployCtx = warmupOrch.Context()
 	}
-
-	// Step 3: Tier 0: Configure Minikube cluster (already started by Foundation Stack)
-	progress.StartStep(currentStep)
-
-	// Check if warmup failed and cancelled context
-	if deployCtx.Err() != nil {
-		progress.FailStep(currentStep, deployCtx.Err())
-		return fmt.Errorf("deployment cancelled due to warmup failure: %w", deployCtx.Err())
-	}
-
-	if err := tier0.DeployTier0(deployCtx, cfg); err != nil {
-		progress.FailStep(currentStep, err)
-		return fmt.Errorf("failed to deploy tier 0: %w", err)
-	}
-	progress.CompleteStep(currentStep)
-	currentStep++
 
 	// Deploy higher tiers
 	if targetTier >= 1 {
@@ -318,12 +313,9 @@ func runStart(cmd *cobra.Command, targetTier int, hfToken string, model string, 
 	}
 
 	if targetTier >= 3 {
-		// Wait for warmup operations to complete before deploying tier 3
-		if warmupOrch != nil {
-			if err := warmupOrch.Wait(); err != nil {
-				return fmt.Errorf("warmup operations failed: %w", err)
-			}
-		}
+		// Note: We don't wait for warmup here - it continues in background.
+		// If images aren't ready yet, Kubernetes will wait for them when pods start.
+		// If warmup fails, it cancels deployCtx which will fail tier 3 deployment.
 
 		progress.StartStep(currentStep)
 		if err := tier3.DeployTier3(deployCtx, cfg); err != nil {

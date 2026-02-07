@@ -1,3 +1,6 @@
+# Use cached image if present (warmup pre-pulls this)
+image:
+  pullPolicy: IfNotPresent
 
 ollama:
   enabled: false

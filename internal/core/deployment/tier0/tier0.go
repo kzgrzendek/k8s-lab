@@ -21,20 +21,6 @@ func DeployTier0(ctx context.Context, cfg *config.Config) error {
 	// Minikube cluster is already started by Foundation Stack
 	ui.Info("Configuring cluster (already started by Foundation Stack)...")
 
-	// Configure DNS mapping for registry.local -> host gateway IP
-	ui.Step("Configuring registry DNS on nodes...")
-	if err := minikube.ConfigureRegistryDNS(ctx, cfg); err != nil {
-		ui.Warn("Failed to configure registry DNS: %v", err)
-		ui.Info("Registry access from nodes may fail")
-	}
-
-	// Install mkcert CA certificate on all nodes for registry TLS
-	ui.Step("Installing TLS certificates on nodes...")
-	if err := minikube.InstallRegistryCA(ctx, cfg); err != nil {
-		ui.Warn("Failed to install CA certificate: %v", err)
-		ui.Info("Registry TLS verification may fail")
-	}
-
 	// Rename nova context to cluster-admin for consistency
 	// With --profile=nova, minikube creates a context named "nova" instead of "minikube"
 	if k8s.ContextExists(ctx, "nova") && !k8s.ContextExists(ctx, "cluster-admin") {
@@ -403,7 +389,9 @@ func deployCoreDNS(ctx context.Context, cfg *config.Config) error {
 		"Domain":     cfg.DNS.Domain,
 	}
 
-	if err := shared.ApplyTemplate(ctx, "resources/core/deployment/tier1/coredns/configmaps/config-dns-rewrite.yaml", data); err != nil {
+	// Use server-side apply since CoreDNS configmap was created by kubeadm, not kubectl apply
+	// This avoids the "missing last-applied-configuration annotation" warning
+	if err := shared.ApplyTemplateServerSide(ctx, "resources/core/deployment/tier1/coredns/configmaps/config-dns-rewrite.yaml", data); err != nil {
 		return fmt.Errorf("failed to apply coredns rewrite config: %w", err)
 	}
 

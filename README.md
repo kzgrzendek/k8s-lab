@@ -108,7 +108,7 @@ Install these tools before running NOVA:
 
 ### GPU Support
 
-NOVA requires a GPU for LLM inference. Both NVIDIA and Intel GPUs are supported.
+NOVA requires a GPU for LLM inference. Only discret NVIDIA GPUs are supported for the time being.
 
 #### NVIDIA GPU
 
@@ -130,23 +130,6 @@ sudo systemctl restart docker
 # 4. Verify
 docker run --rm --gpus all nvidia/cuda:12.2.0-base-ubuntu22.04 nvidia-smi
 ```
-
-#### Intel GPU
-
-Intel integrated and discrete GPUs (Arc) are supported via the Intel GPU Device Plugin.
-
-```bash
-# Verify Intel GPU kernel modules are loaded
-lsmod | grep -E 'i915|xe'
-
-# i915 = integrated/older discrete GPUs
-# xe = newer Arc discrete GPUs
-```
-
-NOVA auto-detects GPU type during `nova setup` and deploys the appropriate operator:
-
-- **NVIDIA**: GPU Operator for CUDA workloads
-- **Intel**: Intel GPU Device Plugin for IPEX optimization
 
 ### Install NOVA
 
@@ -178,7 +161,6 @@ nova start --kubernetes-version=v1.32.0
 
 # Optional: Specify GPU mode (auto-detection by default)
 nova start --gpu=nvidia   # Use NVIDIA GPU
-nova start --gpu=intel    # Use Intel GPU
 
 # Optional: Provide Hugging Face token for faster model downloads (tier 3)
 nova start --hf-token=YOUR_HF_TOKEN
@@ -611,7 +593,7 @@ Optimizes application deployment by pre-loading models and images in the backgro
   - Runs as Kubernetes Job in `llmd` namespace
   - Supports gated models with HF_TOKEN authentication
 - **Image Warmup** (async, GPU only): Pre-pulls heavy container images (5-8GB) using local registry
-  - Uses memory-efficient skopeo + local registry (~300MB RAM vs 5-10GB)
+  - Uses memory-efficient skopeo + local registry
   - Runs in background during tier1/tier2 deployment
   - Completes before tier3 to ensure fast application startup
 

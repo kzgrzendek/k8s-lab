@@ -1243,6 +1243,14 @@ func (c *Config) GetLLMDImage(profile string) string {
 	return defaults["cpu"].FullImage()
 }
 
+// GetOpenWebUIImage returns the full Open WebUI container image reference.
+// The image version corresponds to the Helm chart's appVersion.
+func (c *Config) GetOpenWebUIImage() string {
+	// Default image - version should match what the Helm chart uses
+	// Chart 9.0.0 uses app version 0.6.43
+	return "ghcr.io/open-webui/open-webui:0.6.43"
+}
+
 // GetModelsPath returns the host path where LLM models are stored.
 // This directory is mounted into minikube nodes via minikube mount.
 // Path: ~/.nova/share/models/

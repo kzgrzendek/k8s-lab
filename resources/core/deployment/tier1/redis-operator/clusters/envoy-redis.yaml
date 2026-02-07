@@ -6,7 +6,7 @@ metadata:
 spec:
   # Kubernetes configuration
   kubernetesConfig:
-    image: quay.io/opstree/redis:v7.2
+    image: quay.io/opstree/redis:v7.2.11
     imagePullPolicy: IfNotPresent
     resources:
       requests:
@@ -16,13 +16,9 @@ spec:
         cpu: "200m"
         memory: "128Mi"
     # Password authentication from existing secret
-    existingPasswordSecret:
+    redisSecret:
       name: redis
       key: redis-password
-
-  # Redis exporter disabled for minimal footprint
-  redisExporter:
-    enabled: false
 
   # Storage configuration
   storage:

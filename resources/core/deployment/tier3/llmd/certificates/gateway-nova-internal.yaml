@@ -11,3 +11,5 @@ spec:
   commonName: "llmd.internal.{{.Domain}}"
   dnsNames:
   - "llmd.internal.{{.Domain}}"
+  privateKey:
+    rotationPolicy: Always

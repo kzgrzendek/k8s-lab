@@ -393,6 +393,22 @@ func ApplyYAMLContent(ctx context.Context, yamlContent string) error {
 	return nil
 }
 
+// ApplyYAMLContentServerSide applies Kubernetes manifest using server-side apply.
+// Use this for resources not originally created with kubectl apply (e.g., CoreDNS configmap
+// created by kubeadm) to avoid the "missing last-applied-configuration annotation" warning.
+func ApplyYAMLContentServerSide(ctx context.Context, yamlContent string) error {
+	ephemeralWriter := ui.PipeWriter()
+	defer ephemeralWriter.Done()
+
+	if err := exec.New(ctx, "kubectl", "apply", "--server-side", "--force-conflicts", "-f", "-").
+		WithStdin(strings.NewReader(yamlContent)).
+		RunWithEphemeralOutput(ephemeralWriter); err != nil {
+		ephemeralWriter.KeepOnDone()
+		return fmt.Errorf("failed to apply manifest from content: %w", err)
+	}
+	return nil
+}
+
 // PatchConfigMap patches a ConfigMap using kubectl patch with a YAML file.
 func PatchConfigMap(ctx context.Context, namespace, name, patchFile string) error {
 	// Use ephemeral output for kubectl patch

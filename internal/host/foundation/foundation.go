@@ -7,7 +7,6 @@
 //   - NGINX Gateway (reverse proxy to cluster, discovers minikube IP)
 //   - Bind9 DNS (local DNS for *.nova.local domains)
 //   - Minikube Mount (host models directory mounted to nodes, tier 3 only)
-//   - Registry (local container registry, tier 3 only)
 //
 // All services use Docker's automatic IP allocation to avoid conflicts.
 package foundation
@@ -21,7 +20,6 @@ import (
 	"github.com/kzgrzendek/nova/internal/host/dns/bind9"
 	"github.com/kzgrzendek/nova/internal/host/gateway/nginx"
 	"github.com/kzgrzendek/nova/internal/host/mount"
-	"github.com/kzgrzendek/nova/internal/host/registry"
 	"github.com/kzgrzendek/nova/internal/tools/docker"
 	"github.com/kzgrzendek/nova/internal/tools/minikube"
 )
@@ -47,7 +45,6 @@ func New(cfg *config.Config) *Foundation {
 //  3. Start NGINX Gateway (discovers minikube IP after it's running)
 //  4. Start Bind9 DNS
 //  5. Start Minikube Mount (tier >= 3 only)
-//  6. Start Registry (tier >= 3 only, needs Bind9 for DNS)
 //
 // Error handling: Fails fast with clear errors, no automatic rollback.
 // If an error occurs, use Stop() or Delete() to clean up.
@@ -97,21 +94,14 @@ func (f *Foundation) Start(ctx context.Context, tier int) error {
 	}
 	ui.Success("Bind9 DNS server started on port %d", f.cfg.DNS.Bind9Port)
 
-	// Steps 5-6: Optional services for tier 3
+	// Step 5: Optional services for tier 3
 	if tier >= 3 {
-		// Step 5: Start Minikube Mount (models directory)
+		// Start Minikube Mount (models directory)
 		ui.Step("Starting minikube mount...")
 		if err := mount.Start(ctx, f.cfg); err != nil {
 			return fmt.Errorf("failed to start minikube mount: %w", err)
 		}
 		ui.Success("Minikube mount started")
-
-		// Step 6: Start Registry (needs Bind9 for registry.local resolution)
-		ui.Step("Starting local registry...")
-		if err := registry.Start(ctx, f.cfg); err != nil {
-			return fmt.Errorf("failed to start registry: %w", err)
-		}
-		ui.Success("Registry started")
 	}
 
 	ui.Success("Foundation stack ready")
@@ -121,21 +111,12 @@ func (f *Foundation) Start(ctx context.Context, tier int) error {
 // Stop stops host services in reverse order (LIFO).
 // This preserves the nova network and minikube for faster restarts.
 //
-// Stop order: Registry → Mount → Bind9 → NGINX
+// Stop order: Mount → Bind9 → NGINX
 // Minikube and network are NOT stopped (must be stopped separately).
 func (f *Foundation) Stop(ctx context.Context) error {
 	ui.Header("Stopping Foundation Stack")
 
 	errors := []error{}
-
-	// Stop Registry
-	ui.Step("Stopping Registry...")
-	if err := registry.Stop(ctx); err != nil {
-		ui.Warn("Failed to stop Registry: %v", err)
-		errors = append(errors, err)
-	} else {
-		ui.Success("Registry stopped")
-	}
 
 	// Stop Minikube Mount
 	ui.Step("Stopping minikube mount...")
@@ -174,23 +155,19 @@ func (f *Foundation) Stop(ctx context.Context) error {
 	return nil
 }
 
-// Delete removes host services and the nova network.
-// This is a destructive operation that removes all state.
-//
-// Delete order: Registry → Mount → Bind9 → NGINX → Nova Network
-// Note: Minikube must be deleted separately before calling this.
-func (f *Foundation) Delete(ctx context.Context) error {
-	ui.Header("Deleting Foundation Stack")
-
-	// Delete services (best effort, ignore errors)
-	ui.Step("Removing services...")
-	registry.Delete(ctx)
+// DeleteContainers removes host service containers but preserves the nova network.
+// Use this before deleting minikube, then call DeleteNetwork after.
+func (f *Foundation) DeleteContainers(ctx context.Context) {
+	ui.Step("Removing foundation containers...")
 	mount.Delete(ctx)
 	bind9.Delete(ctx)
 	nginx.Delete(ctx)
-	ui.Success("Services removed")
+	ui.Success("Foundation containers removed")
+}
 
-	// Remove nova network
+// DeleteNetwork removes the nova Docker network.
+// Call this AFTER minikube has been deleted (minikube uses the network).
+func (f *Foundation) DeleteNetwork(ctx context.Context) error {
 	ui.Step("Removing nova network...")
 	dockerClient, err := docker.NewClient()
 	if err != nil {
@@ -203,6 +180,25 @@ func (f *Foundation) Delete(ctx context.Context) error {
 		// Don't return error, network might not exist
 	} else {
 		ui.Success("Nova network removed")
+	}
+	return nil
+}
+
+// Delete removes host services and the nova network.
+// This is a destructive operation that removes all state.
+//
+// Delete order: Mount → Bind9 → NGINX → Nova Network
+// Note: Minikube must be deleted separately before calling this,
+// otherwise the network removal will fail.
+func (f *Foundation) Delete(ctx context.Context) error {
+	ui.Header("Deleting Foundation Stack")
+
+	// Delete containers
+	f.DeleteContainers(ctx)
+
+	// Remove network
+	if err := f.DeleteNetwork(ctx); err != nil {
+		return err
 	}
 
 	ui.Success("Foundation stack deleted")
